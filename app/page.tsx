@@ -349,15 +349,6 @@ export default function Home() {
         }
       })
       .catch(() => undefined);
-    const logoutTimer = window.setTimeout(
-      () => {
-        fetch("/api/auth/logout", { method: "POST" }).finally(() =>
-          setAuth("signedOut"),
-        );
-      },
-      30 * 60 * 1000,
-    );
-    return () => window.clearTimeout(logoutTimer);
   }, [auth]);
   const products = useMemo<Product[]>(
     () =>
@@ -778,9 +769,6 @@ export default function Home() {
           </button>
           <button className="outline" onClick={() => setManageOpen(true)}>
             分类管理
-          </button>
-          <button className="outline" onClick={logout}>
-            退出
           </button>
           <button className="cartButton" onClick={() => setCartOpen(true)}>
             <span>报价清单</span>

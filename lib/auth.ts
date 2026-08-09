@@ -2,11 +2,15 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { loginSessions } from "../db/schema";
 
+export const AUTHENTICATION_ENABLED = false;
+
 const readCookie = (request: Request) => request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith("yifun_session="))?.slice("yifun_session=".length) || "";
 const bytesToHex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 const hash = async (value: string) => bytesToHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
 
 export async function getLoginSession(request: Request) {
+  if (!AUTHENTICATION_ENABLED)
+    return { username: "public", expiresAt: new Date(8640000000000000).toISOString() };
   const token = readCookie(request); if (!token) return null;
   const tokenHash = await hash(token); const db = getDb();
   const session = await db.select().from(loginSessions).where(eq(loginSessions.tokenHash, tokenHash)).get();
