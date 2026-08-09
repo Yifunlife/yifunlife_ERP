@@ -371,7 +371,12 @@ export default function Home() {
           category1,
           category2: o?.category2 || p.category,
           category3: o?.category3 || "未细分",
-          colorTag: category1 === "小玩具" ? "不适用" : o?.colorTag || "未识别",
+          colorTag:
+            category1 === "小玩具"
+              ? "不适用"
+              : !image
+                ? "无主图"
+                : o?.colorTag || "未识别",
           hasScreen:
             o?.hasScreen ??
             screenWords.test(`${p.name} ${p.spec} ${p.category}`),
@@ -1205,9 +1210,11 @@ export default function Home() {
                               <>
                                 <i className={`colorDot color-${p.colorTag}`}></i>
                                 <small>
-                                  {p.colorTag === "未识别"
-                                    ? "待识别主色"
-                                    : p.colorTag}
+                                  {p.colorTag === "无主图"
+                                    ? "待上传主图"
+                                    : p.colorTag === "未识别"
+                                      ? "待识别主色"
+                                      : p.colorTag}
                                 </small>
                               </>
                             )}
@@ -1421,6 +1428,8 @@ export default function Home() {
                 <h3>识别标签</h3>
                 {draft.category1 === "小玩具" ? (
                   <p className="muted">配套小玩具无需识别主色。</p>
+                ) : !draft.image ? (
+                  <p className="muted">请先上传主图，系统会自动识别主色。</p>
                 ) : (
                   <div className="tagOptions">
                     {colorOptions.map((c) => (
