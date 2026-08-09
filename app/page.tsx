@@ -176,26 +176,49 @@ const kitchenPackageTemplate: KitchenPackage = {
   ],
 };
 const colorOptions = [
+  "浅红",
+  "红",
+  "深红",
+  "浅橙",
+  "橙",
+  "深橙",
+  "浅黄",
+  "黄",
+  "深黄",
+  "浅绿",
+  "绿",
+  "深绿",
+  "浅青",
+  "青",
+  "深青",
+  "浅蓝",
+  "蓝",
   "深蓝",
-  "黄绿",
-  "黄色",
-  "红色",
-  "橙色",
-  "粉色",
-  "紫色",
-  "绿色",
-  "原木",
-  "中性灰",
+  "浅紫",
+  "紫",
+  "深紫",
+  "黑",
+  "白",
 ];
+const colorSwatches: Record<string, string> = {
+  浅红: "#ef9a9a", 红: "#d83d48", 深红: "#852532",
+  浅橙: "#f5bb7b", 橙: "#e9812f", 深橙: "#a94a17",
+  浅黄: "#f3e58d", 黄: "#ddbd26", 深黄: "#9a7211",
+  浅绿: "#9fd59a", 绿: "#3f9862", 深绿: "#1d5a43",
+  浅青: "#92dbe0", 青: "#2fa5ad", 深青: "#17646d",
+  浅蓝: "#9bcbed", 蓝: "#2f7eb9", 深蓝: "#174b86",
+  浅紫: "#c8a7e6", 紫: "#8756b6", 深紫: "#513177",
+  黑: "#1c242d", 白: "#ffffff",
+};
 const screenWords = /屏|screen|投影|多媒体|互动|vr|电视|监视/i;
-const money = (value: number | null, currency: "CNY" | "USD") =>
-  value === null
-    ? "待确认"
-    : new Intl.NumberFormat(currency === "CNY" ? "zh-CN" : "en-US", {
-        style: "currency",
-        currency,
-        maximumFractionDigits: currency === "CNY" ? 0 : 2,
-      }).format(value);
+const money = (value: number | null, currency: "CNY" | "USD") => {
+  if (value === null) return "待确认";
+  const amount = new Intl.NumberFormat(currency === "CNY" ? "zh-CN" : "en-US", {
+    minimumFractionDigits: currency === "CNY" ? 0 : 2,
+    maximumFractionDigits: currency === "CNY" ? 0 : 2,
+  }).format(value);
+  return currency === "CNY" ? `CNY ¥${amount}` : `USD $${amount}`;
+};
 const quoteArea = (p: Product) => {
   const x = `${p.category2} ${p.name}`;
   if (/厨房|烘焙|奶茶|火锅|烧烤|烤鸭|面馆|甜品|熟食/.test(x))
@@ -222,43 +245,108 @@ function autoColor(src: string): Promise<string> {
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const c = document.createElement("canvas");
-      c.width = c.height = 24;
+      c.width = c.height = 72;
       const x = c.getContext("2d");
-      if (!x) return resolve("中性灰");
-      x.drawImage(img, 0, 0, 24, 24);
-      const d = x.getImageData(0, 0, 24, 24).data;
-      let r = 0,
-        g = 0,
-        b = 0,
-        n = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        if (d[i + 3] > 120 && Math.max(d[i], d[i + 1], d[i + 2]) < 245) {
-          r += d[i];
-          g += d[i + 1];
-          b += d[i + 2];
-          n++;
+      if (!x) return resolve("未识别");
+      x.drawImage(img, 0, 0, 72, 72);
+      const pixels = x.getImageData(0, 0, 72, 72).data;
+      const size = 72;
+      const isBackground = new Uint8Array(size * size);
+      const queue: number[] = [];
+      const hsvAt = (index: number) => {
+        const r = pixels[index * 4] / 255;
+        const g = pixels[index * 4 + 1] / 255;
+        const b = pixels[index * 4 + 2] / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        const hue =
+          delta === 0
+            ? 0
+            : ((max === r ? (g - b) / delta : max === g ? 2 + (b - r) / delta : 4 + (r - g) / delta) *
+                60 +
+                360) %
+              360;
+        return { hue, saturation: max === 0 ? 0 : delta / max, value: max };
+      };
+      const isBlank = (index: number) => {
+        const { saturation, value } = hsvAt(index);
+        return pixels[index * 4 + 3] < 120 || (value > 0.94 && saturation < 0.08);
+      };
+      for (let y = 0; y < size; y++)
+        for (const xPos of [0, size - 1]) {
+          const index = y * size + xPos;
+          if (isBlank(index) && !isBackground[index]) {
+            isBackground[index] = 1;
+            queue.push(index);
+          }
+        }
+      for (let xPos = 0; xPos < size; xPos++)
+        for (const y of [0, size - 1]) {
+          const index = y * size + xPos;
+          if (isBlank(index) && !isBackground[index]) {
+            isBackground[index] = 1;
+            queue.push(index);
+          }
+        }
+      while (queue.length) {
+        const index = queue.pop()!;
+        const xPos = index % size;
+        const y = Math.floor(index / size);
+        for (const next of [index - 1, index + 1, index - size, index + size]) {
+          if (
+            next >= 0 &&
+            next < size * size &&
+            Math.abs((next % size) - xPos) + Math.abs(Math.floor(next / size) - y) === 1 &&
+            !isBackground[next] &&
+            isBlank(next)
+          ) {
+            isBackground[next] = 1;
+            queue.push(next);
+          }
         }
       }
-      r /= n || 1;
-      g /= n || 1;
-      b /= n || 1;
-      const choice =
-        b > r * 1.25
-          ? "深蓝"
-          : g > r * 1.2 && g > b
-            ? "绿色"
-            : r > 170 && g > 140 && b < 100
-              ? "黄色"
-              : r > 170 && g > 90 && b < 80
-                ? "橙色"
-                : r > g * 1.35 && r > b * 1.35
-                  ? "红色"
-                  : r > 140 && g > 105 && b < 95
-                    ? "原木"
-                    : "中性灰";
-      resolve(choice);
+      const counts: Record<string, number> = {};
+      const brightness: Record<string, number> = {};
+      let counted = 0;
+      for (let index = 0; index < size * size; index++) {
+        if (isBackground[index] || pixels[index * 4 + 3] < 120) continue;
+        const { hue, saturation, value } = hsvAt(index);
+        const color =
+          value < 0.2
+            ? "黑"
+            : value > 0.82 && saturation < 0.18
+              ? "白"
+              : saturation < 0.14
+                ? ""
+                : hue < 18 || hue >= 345
+                  ? "红"
+                  : hue < 48
+                    ? "橙"
+                    : hue < 72
+                      ? "黄"
+                      : hue < 165
+                        ? "绿"
+                        : hue < 195
+                          ? "青"
+                          : hue < 260
+                            ? "蓝"
+                            : "紫";
+        if (!color) continue;
+        counts[color] = (counts[color] || 0) + 1;
+        brightness[color] = (brightness[color] || 0) + value;
+        counted++;
+      }
+      const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      const [main, mainCount] = ranked[0] || [];
+      const secondCount = ranked[1]?.[1] || 0;
+      if (!main || !mainCount || mainCount / counted <= 0.3 || secondCount >= mainCount * 0.5)
+        return resolve("未识别");
+      if (main === "黑" || main === "白") return resolve(main);
+      const averageBrightness = brightness[main] / mainCount;
+      resolve(`${averageBrightness >= 0.72 ? "浅" : averageBrightness <= 0.42 ? "深" : ""}${main}`);
     };
-    img.onerror = () => resolve("中性灰");
+    img.onerror = () => resolve("未识别");
     img.src = src;
   });
 }
@@ -297,6 +385,9 @@ export default function Home() {
   const [categoryFamily, setCategoryFamily] = useState("小玩具");
   const [activeMajor, setActiveMajor] = useState<MajorCategory>(
     majorCategories[0],
+  );
+  const [expandedMajors, setExpandedMajors] = useState<Set<MajorCategory>>(
+    () => new Set([majorCategories[0]]),
   );
   const [category, setCategory] = useState("全部产品");
   const [query, setQuery] = useState("");
@@ -376,7 +467,9 @@ export default function Home() {
               ? "不适用"
               : !image
                 ? "无主图"
-                : o?.colorTag || "未识别",
+                : category1 === "模拟设备"
+                  ? o?.colorTag || "待重新识别"
+                  : o?.colorTag || "未识别",
           hasScreen:
             o?.hasScreen ??
             screenWords.test(`${p.name} ${p.spec} ${p.category}`),
@@ -395,7 +488,7 @@ export default function Home() {
       .filter(
         (p) =>
           p.category1 === "模拟设备" &&
-          p.colorTag === "未识别" &&
+          p.colorTag === "待重新识别" &&
           p.image &&
           !colorScanInFlight.current.has(p.id),
       )
@@ -606,7 +699,7 @@ export default function Home() {
     setDraft(p);
     if (
       p.category1 === "模拟设备" &&
-      p.colorTag === "未识别" &&
+      p.colorTag === "待重新识别" &&
       p.image &&
       !colorScanInFlight.current.has(p.id)
     )
@@ -835,16 +928,27 @@ export default function Home() {
             </p>
           </div>
           <nav>
-            {majorCategories.map((major, i) => (
-              <div
-                className={`navGroup ${activeMajor === major ? "selected" : ""}`}
-                key={major}
-              >
+            {majorCategories.map((major, i) => {
+              const expanded = expandedMajors.has(major);
+              return (
+                <div
+                  className={`navGroup ${activeMajor === major ? "selected" : ""}`}
+                  key={major}
+                >
                 <button
                   className="navHead"
                   onClick={() => {
-                    setActiveMajor(major);
-                    setCategory("全部产品");
+                    if (expanded) {
+                      setExpandedMajors((current) => {
+                        const next = new Set(current);
+                        next.delete(major);
+                        return next;
+                      });
+                    } else {
+                      setExpandedMajors((current) => new Set(current).add(major));
+                      setActiveMajor(major);
+                      setCategory("全部产品");
+                    }
                   }}
                 >
                   <span className="navIndex">
@@ -859,10 +963,10 @@ export default function Home() {
                     </small>
                   </span>
                   <span className="chevron">
-                    {activeMajor === major ? "−" : "+"}
+                    {expanded ? "−" : "+"}
                   </span>
                 </button>
-                {activeMajor === major && (
+                {expanded && (
                   <div className="subnav">
                     {major === "生活场景 / Lifestyle Scene" && (
                       <button
@@ -908,7 +1012,8 @@ export default function Home() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </nav>
           <div className="sideFoot">
             <span className="statusDot" /> 已归类 SKU <b>{products.length}</b>
@@ -1208,11 +1313,16 @@ export default function Home() {
                           <div className="tagRow">
                             {p.category1 !== "小玩具" && (
                               <>
-                                <i className={`colorDot color-${p.colorTag}`}></i>
+                                <i
+                                  className="colorDot"
+                                  style={{ background: colorSwatches[p.colorTag] }}
+                                ></i>
                                 <small>
                                   {p.colorTag === "无主图"
                                     ? "待上传主图"
-                                    : p.colorTag === "未识别"
+                                    : p.colorTag === "待重新识别"
+                                      ? "等待重新识别"
+                                      : p.colorTag === "未识别"
                                       ? "待识别主色"
                                       : p.colorTag}
                                 </small>
