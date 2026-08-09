@@ -42,33 +42,27 @@ async function ensureSchema() {
 }
 
 export async function POST() {
-  await ensureSchema();
-  const db = getDb();
-  for (let start = 0; start < catalogSource.length; start += 100) {
-    await db.batch(
-      catalogSource.slice(start, start + 100).map((product) =>
-        db
-          .insert(catalogProducts)
-          .values({
-            id: product.id,
-            sku: product.sku,
-            name: product.name,
-            englishName: product.en,
-            category: product.category,
-            family: product.family,
-            price: product.price,
-            priceNote: product.priceNote,
-            usdPrice: product.usd,
-            unit: product.unit,
-            specification: product.spec,
-            brand: product.brand,
-            material: product.material,
-            note: product.note,
-            imageKey: imageKeyFor(product.image),
-          })
-          .onConflictDoNothing(),
-      ),
-    );
+  try {
+    await ensureSchema();
+    const db = getDb();
+    for (let start = 0; start < catalogSource.length; start += 100) {
+      await db.batch(
+        catalogSource.slice(start, start + 100).map((product) =>
+          db
+            .insert(catalogProducts)
+            .values({
+              id: product.id, sku: product.sku, name: product.name,
+              englishName: product.en, category: product.category, family: product.family,
+              price: product.price, priceNote: product.priceNote, usdPrice: product.usd,
+              unit: product.unit, specification: product.spec, brand: product.brand,
+              material: product.material, note: product.note, imageKey: imageKeyFor(product.image),
+            })
+            .onConflictDoNothing(),
+        ),
+      );
+    }
+    return Response.json({ migrated: catalogSource.length });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
-  return Response.json({ migrated: catalogSource.length });
 }
