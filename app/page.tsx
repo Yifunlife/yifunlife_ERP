@@ -1,5 +1,5 @@
 "use client";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogProduct } from "./catalog-types";
 type MajorCategory =
   | "职业体验 / Career Experience"
@@ -329,6 +329,7 @@ export default function Home() {
     installation: 0,
     designDeduction: 0,
   });
+  const colorScanInFlight = useRef(new Set<string>());
   useEffect(() => {
     fetch("/api/auth/session")
       .then((r) => r.json())
@@ -355,6 +356,7 @@ export default function Home() {
       storedCatalogProducts.map((p) => {
         const o = overrides.find((x) => x.productId === p.id);
         const image = o?.imageUrl || p.image;
+        const category1 = o?.category1 || p.family;
         return {
           ...p,
           name: o?.name || p.name,
@@ -366,10 +368,10 @@ export default function Home() {
           volume: o?.volume || "",
           stock: o?.stock ?? null,
           majorCategory: o?.majorCategory || getMajorCategory(p),
-          category1: o?.category1 || p.family,
+          category1,
           category2: o?.category2 || p.category,
           category3: o?.category3 || "未细分",
-          colorTag: o?.colorTag || "未识别",
+          colorTag: category1 === "小玩具" ? "不适用" : o?.colorTag || "未识别",
           hasScreen:
             o?.hasScreen ??
             screenWords.test(`${p.name} ${p.spec} ${p.category}`),
@@ -381,6 +383,37 @@ export default function Home() {
       }),
     [overrides, relations, storedCatalogProducts],
   );
+  useEffect(() => {
+    const slots = 6 - colorScanInFlight.current.size;
+    if (slots <= 0) return;
+    products
+      .filter(
+        (p) =>
+          p.category1 === "模拟设备" &&
+          p.colorTag === "未识别" &&
+          p.image &&
+          !colorScanInFlight.current.has(p.id),
+      )
+      .slice(0, slots)
+      .forEach((p) => {
+        colorScanInFlight.current.add(p.id);
+        autoColor(p.image).then((colorTag) => {
+          colorScanInFlight.current.delete(p.id);
+          void fetch("/api/catalog", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productId: p.id, patch: { colorTag } }),
+          });
+          setOverrides((current) => {
+            const existing = current.find((o) => o.productId === p.id);
+            return [
+              ...current.filter((o) => o.productId !== p.id),
+              { ...existing, productId: p.id, colorTag },
+            ];
+          });
+        });
+      });
+  }, [products]);
   const level2 = [
     ...new Set(
       products
@@ -566,7 +599,12 @@ export default function Home() {
   const openEditor = async (p: Product) => {
     setEditor(p);
     setDraft(p);
-    if (p.colorTag === "未识别" && p.image)
+    if (
+      p.category1 === "模拟设备" &&
+      p.colorTag === "未识别" &&
+      p.image &&
+      !colorScanInFlight.current.has(p.id)
+    )
       setDraft((x) => (x ? { ...x, colorTag: "识别中…" } : x)),
         autoColor(p.image).then((colorTag) =>
           setDraft((x) => (x ? { ...x, colorTag } : x)),
@@ -624,9 +662,10 @@ export default function Home() {
     const d = await r.json();
     if (d.imageUrl) {
       setDraft({ ...draft, image: d.imageUrl });
-      autoColor(d.imageUrl).then((colorTag) =>
-        setDraft((x) => (x ? { ...x, image: d.imageUrl, colorTag } : x)),
-      );
+      if (draft.category1 === "模拟设备")
+        autoColor(d.imageUrl).then((colorTag) =>
+          setDraft((x) => (x ? { ...x, image: d.imageUrl, colorTag } : x)),
+        );
     }
   };
   const createCategory = async () => {
@@ -776,7 +815,7 @@ export default function Home() {
           </button>
         </div>
       </header>
-      <section className="workspace">
+      <section className={`workspace${editor ? " editorOpen" : ""}`}>
         <aside className="sidebar">
           <div className="sideIntro">
             <span>PRODUCT LIBRARY · 2026</span>
@@ -1160,17 +1199,23 @@ export default function Home() {
                         </div>
                         <h3>{p.name}</h3>
                         <p className="en">{p.en || "产品详情见规格说明"}</p>
-                        <div className="tagRow">
-                          <i className={`colorDot color-${p.colorTag}`}></i>
-                          <small>
-                            {p.colorTag === "未识别"
-                              ? "待识别主色"
-                              : p.colorTag}
-                          </small>
-                          {p.isRecommended && (
-                            <small className="recommendTag">常用推荐</small>
-                          )}
-                        </div>
+                        {(p.category1 !== "小玩具" || p.isRecommended) && (
+                          <div className="tagRow">
+                            {p.category1 !== "小玩具" && (
+                              <>
+                                <i className={`colorDot color-${p.colorTag}`}></i>
+                                <small>
+                                  {p.colorTag === "未识别"
+                                    ? "待识别主色"
+                                    : p.colorTag}
+                                </small>
+                              </>
+                            )}
+                            {p.isRecommended && (
+                              <small className="recommendTag">常用推荐</small>
+                            )}
+                          </div>
+                        )}
                         <div className="priceRow">
                           <div>
                             <small>参考单价 / {p.unit}</small>
@@ -1201,7 +1246,7 @@ export default function Home() {
         </section>
       </section>
       {editor && draft && (
-        <div className="overlay">
+        <div className="overlay editorOverlay">
           <aside className="editorDrawer">
             <div className="drawerHead">
               <div>
@@ -1374,17 +1419,21 @@ export default function Home() {
               </section>
               <section className="editSection">
                 <h3>识别标签</h3>
-                <div className="tagOptions">
-                  {colorOptions.map((c) => (
-                    <button
-                      key={c}
-                      className={draft.colorTag === c ? "selectedTag" : ""}
-                      onClick={() => setDraft({ ...draft, colorTag: c })}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
+                {draft.category1 === "小玩具" ? (
+                  <p className="muted">配套小玩具无需识别主色。</p>
+                ) : (
+                  <div className="tagOptions">
+                    {colorOptions.map((c) => (
+                      <button
+                        key={c}
+                        className={draft.colorTag === c ? "selectedTag" : ""}
+                        onClick={() => setDraft({ ...draft, colorTag: c })}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <label className="checkLine">
                   <input
                     type="checkbox"
