@@ -50,3 +50,16 @@ export async function POST() {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
+
+export async function PUT(request: Request) {
+  const key = new URL(request.url).searchParams.get("key") || "";
+  if (!/^catalog\/[\w.-]+\.webp$/i.test(key))
+    return Response.json({ error: "Invalid image key" }, { status: 400 });
+  const contentType = request.headers.get("content-type") || "image/webp";
+  if (!contentType.startsWith("image/"))
+    return Response.json({ error: "Invalid image type" }, { status: 400 });
+  await env.PRODUCT_IMAGES.put(key, await request.arrayBuffer(), {
+    httpMetadata: { contentType },
+  });
+  return Response.json({ key });
+}
