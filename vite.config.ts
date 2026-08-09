@@ -3,8 +3,7 @@ import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
 
-const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
-  "00000000-0000-4000-8000-000000000000";
+const YIFUN_DATABASE_ID = "0c422bf7-378e-40df-a262-81dc0f73d4aa";
 
 const { d1, r2 } = hostingConfig;
 
@@ -12,14 +11,16 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
+  name: "yifunlife-erp",
   main: "./worker/index.ts",
+  compatibility_date: "2026-05-15",
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [
         {
           binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_name: "yifunlife-erp-db",
+          database_id: YIFUN_DATABASE_ID,
         },
       ]
     : [],
@@ -27,7 +28,7 @@ const localBindingConfig = {
     ? [
         {
           binding: r2,
-          bucket_name: "site-creator-r2",
+          bucket_name: "yifunlife-erp-images",
         },
       ]
     : [],
