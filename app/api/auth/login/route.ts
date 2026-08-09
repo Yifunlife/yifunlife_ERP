@@ -9,7 +9,10 @@ const hash = async (value: string) => bytesToHex(await crypto.subtle.digest("SHA
 export async function POST(request: Request) {
   const { username, password } = await request.json() as { username?: string; password?: string };
   const credentials = env as unknown as { APP_LOGIN_USERNAME?: string; APP_LOGIN_PASSWORD?: string };
-  if (username !== credentials.APP_LOGIN_USERNAME || password !== credentials.APP_LOGIN_PASSWORD) return Response.json({ error: "账户或密码不正确" }, { status: 401 });
+  const expectedUsername = credentials.APP_LOGIN_USERNAME?.trim().toLowerCase();
+  const expectedPassword = credentials.APP_LOGIN_PASSWORD;
+  if (!expectedUsername || !expectedPassword) return Response.json({ error: "登录配置未加载，请联系管理员" }, { status: 503 });
+  if (username?.trim().toLowerCase() !== expectedUsername || password !== expectedPassword) return Response.json({ error: "账户或密码不正确" }, { status: 401 });
   const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
   const expiresAt = new Date(Date.now() + SESSION_SECONDS * 1000).toISOString();
   await getDb().insert(loginSessions).values({ tokenHash: await hash(token), username, expiresAt });
