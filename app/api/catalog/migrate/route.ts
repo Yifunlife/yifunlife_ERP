@@ -41,6 +41,10 @@ async function ensureSchema() {
   `);
 }
 
+export async function GET() {
+  return Response.json({ sourceProducts: catalogSource.length, hasDatabaseBinding: Boolean(env.DB) });
+}
+
 export async function POST() {
   try {
     await ensureSchema();
