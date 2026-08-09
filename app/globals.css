@@ -1213,7 +1213,7 @@ img {
   color: #9aa1a5;
 }
 .editorDrawer {
-  width: min(540px, calc(100vw - 48px));
+  width: min(540px, 42vw);
   height: 100%;
   margin-left: auto;
   display: flex;
@@ -1237,6 +1237,8 @@ img {
 }
 .workspace.editorOpen .catalog {
   max-width: none;
+  padding-left: 28px;
+  padding-right: 28px;
 }
 .workspace.editorOpen .productGrid {
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
