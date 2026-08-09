@@ -1241,6 +1241,18 @@ img {
 .workspace.editorOpen .productGrid {
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
 }
+@media (max-width: 1200px) {
+  .workspace.editorOpen {
+    grid-template-columns: minmax(0, 1fr);
+    padding-right: min(460px, 60vw);
+  }
+  .workspace.editorOpen .sidebar {
+    display: none;
+  }
+  .editorDrawer {
+    width: min(460px, 60vw);
+  }
+}
 @keyframes editorSlideIn {
   from {
     transform: translateX(100%);
