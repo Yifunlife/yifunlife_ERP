@@ -9,7 +9,7 @@ import {
   productRecommendations,
 } from "../../../db/schema";
 import { getLoginSession } from "../../../lib/auth";
-import { pairedArea } from "../../../lib/area-pairing";
+import { isPairableArea, pairedArea } from "../../../lib/area-pairing";
 
 export const dynamic = "force-dynamic";
 
@@ -197,7 +197,11 @@ export async function POST(request: Request) {
   if (payload.action === "organizePairedAreas") {
     const products = await db.select().from(catalogProducts);
     const pairedProducts = products.flatMap((product) => {
-      if (product.family !== "小玩具" && product.family !== "模拟设备") return [];
+      if (
+        (product.family !== "小玩具" && product.family !== "模拟设备") ||
+        !isPairableArea(product.category)
+      )
+        return [];
       const area = pairedArea(product.category, product.name);
       return area ? [{ product, area }] : [];
     });
@@ -207,6 +211,7 @@ export async function POST(request: Request) {
           .filter(
             (product) =>
               (product.family === "小玩具" || product.family === "模拟设备") &&
+              isPairableArea(product.category) &&
               !pairedArea(product.category, product.name),
           )
           .map((product) => product.category),

@@ -46,6 +46,7 @@ const exactAreaMap: Record<string, string> = {
   航空区设备: "航空区",
   消防区设备: "消防区",
   消防站区域配套玩具: "消防区",
+  警察局区域配套玩具: "警察区",
   医院区模拟设备: "医院区",
   医院区域配套玩具: "医院区",
   未来医院区域配套玩具: "未来医院区",
@@ -74,6 +75,11 @@ const exactAreaMap: Record<string, string> = {
   育婴室区域配套玩具: "育婴室区",
   舞台区域配套玩具: "舞台区",
   花店区域配套玩具: "花店区",
+  牧场区域配套玩具: "牧场区",
+  母鸡生蛋区域配套玩具: "母鸡生蛋区",
+  种植采摘区域配套玩具: "种植采摘区",
+  果蔬采摘区域配套玩具: "果蔬采摘区",
+  鱼池区域配套玩具: "鱼池区",
   恐龙区设备: "恐龙区",
   赛车区域配套玩具: "赛车区",
   修理店区域配套玩具: "修车区",
@@ -86,9 +92,13 @@ const exactAreaMap: Record<string, string> = {
 
 const has = (text: string, words: RegExp) => words.test(text);
 
+export function isPairableArea(sourceArea: string) {
+  return sourceArea !== "(定制LOGO+0.27/双/定码定色/单码单色1000起，250双清箱)";
+}
+
 export function pairedArea(sourceArea: string, productName: string) {
   if (exactAreaMap[sourceArea]) return exactAreaMap[sourceArea];
-  const text = `${sourceArea} ${productName}`;
+  const text = productName;
 
   if (sourceArea === "警察、工地设备")
     return has(text, /警察|警局|审讯|侦探|巡警/) ? "警察区" : "工地区";
