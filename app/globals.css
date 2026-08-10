@@ -2165,3 +2165,248 @@ img {
     width: 100vw;
   }
 }
+
+/* Keep the catalogue comfortable across common laptop widths without changing
+   its information density or the quotation's print layout. */
+.workspace {
+  grid-template-columns: clamp(230px, 22vw, 330px) minmax(0, 1fr);
+}
+.sidebar {
+  padding-left: clamp(16px, 2vw, 26px);
+  padding-right: clamp(16px, 2vw, 26px);
+}
+.catalog {
+  max-width: none;
+  padding-left: clamp(20px, 4vw, 68px);
+  padding-right: clamp(20px, 4vw, 68px);
+}
+.quoteHeader {
+  align-items: flex-end;
+  column-gap: clamp(24px, 5vw, 72px);
+}
+.quoteBrand {
+  flex: 0 0 auto;
+  padding-bottom: 2px;
+}
+.quoteHeader > div:last-child {
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+  .headerLogo {
+    width: 168px;
+  }
+  .search {
+    width: clamp(180px, 22vw, 260px);
+  }
+  .workspace {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+  .productGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .productImage {
+    height: 126px;
+  }
+  .workspace.editorOpen {
+    grid-template-columns: 250px minmax(0, 1fr);
+    padding-right: min(430px, 42vw);
+  }
+  .workspace.editorOpen .sidebar {
+    display: flex;
+  }
+  .editorDrawer {
+    width: min(430px, 42vw);
+  }
+}
+
+@media (max-width: 960px) {
+  .topbar {
+    min-height: 70px;
+    gap: 12px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .headerLogo {
+    width: 146px;
+    max-height: 38px;
+  }
+  .topActions {
+    gap: 7px;
+    min-width: 0;
+  }
+  .search {
+    width: min(190px, 24vw);
+  }
+  .currency,
+  .outline {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .workspace {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .sidebar {
+    padding-top: 28px;
+  }
+  .sideIntro {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .sideIntro h1 {
+    font-size: 24px;
+  }
+  .sideIntro p {
+    font-size: 11px;
+  }
+  .navHead {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .navText b {
+    font-size: 14px;
+  }
+  .subnav {
+    padding-left: 35px;
+  }
+  .catalog {
+    padding-top: 34px;
+  }
+  .catalogHead h2 {
+    font-size: 36px;
+  }
+  .productGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .productBody {
+    padding: 10px;
+  }
+  .productBody h3 {
+    font-size: 13px;
+  }
+  .workspace.editorOpen {
+    grid-template-columns: minmax(0, 1fr);
+    padding-right: min(400px, 52vw);
+  }
+  .workspace.editorOpen .sidebar {
+    display: none;
+  }
+  .editorDrawer {
+    width: min(400px, 52vw);
+  }
+  .quotePaper {
+    padding: 36px clamp(28px, 5vw, 54px);
+  }
+  .quoteHeader h1 {
+    font-size: clamp(27px, 4vw, 34px);
+  }
+  .quoteLogo {
+    width: clamp(168px, 24vw, 220px);
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    position: sticky;
+    flex-wrap: nowrap;
+  }
+  .topActions {
+    justify-content: flex-end;
+  }
+  .search,
+  .currency {
+    display: none;
+  }
+  .workspace {
+    display: block;
+    min-height: 0;
+  }
+  .sidebar {
+    position: static;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .sideIntro,
+  .sideFoot {
+    display: none;
+  }
+  .sidebar nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px 12px;
+    scrollbar-width: none;
+  }
+  .sidebar nav::-webkit-scrollbar {
+    display: none;
+  }
+  .navGroup {
+    min-width: 180px;
+    border-top: 0;
+  }
+  .navHead {
+    padding: 10px 8px;
+  }
+  .subnav {
+    padding: 2px 4px 8px 28px;
+  }
+  .catalog {
+    padding-top: 28px;
+  }
+  .catalogHead p {
+    max-width: none;
+  }
+  .productGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .productImage {
+    height: 140px;
+  }
+  .quoteShell {
+    overflow-x: auto;
+  }
+  .quoteToolbar {
+    min-width: 760px;
+  }
+  .quotePaper {
+    min-width: 760px;
+  }
+  .quoteHeader {
+    column-gap: 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .headerLogo {
+    width: 128px;
+  }
+  .topbar .outline {
+    display: none;
+  }
+  .cartButton {
+    min-width: 42px;
+  }
+  .productGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .productImage {
+    height: 116px;
+  }
+  .productBody {
+    padding: 9px;
+  }
+  .productBody h3 {
+    font-size: 12px;
+  }
+  .priceRow strong {
+    font-size: 14px;
+  }
+}
