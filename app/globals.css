@@ -325,7 +325,7 @@ img {
   border-left: 0;
 }
 .subnav .subnavGroupHead.on .subnavGroupSelect {
-  color: #fff;
+  color: var(--lime-bright);
   font-weight: 700;
 }
 .subnav .subnavGroupToggle {
