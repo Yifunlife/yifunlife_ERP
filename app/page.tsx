@@ -1243,6 +1243,7 @@ export default function Home() {
   );
   const [category, setCategory] = useState("全部产品");
   const [category3Filter, setCategory3Filter] = useState("");
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
   const [navigationGroup, setNavigationGroup] =
     useState<NavigationGroup>("simulation");
   const [expandedProductGroups, setExpandedProductGroups] = useState<
@@ -1909,6 +1910,7 @@ export default function Home() {
                       setActiveMajor(major);
                       setCategory("全部产品");
                       setCategory3Filter("");
+                      setSelectedCategoryKey("");
                       setNavigationGroup("simulation");
                     }
                   }}
@@ -1968,11 +1970,15 @@ export default function Home() {
                               p.majorCategory,
                             ) && section.matches(p),
                         );
+                        const pairedCategories = pairedAreasForMajor(major);
                         const sectionCategories = [
-                          ...new Set([
-                            ...sectionProducts.map((p) => p.category2),
-                            ...pairedAreasForMajor(major),
-                          ]),
+                          ...pairedCategories,
+                          ...sectionProducts
+                            .map((p) => p.category2)
+                            .filter(
+                              (categoryName) =>
+                                !pairedCategories.includes(categoryName),
+                            ),
                         ];
                         const sectionKey = `${major}:${section.key}`;
                         const sectionExpanded = expandedProductGroups.has(sectionKey);
@@ -1994,11 +2000,13 @@ export default function Home() {
                                   if (isPackageSection) {
                                     setCategory("厨房专区");
                                     setCategory3Filter("");
+                                    setSelectedCategoryKey("");
                                     setKitchenMode("packages");
                                     setNavigationGroup("all");
                                   } else {
                                     setCategory("全部产品");
                                     setCategory3Filter("");
+                                    setSelectedCategoryKey("");
                                     setNavigationGroup(section.key);
                                   }
                                 }}
@@ -2041,10 +2049,15 @@ export default function Home() {
                                 if (section.key !== "toys")
                                   return (
                                     <button
-                                      className={category === c ? "on" : ""}
+                                      className={
+                                        selectedCategoryKey === `${section.key}:${c}`
+                                          ? "on"
+                                          : ""
+                                      }
                                       onClick={() => {
                                         setCategory(c);
                                         setCategory3Filter("");
+                                        setSelectedCategoryKey(`${section.key}:${c}`);
                                         setNavigationGroup(section.key);
                                       }}
                                       key={c}
@@ -2058,13 +2071,15 @@ export default function Home() {
                                     <div className="subnavTierHead">
                                       <button
                                         className={
-                                          category === c && !category3Filter
+                                          selectedCategoryKey === `toys:${c}` &&
+                                          !category3Filter
                                             ? "on"
                                             : ""
                                         }
                                         onClick={() => {
                                           setCategory(c);
                                           setCategory3Filter("");
+                                          setSelectedCategoryKey(`toys:${c}`);
                                           setNavigationGroup("toys");
                                         }}
                                       >
@@ -2094,7 +2109,7 @@ export default function Home() {
                                         {["必配", "选配"].map((tier) => (
                                           <button
                                             className={
-                                              category === c &&
+                                              selectedCategoryKey === `toys:${c}` &&
                                               category3Filter === tier
                                                 ? "on"
                                                 : ""
@@ -2103,6 +2118,7 @@ export default function Home() {
                                             onClick={() => {
                                               setCategory(c);
                                               setCategory3Filter(tier);
+                                              setSelectedCategoryKey(`toys:${c}`);
                                               setNavigationGroup("toys");
                                             }}
                                           >
