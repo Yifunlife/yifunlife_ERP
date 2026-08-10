@@ -1324,10 +1324,10 @@ export default function Home() {
           colorTag:
             category1 === "小玩具"
               ? "不适用"
-              : !image
-                ? "无主图"
-                : category1 === "模拟设备" && category2 === "消防区设备"
+              : category1 === "模拟设备" && category2 === "消防区设备"
                   ? "红"
+                : !image
+                  ? "无主图"
                 : category1 === "模拟设备"
                   ? normalizeColorTag(o?.colorTag || "待重新识别")
                   : normalizeColorTag(o?.colorTag || "未识别"),
