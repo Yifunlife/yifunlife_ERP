@@ -537,10 +537,60 @@ img {
   color: #93a098;
   font-size: 10px;
 }
+.skuBatchBar {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: 28px;
+  width: min(760px, calc(100vw - 32px));
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(211, 211, 60, 0.72);
+  border-radius: 12px;
+  background: var(--navy);
+  box-shadow: 0 15px 34px rgba(4, 28, 48, 0.28);
+  color: #fff;
+  padding: 14px 16px;
+}
+.skuBatchBar > b {
+  min-width: max-content;
+  color: var(--lime-bright);
+  font-size: 14px;
+}
+.skuBatchBar label {
+  flex: 1;
+  display: grid;
+  gap: 5px;
+  color: #b9c9d8;
+  font-size: 10px;
+  font-weight: 700;
+}
+.skuBatchBar select {
+  width: 100%;
+  min-width: 220px;
+  border: 1px solid #aebec4;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  font: inherit;
+}
+.skuBatchBar .primary {
+  height: 37px;
+  border-radius: 7px;
+  background: var(--lime-bright);
+  color: #203545;
+  padding: 0 16px;
+}
 @media (max-width: 720px) {
   .skuGridPage { padding: 22px 16px; }
   .skuGridHeader, .skuGridToolbar { align-items: start; flex-direction: column; }
   .skuGridActions { justify-content: flex-start; }
+  .skuBatchBar { align-items: stretch; flex-direction: column; gap: 10px; }
+  .skuBatchBar select { min-width: 0; }
+  .skuBatchBar .primary { width: 100%; }
   .skuGridTable { height: calc(100dvh - 300px); }
 }
 .sideFoot {

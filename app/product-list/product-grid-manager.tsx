@@ -13,6 +13,7 @@ import type {
   ColDef,
   ICellEditorParams,
   ICellRendererParams,
+  SelectionChangedEvent,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import "ag-grid-community/styles/ag-grid.css";
@@ -51,11 +52,16 @@ type GridRow = {
   en: string;
 };
 
-type UndoChange = {
+type UndoItem = {
   productId: string;
   sku: string;
   patch: Record<string, string>;
   restoreRow: GridRow;
+};
+
+type UndoChange = {
+  label: string;
+  items: UndoItem[];
 };
 
 const colorChoices = [
@@ -164,6 +170,8 @@ export function ProductGridManager() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("正在加载产品清单…");
   const [undoStack, setUndoStack] = useState<UndoChange[]>([]);
+  const [selectedRows, setSelectedRows] = useState<GridRow[]>([]);
+  const [batchCategoryPath, setBatchCategoryPath] = useState("");
 
   const load = async () => {
     const response = await fetch("/api/catalog");
@@ -197,7 +205,7 @@ export function ProductGridManager() {
     const field = event.colDef.field;
     let patch: Record<string, string>;
     let updatedRow = event.data;
-    let undoChange: UndoChange;
+    let undoItem: UndoItem;
 
     if (field === "categoryPath") {
       const [category1, category2, category3 = "未细分"] = String(event.newValue)
@@ -214,7 +222,7 @@ export function ProductGridManager() {
       const [oldCategory1, oldCategory2, oldCategory3 = "未细分"] = String(
         event.oldValue,
       ).split(" / ");
-      undoChange = {
+      undoItem = {
         productId: event.data.id,
         sku: event.data.sku,
         patch: {
@@ -233,7 +241,7 @@ export function ProductGridManager() {
     } else if (field === "colorTag") {
       patch = { colorTag: String(event.newValue) };
       updatedRow = { ...event.data, colorTag: String(event.newValue) };
-      undoChange = {
+      undoItem = {
         productId: event.data.id,
         sku: event.data.sku,
         patch: { colorTag: String(event.oldValue) },
@@ -253,12 +261,15 @@ export function ProductGridManager() {
       body: JSON.stringify({ productId: event.data.id, patch }),
     });
     if (response.ok) {
-      setUndoStack((current) => [...current, undoChange]);
+      setUndoStack((current) => [
+        ...current,
+        { label: event.data.sku, items: [undoItem] },
+      ]);
       setStatus(`已保存 ${event.data.sku}`);
     } else {
       setRows((current) =>
         current.map((row) =>
-          row.id === event.data.id ? undoChange.restoreRow : row,
+          row.id === event.data.id ? undoItem.restoreRow : row,
         ),
       );
       setStatus(`未能保存 ${event.data.sku}，已恢复原值。`);
@@ -268,23 +279,82 @@ export function ProductGridManager() {
   const undoLastChange = async () => {
     const lastChange = undoStack.at(-1);
     if (!lastChange) return;
-    setStatus(`正在撤销 ${lastChange.sku}…`);
-    const response = await fetch("/api/catalog", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: lastChange.productId, patch: lastChange.patch }),
-    });
-    if (!response.ok) {
-      setStatus(`未能撤销 ${lastChange.sku}，请重试。`);
-      return;
+    setStatus(`正在撤销 ${lastChange.label}…`);
+    for (const item of lastChange.items) {
+      const response = await fetch("/api/catalog", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: item.productId, patch: item.patch }),
+      });
+      if (!response.ok) {
+        setStatus(`未能撤销 ${lastChange.label}，请重试。`);
+        return;
+      }
     }
     setRows((current) =>
       current.map((row) =>
-        row.id === lastChange.productId ? lastChange.restoreRow : row,
+        lastChange.items.find((item) => item.productId === row.id)?.restoreRow || row,
       ),
     );
     setUndoStack((current) => current.slice(0, -1));
-    setStatus(`已撤销 ${lastChange.sku} 的修改`);
+    setStatus(`已撤销 ${lastChange.label} 的修改`);
+  };
+
+  const applyBatchCategory = async () => {
+    if (!batchCategoryPath || !selectedRows.length) return;
+    const [category1, category2, category3 = "未细分"] = batchCategoryPath.split(" / ");
+    const updates = selectedRows.map((row) => ({
+      productId: row.id,
+      patch: { category1, category2, category3 },
+      restoreRow: row,
+      updatedRow: {
+        ...row,
+        category1,
+        category2,
+        category3,
+        categoryPath: batchCategoryPath,
+        colorTag: category1 === "小玩具" ? "不适用" : row.colorTag,
+      },
+    }));
+    setStatus(`正在批量修改 ${updates.length} 个 SKU 的分类…`);
+    for (let index = 0; index < updates.length; index += 20) {
+      const results = await Promise.all(
+        updates.slice(index, index + 20).map((update) =>
+          fetch("/api/catalog", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productId: update.productId, patch: update.patch }),
+          }),
+        ),
+      );
+      if (results.some((response) => !response.ok)) {
+        setStatus("部分 SKU 未能修改，未保存的项目请重试。");
+        return;
+      }
+    }
+    setRows((current) =>
+      current.map(
+        (row) => updates.find((update) => update.productId === row.id)?.updatedRow || row,
+      ),
+    );
+    setUndoStack((current) => [
+      ...current,
+      {
+        label: `${updates.length} 个 SKU 的批量分类`,
+        items: updates.map((update) => ({
+          productId: update.productId,
+          sku: update.restoreRow.sku,
+          patch: {
+            category1: update.restoreRow.category1,
+            category2: update.restoreRow.category2,
+            category3: update.restoreRow.category3,
+          },
+          restoreRow: update.restoreRow,
+        })),
+      },
+    ]);
+    setBatchCategoryPath("");
+    setStatus(`已批量修改 ${updates.length} 个 SKU 的分类`);
   };
 
   const columnDefs = useMemo<ColDef<GridRow>[]>(
@@ -410,10 +480,39 @@ export function ProductGridManager() {
           paginationPageSize={100}
           paginationPageSizeSelector={[50, 100, 250]}
           onCellValueChanged={saveChange}
+          onSelectionChanged={(event: SelectionChangedEvent<GridRow>) =>
+            setSelectedRows(event.api.getSelectedRows())
+          }
           getRowId={(params) => params.data.id}
           rowHeight={64}
         />
       </section>
+      {!!selectedRows.length && (
+        <section className="skuBatchBar" aria-label="批量操作">
+          <b>已选择 {selectedRows.length} 个 SKU</b>
+          <label>
+            批量修改分类
+            <select
+              value={batchCategoryPath}
+              onChange={(event) => setBatchCategoryPath(event.target.value)}
+            >
+              <option value="">选择新的三级分类</option>
+              {categoryPaths.map((path) => (
+                <option key={path} value={path}>
+                  {path}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="primary"
+            disabled={!batchCategoryPath}
+            onClick={() => void applyBatchCategory()}
+          >
+            应用分类
+          </button>
+        </section>
+      )}
     </main>
   );
 }
