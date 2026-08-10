@@ -393,6 +393,9 @@ export default function Home() {
   const [category, setCategory] = useState("全部产品");
   const [navigationGroup, setNavigationGroup] =
     useState<NavigationGroup>("all");
+  const [expandedLifestyleGroups, setExpandedLifestyleGroups] = useState<
+    Set<NavigationGroup>
+  >(() => new Set(["simulation", "toys"]));
   const [query, setQuery] = useState("");
   const [colorFilter, setColorFilter] = useState("全部颜色");
   const [screenOnly, setScreenOnly] = useState(false);
@@ -1039,22 +1042,47 @@ export default function Home() {
                         ];
                         return (
                           <div className="subnavGroup" key={section.key}>
-                            <button
+                            <div
                               className={
                                 category === "全部产品" &&
                                 navigationGroup === section.key
                                   ? "subnavGroupHead on"
                                   : "subnavGroupHead"
                               }
-                              onClick={() => {
-                                setCategory("全部产品");
-                                setNavigationGroup(section.key);
-                              }}
                             >
-                              <b>{section.name}</b>
-                              <span>{sectionProducts.length}</span>
-                            </button>
-                            {sectionCategories.map((c) => (
+                              <button
+                                className="subnavGroupSelect"
+                                onClick={() => {
+                                  setCategory("全部产品");
+                                  setNavigationGroup(section.key);
+                                }}
+                              >
+                                <b>{section.name}</b>
+                                <span>{sectionProducts.length}</span>
+                              </button>
+                              <button
+                                className="subnavGroupToggle"
+                                aria-label={`${
+                                  expandedLifestyleGroups.has(section.key)
+                                    ? "收起"
+                                    : "展开"
+                                }${section.name}`}
+                                onClick={() =>
+                                  setExpandedLifestyleGroups((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(section.key)) next.delete(section.key);
+                                    else next.add(section.key);
+                                    return next;
+                                  })
+                                }
+                              >
+                                {expandedLifestyleGroups.has(section.key)
+                                  ? "−"
+                                  : "+"}
+                              </button>
+                            </div>
+                            {expandedLifestyleGroups.has(section.key) &&
+                              sectionCategories.map((c) => (
                               <button
                                 className={category === c ? "on" : ""}
                                 onClick={() => {

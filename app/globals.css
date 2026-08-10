@@ -326,14 +326,34 @@ img {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 .subnav .subnavGroupHead {
+  display: flex;
+  align-items: center;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+}
+.subnav .subnavGroupHead b {
+  font-weight: 700;
+}
+.subnav .subnavGroupSelect {
+  flex: 1;
   color: var(--lime-bright);
   font-size: 11px;
   letter-spacing: 0.8px;
   padding-top: 7px;
   padding-bottom: 7px;
+  padding-left: 13px;
+  border-left: 0;
 }
-.subnav .subnavGroupHead b {
+.subnav .subnavGroupHead.on .subnavGroupSelect {
+  color: #fff;
   font-weight: 700;
+}
+.subnav .subnavGroupToggle {
+  width: 28px;
+  color: #8eabc2;
+  font-size: 18px;
+  line-height: 1;
+  padding: 3px 0;
+  border-left: 0;
 }
 .subnavGroup > button:not(.subnavGroupHead) {
   padding-left: 25px;
