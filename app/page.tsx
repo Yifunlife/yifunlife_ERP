@@ -1047,10 +1047,12 @@ const englishNameByProductId: Record<string, string> = {
 const englishProductName = (p: Pick<Product, "id" | "en">) => {
   const translated =
     (!/[\u4e00-\u9fff]/.test(p.en) && p.en.trim()) ||
-  englishNameByProductId[p.id] ||
-  p.en.trim() ||
-  "English translation unavailable";
-  return translated.replace(/^([a-z])/, (_, letter: string) => letter.toUpperCase());
+    englishNameByProductId[p.id] ||
+    p.en.trim() ||
+    "English translation unavailable";
+  return translated.replace(/^([^A-Za-z]*)([a-z])/, (_, prefix: string, letter: string) =>
+    `${prefix}${letter.toUpperCase()}`,
+  );
 };
 const needsEnglishTranslation = (p: Pick<Product, "id" | "en">) =>
   !englishNameByProductId[p.id] && (!p.en.trim() || /[\u4e00-\u9fff]/.test(p.en));
@@ -1283,6 +1285,10 @@ export default function Home() {
     designDeduction: 0,
   });
   const colorScanInFlight = useRef(new Set<string>());
+  const colorScannedThisRun = useRef(new Set<string>());
+  const rescanAllColours =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("rescanColours") === "1";
   useEffect(() => {
     fetch("/api/auth/session")
       .then((r) => r.json())
@@ -1350,18 +1356,22 @@ export default function Home() {
     [overrides, relations, storedCatalogProducts],
   );
   useEffect(() => {
-    const slots = 6 - colorScanInFlight.current.size;
+    const slots = 12 - colorScanInFlight.current.size;
     if (slots <= 0) return;
     products
       .filter(
         (p) =>
           p.category1 === "模拟设备" &&
-          p.colorTag === "待重新识别" &&
+          (p.colorTag === "待重新识别" || rescanAllColours) &&
           p.image &&
-          !colorScanInFlight.current.has(p.id),
+          p.category2 !== "消防区设备" &&
+          !isSpaceTheme(p.name, p.en) &&
+          !colorScanInFlight.current.has(p.id) &&
+          !colorScannedThisRun.current.has(p.id),
       )
       .slice(0, slots)
       .forEach((p) => {
+        colorScannedThisRun.current.add(p.id);
         colorScanInFlight.current.add(p.id);
         autoColor(p.image).then((colorTag) => {
           colorScanInFlight.current.delete(p.id);
@@ -1379,7 +1389,7 @@ export default function Home() {
           });
         });
       });
-  }, [products]);
+  }, [products, rescanAllColours]);
   const level2 = [
     ...new Set(
       products
