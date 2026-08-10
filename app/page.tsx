@@ -2145,7 +2145,7 @@ export default function Home() {
                     <small className={!p.en.trim() ? "missingEnglish" : ""}>
                       {englishProductName(p)}
                     </small>
-                    <small>{p.sku}</small>
+                    <small className="cartSku">{p.sku}</small>
                     <strong>
                       {money(
                         displayPrice(p) === null
@@ -2306,7 +2306,7 @@ export default function Home() {
                       return (
                         <tr key={p.id}>
                           <td>{serial}</td>
-                          <td>{p.sku || "—"}</td>
+                          <td className="quoteSku">{p.sku || "—"}</td>
                           <td>
                             <b>{p.name}</b>
                             <small className={!p.en.trim() ? "missingEnglish" : ""}>
