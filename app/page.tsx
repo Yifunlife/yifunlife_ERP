@@ -415,7 +415,7 @@ export default function Home() {
   );
   const [category, setCategory] = useState("全部产品");
   const [navigationGroup, setNavigationGroup] =
-    useState<NavigationGroup>("all");
+    useState<NavigationGroup>("simulation");
   const [expandedProductGroups, setExpandedProductGroups] = useState<
     Set<string>
   >(() =>
@@ -986,7 +986,7 @@ export default function Home() {
                         );
                       setActiveMajor(major);
                       setCategory("全部产品");
-                      setNavigationGroup("all");
+                      setNavigationGroup("simulation");
                     }
                   }}
                 >
@@ -1017,19 +1017,6 @@ export default function Home() {
                 </button>
                 {expanded && (
                   <div className="subnav">
-                    <button
-                      className={
-                        category === "全部产品" && navigationGroup === "all"
-                          ? "on"
-                          : ""
-                      }
-                      onClick={() => {
-                        setCategory("全部产品");
-                        setNavigationGroup("all");
-                      }}
-                    >
-                      全部产品
-                    </button>
                     {([
                         ...(major === "生活场景 / Lifestyle Scene"
                           ? [
