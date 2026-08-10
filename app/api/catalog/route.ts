@@ -106,7 +106,11 @@ export async function POST(request: Request) {
   if (!(await getLoginSession(request)))
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   const payload = (await request.json()) as {
-    action: "category" | "recommendations" | "kitchenPackage";
+    action:
+      | "category"
+      | "recommendations"
+      | "kitchenPackage"
+      | "organizeToyTiers";
     category?: typeof catalogCategories.$inferInsert;
     productId?: string;
     relatedIds?: string[];
@@ -139,6 +143,54 @@ export async function POST(request: Request) {
       .values(values)
       .onConflictDoUpdate({ target: kitchenPackages.id, set: values });
     return Response.json({ package: values }, { status: 201 });
+  }
+  if (payload.action === "organizeToyTiers") {
+    const [products, overrides] = await Promise.all([
+      db.select().from(catalogProducts),
+      db.select().from(productOverrides),
+    ]);
+    const overrideByProductId = new Map(
+      overrides.map((override) => [override.productId, override]),
+    );
+    const toyProducts = products.filter(
+      (product) =>
+        (overrideByProductId.get(product.id)?.category1 || product.family) ===
+        "小玩具",
+    );
+    const toyAreas = [
+      ...new Set(
+        toyProducts.map(
+          (product) =>
+            overrideByProductId.get(product.id)?.category2 || product.category,
+        ),
+      ),
+    ];
+    const now = new Date().toISOString();
+
+    await env.DB.batch(
+      toyAreas.flatMap((area) =>
+        ["必配", "选配"].map((name) =>
+          env.DB.prepare(
+            "INSERT OR IGNORE INTO catalog_categories (id, level, parent_key, name, created_at) VALUES (?, ?, ?, ?, ?)",
+          ).bind(`toy-tier-${area}-${name}`, 3, `小玩具/${area}`, name, now),
+        ),
+      ),
+    );
+
+    for (let index = 0; index < toyProducts.length; index += 100) {
+      await env.DB.batch(
+        toyProducts.slice(index, index + 100).map((product) =>
+          env.DB.prepare(
+            "INSERT INTO product_overrides (product_id, category_3, updated_at) VALUES (?, ?, ?) ON CONFLICT(product_id) DO UPDATE SET category_3 = excluded.category_3, updated_at = excluded.updated_at",
+          ).bind(product.id, "选配", now),
+        ),
+      );
+    }
+    return Response.json({
+      ok: true,
+      optionalSkuCount: toyProducts.length,
+      areaCount: toyAreas.length,
+    });
   }
   return Response.json({ error: "invalid action" }, { status: 400 });
 }

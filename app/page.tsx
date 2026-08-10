@@ -1242,6 +1242,7 @@ export default function Home() {
     () => new Set([navigationMajors[0]]),
   );
   const [category, setCategory] = useState("全部产品");
+  const [category3Filter, setCategory3Filter] = useState("");
   const [navigationGroup, setNavigationGroup] =
     useState<NavigationGroup>("simulation");
   const [expandedProductGroups, setExpandedProductGroups] = useState<
@@ -1254,6 +1255,9 @@ export default function Home() {
       ]),
     ),
   );
+  const [expandedToyCategories, setExpandedToyCategories] = useState<
+    Set<string>
+  >(new Set());
   const [query, setQuery] = useState("");
   const [colorFilter, setColorFilter] = useState("全部颜色");
   const [screenOnly, setScreenOnly] = useState(false);
@@ -1289,6 +1293,12 @@ export default function Home() {
   const rescanAllColours =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("rescanColours") === "1";
+  const organizeToyTiers =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("organizeToyTiers") ===
+      "1";
+  const toyTierSyncStarted = useRef(false);
+  const [toyTierSyncStatus, setToyTierSyncStatus] = useState("");
   useEffect(() => {
     fetch("/api/auth/session")
       .then((r) => r.json())
@@ -1310,6 +1320,36 @@ export default function Home() {
       })
       .catch(() => undefined);
   }, [auth]);
+  useEffect(() => {
+    if (
+      auth !== "signedIn" ||
+      !organizeToyTiers ||
+      toyTierSyncStarted.current
+    )
+      return;
+    toyTierSyncStarted.current = true;
+    setToyTierSyncStatus("正在整理配套玩具的必配与选配目录…");
+    fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "organizeToyTiers" }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (!result) throw new Error("Could not organize toy tiers");
+        setToyTierSyncStatus(
+          `已将 ${result.optionalSkuCount} 个配套玩具 SKU 归入选配`,
+        );
+        return fetch("/api/catalog");
+      })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setOverrides(data.overrides || []);
+        setCategories(data.categories || []);
+      })
+      .catch(() => setToyTierSyncStatus("配套玩具目录整理失败，请重试。"));
+  }, [auth, organizeToyTiers]);
   const products = useMemo<Product[]>(
     () =>
       storedCatalogProducts.map((p) => {
@@ -1443,6 +1483,7 @@ export default function Home() {
     .filter(
     (p) =>
       (category === "全部产品" || p.category2 === category) &&
+      (!category3Filter || p.category3 === category3Filter) &&
       (navigationGroup === "all" ||
         (navigationGroup === "simulation" && p.category1 !== "小玩具") ||
         (navigationGroup === "toys" && p.category1 === "小玩具")) &&
@@ -1471,7 +1512,9 @@ export default function Home() {
         ? "模拟区"
         : category === "全部产品" && navigationGroup === "toys"
           ? "配套玩具"
-          : category;
+          : category3Filter
+            ? `${category} · ${category3Filter}`
+            : category;
   const cartItems = products
     .filter((p) => cart[p.id])
     .map((p) => ({ ...p, qty: cart[p.id] }));
@@ -1821,6 +1864,9 @@ export default function Home() {
               八大类为一级目录；点击任意 SKU
               可维护主图、价格、分类、标签和常用搭配。
             </p>
+            {toyTierSyncStatus && (
+              <p className="syncStatus">{toyTierSyncStatus}</p>
+            )}
           </div>
           <nav>
             {navigationMajors.map((major, i) => {
@@ -1846,6 +1892,7 @@ export default function Home() {
                         );
                       setActiveMajor(major);
                       setCategory("全部产品");
+                      setCategory3Filter("");
                       setNavigationGroup("simulation");
                     }
                   }}
@@ -1927,10 +1974,12 @@ export default function Home() {
                                 onClick={() => {
                                   if (isPackageSection) {
                                     setCategory("厨房专区");
+                                    setCategory3Filter("");
                                     setKitchenMode("packages");
                                     setNavigationGroup("all");
                                   } else {
                                     setCategory("全部产品");
+                                    setCategory3Filter("");
                                     setNavigationGroup(section.key);
                                   }
                                 }}
@@ -1963,25 +2012,96 @@ export default function Home() {
                             </div>
                             {!isPackageSection &&
                               sectionExpanded &&
-                              sectionCategories.map((c) => (
-                              <button
-                                className={category === c ? "on" : ""}
-                                onClick={() => {
-                                  setCategory(c);
-                                  setNavigationGroup(section.key);
-                                }}
-                                key={c}
-                              >
-                                {c}
-                                <span>
-                                  {
-                                    sectionProducts.filter(
-                                      (p) => p.category2 === c,
-                                    ).length
-                                  }
-                                </span>
-                              </button>
-                            ))}
+                              sectionCategories.map((c) => {
+                                const categoryProducts = sectionProducts.filter(
+                                  (p) => p.category2 === c,
+                                );
+                                const toyCategoryKey = `${sectionKey}:${c}`;
+                                const toyCategoryExpanded =
+                                  expandedToyCategories.has(toyCategoryKey);
+                                if (section.key !== "toys")
+                                  return (
+                                    <button
+                                      className={category === c ? "on" : ""}
+                                      onClick={() => {
+                                        setCategory(c);
+                                        setCategory3Filter("");
+                                        setNavigationGroup(section.key);
+                                      }}
+                                      key={c}
+                                    >
+                                      {c}
+                                      <span>{categoryProducts.length}</span>
+                                    </button>
+                                  );
+                                return (
+                                  <div className="subnavTierGroup" key={c}>
+                                    <div className="subnavTierHead">
+                                      <button
+                                        className={
+                                          category === c && !category3Filter
+                                            ? "on"
+                                            : ""
+                                        }
+                                        onClick={() => {
+                                          setCategory(c);
+                                          setCategory3Filter("");
+                                          setNavigationGroup("toys");
+                                        }}
+                                      >
+                                        {c}
+                                        <span>{categoryProducts.length}</span>
+                                      </button>
+                                      <button
+                                        className="subnavTierToggle"
+                                        aria-label={`${
+                                          toyCategoryExpanded ? "收起" : "展开"
+                                        }${c}三级目录`}
+                                        onClick={() =>
+                                          setExpandedToyCategories((current) => {
+                                            const next = new Set(current);
+                                            if (next.has(toyCategoryKey))
+                                              next.delete(toyCategoryKey);
+                                            else next.add(toyCategoryKey);
+                                            return next;
+                                          })
+                                        }
+                                      >
+                                        {toyCategoryExpanded ? "−" : "+"}
+                                      </button>
+                                    </div>
+                                    {toyCategoryExpanded && (
+                                      <div className="subnavTertiary">
+                                        {["必配", "选配"].map((tier) => (
+                                          <button
+                                            className={
+                                              category === c &&
+                                              category3Filter === tier
+                                                ? "on"
+                                                : ""
+                                            }
+                                            key={tier}
+                                            onClick={() => {
+                                              setCategory(c);
+                                              setCategory3Filter(tier);
+                                              setNavigationGroup("toys");
+                                            }}
+                                          >
+                                            {tier}
+                                            <span>
+                                              {
+                                                categoryProducts.filter(
+                                                  (p) => p.category3 === tier,
+                                                ).length
+                                              }
+                                            </span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                           </div>
                         );
                       })}

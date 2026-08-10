@@ -339,6 +339,41 @@ img {
 .subnavGroup > button:not(.subnavGroupHead) {
   padding-left: 25px;
 }
+.subnavTierGroup {
+  margin-top: 2px;
+}
+.subnavTierHead {
+  display: flex;
+  align-items: center;
+}
+.subnav .subnavTierHead > button:first-child {
+  flex: 1;
+  padding-left: 25px;
+}
+.subnav .subnavTierToggle {
+  width: 28px;
+  border-left: 0;
+  color: #8eabc2;
+  font-size: 16px;
+  line-height: 1;
+  padding: 3px 0;
+}
+.subnavTertiary {
+  margin-left: 25px;
+}
+.subnav .subnavTertiary button {
+  color: #a9bdce;
+  font-size: 11px;
+  padding-left: 18px;
+}
+.subnav .subnavTertiary button.on {
+  color: #fff;
+}
+.syncStatus {
+  color: var(--lime-bright);
+  font-size: 11px;
+  margin-top: 8px;
+}
 .sideFoot {
   margin-top: auto;
   border-top: 1px solid rgba(255, 255, 255, 0.13);
