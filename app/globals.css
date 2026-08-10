@@ -51,26 +51,8 @@ img {
   border-radius: 20px;
   box-shadow: 0 22px 60px rgba(6, 47, 87, 0.13);
 }
-.loginCard > .brandMark {
-  font-size: 28px;
-}
 .loginBrand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--navy);
   margin-bottom: 34px;
-}
-.loginBrand strong {
-  font-size: 20px;
-  letter-spacing: 2px;
-}
-.loginBrand small {
-  display: block;
-  color: #8a969b;
-  font-size: 10px;
-  letter-spacing: 2px;
-  margin-top: 4px;
 }
 .loginCard h1 {
   font-size: 28px;
@@ -133,31 +115,30 @@ img {
   z-index: 20;
 }
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-  color: var(--navy);
-}
-.brandMark {
-  font-size: 24px;
-  line-height: 10px;
-  letter-spacing: 3px;
-  color: var(--lime);
-  transform: rotate(-8deg);
-  display: inline-block;
-  font-weight: 900;
-}
-.brand strong {
-  font-size: 19px;
-  letter-spacing: 2px;
-}
-.brand small {
   display: block;
-  font-size: 10px;
-  letter-spacing: 3px;
-  color: #8c9398;
-  margin-top: 2px;
+  line-height: 0;
+  text-decoration: none;
+}
+.companyLogo {
+  display: block;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.headerLogo {
+  width: 192px;
+  max-height: 46px;
+}
+.loginLogo {
+  width: 238px;
+  max-height: 54px;
+}
+.loginCard > .loginLogo {
+  margin-bottom: 24px;
+}
+.quoteLogo {
+  width: 220px;
+  max-height: 48px;
 }
 .topActions {
   display: flex;
@@ -939,9 +920,6 @@ img {
     height: auto;
     padding: 14px 16px;
     gap: 12px;
-  }
-  .brand small {
-    display: none;
   }
   .topActions {
     flex: 1;

@@ -254,6 +254,15 @@ function Visual({ p, mini = false }: { p: Product; mini?: boolean }) {
     <span className="productFallback">{p.category2.slice(0, 4)}</span>
   );
 }
+function CompanyLogo({ className = "" }: { className?: string }) {
+  return (
+    <img
+      className={`companyLogo ${className}`}
+      src="/brand/yifun-life-logo.png"
+      alt="亦玩集团 Yifun Life"
+    />
+  );
+}
 function autoColor(src: string): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -858,11 +867,7 @@ export default function Home() {
     return (
       <main className="loginShell">
         <div className="loginCard">
-          <span className="brandMark">
-            ••
-            <br />
-            ••
-          </span>
+          <CompanyLogo className="loginLogo" />
           <p>正在验证访问权限…</p>
         </div>
       </main>
@@ -872,15 +877,7 @@ export default function Home() {
       <main className="loginShell">
         <form className="loginCard" onSubmit={login}>
           <div className="loginBrand">
-            <span className="brandMark">
-              ••
-              <br />
-              ••
-            </span>
-            <div>
-              <strong>YIFUN LIFE</strong>
-              <small>亦玩报价中心</small>
-            </div>
+            <CompanyLogo className="loginLogo" />
           </div>
           <span className="eyebrow">PRIVATE ACCESS</span>
           <h1>登录产品报价系统</h1>
@@ -918,15 +915,7 @@ export default function Home() {
     <main>
       <header className="topbar">
         <a className="brand" href="#">
-          <span className="brandMark">
-            ••
-            <br />
-            ••
-          </span>
-          <span>
-            <strong>YIFUN LIFE</strong>
-            <small>亦玩报价中心</small>
-          </span>
+          <CompanyLogo className="headerLogo" />
         </a>
         <div className="topActions">
           <label className="search">
@@ -2218,12 +2207,7 @@ export default function Home() {
             <article className="quotePaper quotePaperWide">
               <header className="quoteHeader">
                 <div className="quoteBrand">
-                  <span className="brandMark">
-                    ••
-                    <br />
-                    ••
-                  </span>
-                  <strong>YIFUN LIFE</strong>
+                  <CompanyLogo className="quoteLogo" />
                 </div>
                 <div>
                   <span>QUOTATION · {currency}</span>
