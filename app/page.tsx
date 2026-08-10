@@ -193,10 +193,10 @@ const kitchenPackageTemplate: KitchenPackage = {
     },
   ],
 };
-const colorOptions = ["红", "粉", "黄", "蓝", "黑", "白", "橙", "绿", "紫"];
+const colorOptions = ["红", "粉", "黄", "蓝", "黑", "白", "银色", "橙", "绿", "紫"];
 const colorSwatches: Record<string, string> = {
   红: "#d83d48", 粉: "#ef9a9a", 黄: "#ddbd26", 蓝: "#2f7eb9",
-  黑: "#1c242d", 白: "#ffffff", 橙: "#e9812f", 绿: "#3f9862", 紫: "#8756b6",
+  黑: "#1c242d", 白: "#ffffff", 银色: "#b9bec4", 橙: "#e9812f", 绿: "#3f9862", 紫: "#8756b6",
 };
 const baseColorByLegacyTag: Record<string, string> = {
   浅红: "粉", 深红: "红",
@@ -209,7 +209,7 @@ const baseColorByLegacyTag: Record<string, string> = {
 };
 const normalizeColorTag = (colorTag: string) => baseColorByLegacyTag[colorTag] || colorTag;
 const colorEnglish: Record<string, string> = {
-  红: "Red", 粉: "Pink", 黄: "Yellow", 蓝: "Blue", 黑: "Black", 白: "White",
+  红: "Red", 粉: "Pink", 黄: "Yellow", 蓝: "Blue", 黑: "Black", 白: "White", 银色: "Silver",
   橙: "Orange", 绿: "Green", 紫: "Purple",
   无主图: "No main image", 待重新识别: "Pending colour scan", 未识别: "Colour not identified", 不适用: "N/A",
 };
@@ -225,6 +225,7 @@ const unitLabel = (unit: string) => ({
   zh: unit || "—",
   en: unitEnglish[unit] || (unit ? "Unit" : "—"),
 });
+const isSpaceTheme = (name: string, en: string) => /太空|space/i.test(`${name} ${en}`);
 const screenWords = /屏|screen|投影|多媒体|互动|vr|电视|监视/i;
 const money = (value: number | null, currency: "CNY" | "USD") => {
   if (value === null) return "待确认";
@@ -1043,11 +1044,14 @@ const englishNameByProductId: Record<string, string> = {
   "senior-Y11345": "VR three screens",
   "senior-Y11346": "Sniper Elite",
 };
-const englishProductName = (p: Pick<Product, "id" | "en">) =>
-  (!/[\u4e00-\u9fff]/.test(p.en) && p.en.trim()) ||
+const englishProductName = (p: Pick<Product, "id" | "en">) => {
+  const translated =
+    (!/[\u4e00-\u9fff]/.test(p.en) && p.en.trim()) ||
   englishNameByProductId[p.id] ||
   p.en.trim() ||
   "English translation unavailable";
+  return translated.replace(/^([a-z])/, (_, letter: string) => letter.toUpperCase());
+};
 const needsEnglishTranslation = (p: Pick<Product, "id" | "en">) =>
   !englishNameByProductId[p.id] && (!p.en.trim() || /[\u4e00-\u9fff]/.test(p.en));
 const quoteArea = (p: Product) => {
@@ -1165,7 +1169,7 @@ function autoColor(src: string): Promise<string> {
             : value > 0.82 && saturation < 0.18
               ? "白"
               : saturation < 0.14
-                ? ""
+                ? "银色"
                 : hue < 18 || hue >= 345
                   ? value >= 0.7 && saturation <= 0.75
                     ? "粉"
@@ -1307,9 +1311,10 @@ export default function Home() {
         const image = o?.imageUrl || p.image;
         const category1 = o?.category1 || p.family;
         const category2 = o?.category2 || p.category;
+        const name = o?.name || p.name;
         return {
           ...p,
-          name: o?.name || p.name,
+          name,
           price:
             o?.price === undefined || o.price === null || o.price === ""
               ? p.price
@@ -1322,7 +1327,9 @@ export default function Home() {
           category2,
           category3: o?.category3 || "未细分",
           colorTag:
-            category1 === "小玩具"
+            isSpaceTheme(name, p.en)
+              ? "银色"
+              : category1 === "小玩具"
               ? "不适用"
               : category1 === "模拟设备" && category2 === "消防区设备"
                   ? "红"
@@ -1591,7 +1598,9 @@ export default function Home() {
   const save = async () => {
     if (!draft) return;
     const colorTag =
-      draft.category1 === "模拟设备" && draft.category2 === "消防区设备"
+      isSpaceTheme(draft.name, draft.en)
+        ? "银色"
+        : draft.category1 === "模拟设备" && draft.category2 === "消防区设备"
         ? "红"
         : normalizeColorTag(draft.colorTag);
     const patch = {
@@ -1651,7 +1660,11 @@ export default function Home() {
               ? {
                   ...x,
                   image: d.imageUrl,
-                  colorTag: x.category2 === "消防区设备" ? "红" : colorTag,
+                  colorTag: isSpaceTheme(x.name, x.en)
+                    ? "银色"
+                    : x.category2 === "消防区设备"
+                      ? "红"
+                      : colorTag,
                 }
               : x,
           ),
