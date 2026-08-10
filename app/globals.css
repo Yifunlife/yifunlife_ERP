@@ -317,6 +317,27 @@ img {
   border-left: 2px solid var(--lime-bright);
   font-weight: 700;
 }
+.subnavGroup {
+  margin-top: 8px;
+}
+.subnavGroup + .subnavGroup {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.subnav .subnavGroupHead {
+  color: var(--lime-bright);
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.subnav .subnavGroupHead b {
+  font-weight: 700;
+}
+.subnavGroup > button:not(.subnavGroupHead) {
+  padding-left: 25px;
+}
 .sideFoot {
   margin-top: auto;
   border-top: 1px solid rgba(255, 255, 255, 0.13);

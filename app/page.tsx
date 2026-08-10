@@ -10,6 +10,7 @@ type MajorCategory =
   | "拼装手工 / Assemble by Hand"
   | "机械传动 / Playground Scenes"
   | "多媒体互动 / Multimedia Interactivity";
+type NavigationGroup = "all" | "simulation" | "toys";
 type Override = {
   productId: string;
   name?: string | null;
@@ -390,6 +391,8 @@ export default function Home() {
     () => new Set([majorCategories[0]]),
   );
   const [category, setCategory] = useState("全部产品");
+  const [navigationGroup, setNavigationGroup] =
+    useState<NavigationGroup>("all");
   const [query, setQuery] = useState("");
   const [colorFilter, setColorFilter] = useState("全部颜色");
   const [screenOnly, setScreenOnly] = useState(false);
@@ -520,8 +523,9 @@ export default function Home() {
     ),
   ];
   const majorProducts = products.filter((p) => p.majorCategory === activeMajor);
+  const isLifestyleMajor = activeMajor === "生活场景 / Lifestyle Scene";
   const isKitchenView =
-    activeMajor === "生活场景 / Lifestyle Scene" && category === "厨房专区";
+    isLifestyleMajor && category === "厨房专区";
   const kitchenProducts = products.filter(
     (p) =>
       p.majorCategory === "生活场景 / Lifestyle Scene" &&
@@ -550,7 +554,7 @@ export default function Home() {
   const kitchenPackages = savedKitchenPackages.length
     ? savedKitchenPackages
     : [kitchenPackageTemplate];
-  const visible = (
+  const visible = [...(
     isKitchenView
       ? kitchenMode === "main"
         ? kitchenMainProducts
@@ -558,9 +562,14 @@ export default function Home() {
           ? kitchenAddonProducts
           : []
       : majorProducts
-  ).filter(
+  )]
+    .filter(
     (p) =>
       (category === "全部产品" || p.category2 === category) &&
+      (!isLifestyleMajor ||
+        navigationGroup === "all" ||
+        (navigationGroup === "simulation" && p.category1 !== "小玩具") ||
+        (navigationGroup === "toys" && p.category1 === "小玩具")) &&
       (!query ||
         `${p.sku}${p.name}${p.en}${p.majorCategory}${p.category1}${p.category2}${p.category3}`
           .toLowerCase()
@@ -568,13 +577,27 @@ export default function Home() {
       (colorFilter === "全部颜色" || p.colorTag === colorFilter) &&
       (!screenOnly || p.hasScreen) &&
       (!recommendedOnly || p.isRecommended),
-  );
+    )
+    .sort(
+      (a, b) =>
+        isLifestyleMajor
+          ? Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具")
+          : 0,
+    );
   const grouped = Object.entries(
     visible.reduce<Record<string, Product[]>>((a, p) => {
       (a[p.category2] ||= []).push(p);
       return a;
     }, {}),
   );
+  const catalogTitle =
+    query
+      ? `“${query}” 的结果`
+      : isLifestyleMajor && category === "全部产品" && navigationGroup === "simulation"
+        ? "模拟区"
+        : isLifestyleMajor && category === "全部产品" && navigationGroup === "toys"
+          ? "配套玩具"
+          : category;
   const cartItems = products
     .filter((p) => cart[p.id])
     .map((p) => ({ ...p, qty: cart[p.id] }));
@@ -948,6 +971,7 @@ export default function Home() {
                       setExpandedMajors((current) => new Set(current).add(major));
                       setActiveMajor(major);
                       setCategory("全部产品");
+                      setNavigationGroup("all");
                     }
                   }}
                 >
@@ -974,6 +998,7 @@ export default function Home() {
                         onClick={() => {
                           setCategory("厨房专区");
                           setKitchenMode("packages");
+                          setNavigationGroup("all");
                         }}
                       >
                         厨房专区 / Kitchen
@@ -981,34 +1006,104 @@ export default function Home() {
                       </button>
                     )}
                     <button
-                      className={category === "全部产品" ? "on" : ""}
-                      onClick={() => setCategory("全部产品")}
+                      className={
+                        category === "全部产品" && navigationGroup === "all"
+                          ? "on"
+                          : ""
+                      }
+                      onClick={() => {
+                        setCategory("全部产品");
+                        setNavigationGroup("all");
+                      }}
                     >
                       全部产品
                     </button>
-                    {[
-                      ...new Set(
-                        products
-                          .filter((p) => p.majorCategory === major)
-                          .map((p) => p.category2),
-                      ),
-                    ].map((c) => (
-                      <button
-                        className={category === c ? "on" : ""}
-                        onClick={() => setCategory(c)}
-                        key={c}
-                      >
-                        {c}
-                        <span>
-                          {
-                            products.filter(
-                              (p) =>
-                                p.majorCategory === major && p.category2 === c,
-                            ).length
-                          }
-                        </span>
-                      </button>
-                    ))}
+                    {major === "生活场景 / Lifestyle Scene" ? (
+                      ([
+                        {
+                          key: "simulation" as const,
+                          name: "模拟区",
+                          matches: (p: Product) => p.category1 !== "小玩具",
+                        },
+                        {
+                          key: "toys" as const,
+                          name: "配套玩具",
+                          matches: (p: Product) => p.category1 === "小玩具",
+                        },
+                      ]).map((section) => {
+                        const sectionProducts = products.filter(
+                          (p) => p.majorCategory === major && section.matches(p),
+                        );
+                        const sectionCategories = [
+                          ...new Set(sectionProducts.map((p) => p.category2)),
+                        ];
+                        return (
+                          <div className="subnavGroup" key={section.key}>
+                            <button
+                              className={
+                                category === "全部产品" &&
+                                navigationGroup === section.key
+                                  ? "subnavGroupHead on"
+                                  : "subnavGroupHead"
+                              }
+                              onClick={() => {
+                                setCategory("全部产品");
+                                setNavigationGroup(section.key);
+                              }}
+                            >
+                              <b>{section.name}</b>
+                              <span>{sectionProducts.length}</span>
+                            </button>
+                            {sectionCategories.map((c) => (
+                              <button
+                                className={category === c ? "on" : ""}
+                                onClick={() => {
+                                  setCategory(c);
+                                  setNavigationGroup(section.key);
+                                }}
+                                key={c}
+                              >
+                                {c}
+                                <span>
+                                  {
+                                    sectionProducts.filter(
+                                      (p) => p.category2 === c,
+                                    ).length
+                                  }
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      [
+                        ...new Set(
+                          products
+                            .filter((p) => p.majorCategory === major)
+                            .map((p) => p.category2),
+                        ),
+                      ].map((c) => (
+                        <button
+                          className={category === c ? "on" : ""}
+                          onClick={() => {
+                            setCategory(c);
+                            setNavigationGroup("all");
+                          }}
+                          key={c}
+                        >
+                          {c}
+                          <span>
+                            {
+                              products.filter(
+                                (p) =>
+                                  p.majorCategory === major && p.category2 === c,
+                              ).length
+                            }
+                          </span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
@@ -1027,7 +1122,7 @@ export default function Home() {
                 {activeMajor} ·{" "}
                 {isKitchenView ? kitchenProducts.length : visible.length} ITEMS
               </span>
-              <h2>{query ? `“${query}” 的结果` : category}</h2>
+              <h2>{catalogTitle}</h2>
               <p>
                 {isKitchenView
                   ? "套餐与单点互不影响；套餐成员直接引用独立 SKU 的名称、价格与库存。"
