@@ -36,6 +36,11 @@ type Category = {
   name: string;
 };
 
+type ProductRelation = {
+  productId: string;
+  relatedProductId: string;
+};
+
 type GridRow = {
   id: string;
   image: string;
@@ -172,6 +177,14 @@ export function ProductGridManager() {
   const [undoStack, setUndoStack] = useState<UndoChange[]>([]);
   const [selectedRows, setSelectedRows] = useState<GridRow[]>([]);
   const [batchCategoryPath, setBatchCategoryPath] = useState("");
+  const [relations, setRelations] = useState<ProductRelation[]>([]);
+  const [pairingOpen, setPairingOpen] = useState(false);
+  const [pairingCategory, setPairingCategory] = useState("");
+  const [pairingSourceId, setPairingSourceId] = useState("");
+  const [pairingTargetIds, setPairingTargetIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [pairingSaving, setPairingSaving] = useState(false);
 
   const load = async () => {
     const response = await fetch("/api/catalog");
@@ -182,6 +195,7 @@ export function ProductGridManager() {
     const data = await response.json();
     setRows(gridRows(data.products || [], data.overrides || []));
     setCategories(data.categories || []);
+    setRelations(data.recommendations || []);
     setStatus(`${(data.products || []).length} 个 SKU · 双击分类或颜色即可修改`);
   };
 
@@ -199,6 +213,86 @@ export function ProductGridManager() {
       ])].sort(),
     [categories, rows],
   );
+
+  const simulationCategories = useMemo(
+    () =>
+      [...new Set(
+        rows
+          .filter((row) => row.category1 !== "小玩具")
+          .map((row) => row.category2),
+      )].sort(),
+    [rows],
+  );
+  const pairingSimulationRows = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          row.category1 !== "小玩具" && row.category2 === pairingCategory,
+      ),
+    [pairingCategory, rows],
+  );
+  const pairingToyRows = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          row.category1 === "小玩具" && row.category2 === pairingCategory,
+      ),
+    [pairingCategory, rows],
+  );
+
+  const openPairingManager = () => {
+    setPairingCategory((current) => current || simulationCategories[0] || "");
+    setPairingSourceId("");
+    setPairingTargetIds(new Set());
+    setPairingOpen(true);
+  };
+
+  const selectPairingSource = (productId: string) => {
+    setPairingSourceId(productId);
+    setPairingTargetIds(
+      new Set(
+        relations
+          .filter((relation) => relation.productId === productId)
+          .map((relation) => relation.relatedProductId),
+      ),
+    );
+  };
+
+  const togglePairingTarget = (productId: string) =>
+    setPairingTargetIds((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+
+  const savePairing = async () => {
+    if (!pairingSourceId) return;
+    setPairingSaving(true);
+    const response = await fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "recommendations",
+        productId: pairingSourceId,
+        relatedIds: [...pairingTargetIds],
+      }),
+    });
+    setPairingSaving(false);
+    if (!response.ok) {
+      setStatus("配对保存失败，请重试。");
+      return;
+    }
+    setRelations((current) => [
+      ...current.filter((relation) => relation.productId !== pairingSourceId),
+      ...[...pairingTargetIds].map((relatedProductId) => ({
+        productId: pairingSourceId,
+        relatedProductId,
+      })),
+    ]);
+    setStatus(`已保存 ${pairingTargetIds.size} 个配套玩具关联`);
+    setPairingOpen(false);
+  };
 
   const saveChange = async (event: CellValueChangedEvent<GridRow>) => {
     if (!event.data || event.newValue === event.oldValue) return;
@@ -444,6 +538,9 @@ export function ProductGridManager() {
           <p>{status}</p>
         </div>
         <div className="skuGridActions">
+          <button className="pairingManageButton" onClick={openPairingManager}>
+            管理配对
+          </button>
           <button
             className="outline"
             disabled={!undoStack.length}
@@ -512,6 +609,98 @@ export function ProductGridManager() {
             应用分类
           </button>
         </section>
+      )}
+      {pairingOpen && (
+        <div className="pairingOverlay">
+          <section className="pairingManager" aria-label="管理产品配对">
+            <header className="pairingHead">
+              <div>
+                <span>PRODUCT PAIRING</span>
+                <h2>管理配对</h2>
+              </div>
+              <button onClick={() => setPairingOpen(false)} aria-label="关闭配对管理">
+                ×
+              </button>
+            </header>
+            <div className="pairingFilters">
+              <label>
+                模拟区分类
+                <select
+                  value={pairingCategory}
+                  onChange={(event) => {
+                    setPairingCategory(event.target.value);
+                    setPairingSourceId("");
+                    setPairingTargetIds(new Set());
+                  }}
+                >
+                  {simulationCategories.map((category) => (
+                    <option key={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+              <p>先选择左侧模拟区产品，再在右侧勾选一个或多个配套玩具。</p>
+            </div>
+            <div className="pairingColumns">
+              <section>
+                <header>
+                  <b>模拟区产品</b>
+                  <span>{pairingSimulationRows.length} 项</span>
+                </header>
+                <div className="pairingThumbGrid">
+                  {pairingSimulationRows.map((product) => (
+                    <button
+                      className={
+                        product.id === pairingSourceId ? "selected" : ""
+                      }
+                      key={product.id}
+                      onClick={() => selectPairingSource(product.id)}
+                      title={`${product.productName} · ${product.sku}`}
+                      aria-label={`选择 ${product.productName}`}
+                    >
+                      {product.image && <img src={product.image} alt="" />}
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <header>
+                  <b>配套玩具</b>
+                  <span>{pairingToyRows.length} 项</span>
+                </header>
+                <div className="pairingThumbGrid">
+                  {pairingToyRows.map((product) => (
+                    <button
+                      className={
+                        pairingTargetIds.has(product.id) ? "selected" : ""
+                      }
+                      disabled={!pairingSourceId}
+                      key={product.id}
+                      onClick={() => togglePairingTarget(product.id)}
+                      title={`${product.productName} · ${product.sku}`}
+                      aria-label={`关联 ${product.productName}`}
+                    >
+                      {product.image && <img src={product.image} alt="" />}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+            <footer className="pairingFoot">
+              <span>
+                {pairingSourceId
+                  ? `已选择 ${pairingTargetIds.size} 个配套玩具`
+                  : "请选择左侧模拟区产品"}
+              </span>
+              <button
+                className="primary"
+                disabled={!pairingSourceId || pairingSaving}
+                onClick={() => void savePairing()}
+              >
+                {pairingSaving ? "保存中…" : "保存配对"}
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
     </main>
   );
