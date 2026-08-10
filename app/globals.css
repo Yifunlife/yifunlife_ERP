@@ -406,6 +406,16 @@ img {
   color: #71808b;
   font-size: 13px;
 }
+.skuGridActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.skuGridActions .outline:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
 .skuGridToolbar {
   max-width: 1700px;
   margin: 0 auto 14px;
@@ -455,6 +465,61 @@ img {
   display: flex;
   align-items: center;
 }
+.gridColourValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.gridColourDot {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border: 1px solid rgba(16, 38, 54, 0.22);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55);
+}
+.gridCategoryPath {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #315a3e;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gridPicker {
+  width: min(500px, 76vw);
+  max-height: min(520px, 68vh);
+  overflow: auto;
+  border: 1px solid #c6d2c7;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 32px rgba(14, 44, 58, 0.2);
+  padding: 5px;
+}
+.gridPicker button {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  padding: 7px 10px;
+  text-align: left;
+  font: inherit;
+}
+.gridPicker button:hover {
+  background: #f1f5ec;
+}
+.gridPicker button.selected {
+  border-left-color: var(--lime-bright);
+  background: #edf4df;
+  color: #244b31;
+  font-weight: 800;
+}
 .skuGridImage {
   width: 48px;
   height: 48px;
@@ -475,6 +540,7 @@ img {
 @media (max-width: 720px) {
   .skuGridPage { padding: 22px 16px; }
   .skuGridHeader, .skuGridToolbar { align-items: start; flex-direction: column; }
+  .skuGridActions { justify-content: flex-start; }
   .skuGridTable { height: calc(100dvh - 300px); }
 }
 .sideFoot {

@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   CellValueChangedEvent,
   ColDef,
+  ICellEditorParams,
   ICellRendererParams,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
@@ -31,7 +39,7 @@ type GridRow = {
   id: string;
   image: string;
   sku: string;
-  styleNo: string;
+  productName: string;
   category1: string;
   category2: string;
   category3: string;
@@ -41,6 +49,13 @@ type GridRow = {
   note: string;
   name: string;
   en: string;
+};
+
+type UndoChange = {
+  productId: string;
+  sku: string;
+  patch: Record<string, string>;
+  restoreRow: GridRow;
 };
 
 const colorChoices = [
@@ -60,6 +75,55 @@ const colorChoices = [
   "无主图",
 ];
 
+const colorSwatches: Record<string, string> = {
+  红: "#d83d48", 粉: "#ef9a9a", 黄: "#ddbd26", 蓝: "#2f7eb9",
+  黑: "#1c242d", 白: "#ffffff", 银色: "#b9bec4", 橙: "#e9812f",
+  绿: "#3f9862", 紫: "#8756b6", 不适用: "#b9c3bd",
+  待重新识别: "#d7b55f", 未识别: "#d7b55f", 无主图: "#c9cfca",
+};
+
+function ColourDot({ value }: { value: string }) {
+  return (
+    <span
+      className="gridColourDot"
+      style={{ background: colorSwatches[value] || "#b9c3bd" }}
+      aria-hidden="true"
+    />
+  );
+}
+
+type PickerEditorProps = ICellEditorParams<GridRow, string> & {
+  values: string[];
+  showColour?: boolean;
+};
+
+const PickerEditor = forwardRef<{ getValue: () => string }, PickerEditorProps>(
+  ({ value, values, showColour, stopEditing }, ref) => {
+    const selected = useRef(String(value || ""));
+    useImperativeHandle(ref, () => ({ getValue: () => selected.current }));
+    return (
+      <div className="gridPicker" role="listbox">
+        {values.map((option) => (
+          <button
+            className={option === selected.current ? "selected" : ""}
+            key={option}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              selected.current = option;
+              stopEditing();
+            }}
+            type="button"
+          >
+            {showColour && <ColourDot value={option} />}
+            <span>{option}</span>
+          </button>
+        ))}
+      </div>
+    );
+  },
+);
+PickerEditor.displayName = "PickerEditor";
+
 const categoryPath = (category1: string, category2: string, category3: string) =>
   [category1, category2, category3].filter(Boolean).join(" / ");
 
@@ -74,7 +138,7 @@ const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] 
       id: product.id,
       image: override?.imageUrl || product.image,
       sku: product.sku,
-      styleNo: product.id,
+      productName: product.name,
       category1,
       category2,
       category3,
@@ -99,6 +163,7 @@ export function ProductGridManager() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("正在加载产品清单…");
+  const [undoStack, setUndoStack] = useState<UndoChange[]>([]);
 
   const load = async () => {
     const response = await fetch("/api/catalog");
@@ -132,6 +197,7 @@ export function ProductGridManager() {
     const field = event.colDef.field;
     let patch: Record<string, string>;
     let updatedRow = event.data;
+    let undoChange: UndoChange;
 
     if (field === "categoryPath") {
       const [category1, category2, category3 = "未细分"] = String(event.newValue)
@@ -145,9 +211,34 @@ export function ProductGridManager() {
         categoryPath: categoryPath(category1, category2, category3),
         colorTag: category1 === "小玩具" ? "不适用" : event.data.colorTag,
       };
+      const [oldCategory1, oldCategory2, oldCategory3 = "未细分"] = String(
+        event.oldValue,
+      ).split(" / ");
+      undoChange = {
+        productId: event.data.id,
+        sku: event.data.sku,
+        patch: {
+          category1: oldCategory1,
+          category2: oldCategory2,
+          category3: oldCategory3,
+        },
+        restoreRow: {
+          ...event.data,
+          category1: oldCategory1,
+          category2: oldCategory2,
+          category3: oldCategory3,
+          categoryPath: categoryPath(oldCategory1, oldCategory2, oldCategory3),
+        },
+      };
     } else if (field === "colorTag") {
       patch = { colorTag: String(event.newValue) };
       updatedRow = { ...event.data, colorTag: String(event.newValue) };
+      undoChange = {
+        productId: event.data.id,
+        sku: event.data.sku,
+        patch: { colorTag: String(event.oldValue) },
+        restoreRow: { ...event.data, colorTag: String(event.oldValue) },
+      };
     } else {
       return;
     }
@@ -161,11 +252,39 @@ export function ProductGridManager() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ productId: event.data.id, patch }),
     });
-    setStatus(
-      response.ok
-        ? `已保存 ${event.data.sku}`
-        : `未能保存 ${event.data.sku}，请刷新后重试。`,
+    if (response.ok) {
+      setUndoStack((current) => [...current, undoChange]);
+      setStatus(`已保存 ${event.data.sku}`);
+    } else {
+      setRows((current) =>
+        current.map((row) =>
+          row.id === event.data.id ? undoChange.restoreRow : row,
+        ),
+      );
+      setStatus(`未能保存 ${event.data.sku}，已恢复原值。`);
+    }
+  };
+
+  const undoLastChange = async () => {
+    const lastChange = undoStack.at(-1);
+    if (!lastChange) return;
+    setStatus(`正在撤销 ${lastChange.sku}…`);
+    const response = await fetch("/api/catalog", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productId: lastChange.productId, patch: lastChange.patch }),
+    });
+    if (!response.ok) {
+      setStatus(`未能撤销 ${lastChange.sku}，请重试。`);
+      return;
+    }
+    setRows((current) =>
+      current.map((row) =>
+        row.id === lastChange.productId ? lastChange.restoreRow : row,
+      ),
     );
+    setUndoStack((current) => current.slice(0, -1));
+    setStatus(`已撤销 ${lastChange.sku} 的修改`);
   };
 
   const columnDefs = useMemo<ColDef<GridRow>[]>(
@@ -195,15 +314,19 @@ export function ProductGridManager() {
             <span className="skuGridImageEmpty">暂无图</span>
           ),
       },
-      { headerName: "SKU", field: "sku", minWidth: 118 },
-      { headerName: "款号", field: "styleNo", minWidth: 126 },
+      { headerName: "SKU", field: "productName", minWidth: 180, flex: 1 },
+      { headerName: "款号", field: "sku", minWidth: 126 },
       {
         headerName: "分类（三级）",
         field: "categoryPath",
         minWidth: 280,
         flex: 1,
         editable: true,
-        cellEditor: "agSelectCellEditor",
+        cellRenderer: (params: ICellRendererParams<GridRow, string>) => (
+          <span className="gridCategoryPath">{params.value}</span>
+        ),
+        cellEditor: PickerEditor,
+        cellEditorPopup: true,
         cellEditorParams: { values: categoryPaths },
       },
       {
@@ -211,8 +334,15 @@ export function ProductGridManager() {
         field: "colorTag",
         minWidth: 130,
         editable: true,
-        cellEditor: "agSelectCellEditor",
-        cellEditorParams: { values: colorChoices },
+        cellRenderer: (params: ICellRendererParams<GridRow, string>) => (
+          <span className="gridColourValue">
+            <ColourDot value={params.value || ""} />
+            {params.value}
+          </span>
+        ),
+        cellEditor: PickerEditor,
+        cellEditorPopup: true,
+        cellEditorParams: { values: colorChoices, showColour: true },
       },
       {
         headerName: "价格（CNY）",
@@ -243,9 +373,18 @@ export function ProductGridManager() {
           <h1>产品清单管理</h1>
           <p>{status}</p>
         </div>
-        <button className="outline" onClick={() => window.close()}>
-          关闭窗口
-        </button>
+        <div className="skuGridActions">
+          <button
+            className="outline"
+            disabled={!undoStack.length}
+            onClick={() => void undoLastChange()}
+          >
+            撤销上一步{undoStack.length ? ` (${undoStack.length})` : ""}
+          </button>
+          <button className="outline" onClick={() => window.close()}>
+            关闭窗口
+          </button>
+        </div>
       </header>
       <section className="skuGridToolbar">
         <label>
