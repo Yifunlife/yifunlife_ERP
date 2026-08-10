@@ -465,15 +465,19 @@ img {
 .productBody {
   padding: 12px;
 }
-.sku {
-  font-size: 10px;
+.sku,
+.productBody h3 {
+  font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1.4;
+}
+.sku {
   letter-spacing: 0.8px;
   color: #587080;
   text-transform: uppercase;
 }
 .productBody h3 {
-  font-size: 14px;
   margin: 6px 0 3px;
 }
 .en {
@@ -2439,6 +2443,9 @@ img {
     padding: 9px;
   }
   .productBody h3 {
+    font-size: 12px;
+  }
+  .sku {
     font-size: 12px;
   }
   .priceRow strong {
