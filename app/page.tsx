@@ -85,12 +85,12 @@ const majorCategories: MajorCategory[] = [
 const navigationMajors: NavigationMajor[] = [
   "职业体验 / Career Experience",
   "生活场景 / Lifestyle Scene",
-  "零售 / Retail",
   "农牧生活 / 动物世界",
   "车生活 / Car Life",
   "拼装手工 / Assemble by Hand",
   "机械传动 / Playground Scenes",
   "多媒体互动 / Multimedia Interactivity",
+  "零售 / Retail",
 ];
 const navigationMajorMembers = (major: NavigationMajor): MajorCategory[] =>
   major === "农牧生活 / 动物世界"
