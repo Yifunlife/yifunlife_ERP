@@ -552,7 +552,7 @@ img {
   z-index: 20;
   left: 50%;
   bottom: 28px;
-  width: min(760px, calc(100vw - 32px));
+  width: min(1120px, calc(100vw - 32px));
   display: flex;
   align-items: end;
   gap: 16px;
@@ -571,6 +571,7 @@ img {
 }
 .skuBatchBar label {
   flex: 1;
+  min-width: 150px;
   display: grid;
   gap: 5px;
   color: #b9c9d8;
@@ -579,7 +580,7 @@ img {
 }
 .skuBatchBar select {
   width: 100%;
-  min-width: 220px;
+  min-width: 0;
   border: 1px solid #aebec4;
   border-radius: 6px;
   background: #fff;

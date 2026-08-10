@@ -176,7 +176,9 @@ export function ProductGridManager() {
   const [status, setStatus] = useState("正在加载产品清单…");
   const [undoStack, setUndoStack] = useState<UndoChange[]>([]);
   const [selectedRows, setSelectedRows] = useState<GridRow[]>([]);
-  const [batchCategoryPath, setBatchCategoryPath] = useState("");
+  const [batchCategory1, setBatchCategory1] = useState("");
+  const [batchCategory2, setBatchCategory2] = useState("");
+  const [batchCategory3, setBatchCategory3] = useState("");
   const [relations, setRelations] = useState<ProductRelation[]>([]);
   const [pairingOpen, setPairingOpen] = useState(false);
   const [pairingCategory, setPairingCategory] = useState("");
@@ -212,6 +214,46 @@ export function ProductGridManager() {
           .map((category) => `${category.parentKey.replace("/", " / ")} / ${category.name}`),
       ])].sort(),
     [categories, rows],
+  );
+
+  const batchCategory1Options = useMemo(
+    () => [...new Set(rows.map((row) => row.category1))].sort(),
+    [rows],
+  );
+  const batchCategory2Options = useMemo(
+    () =>
+      [...new Set([
+        ...rows
+          .filter((row) => row.category1 === batchCategory1)
+          .map((row) => row.category2),
+        ...categories
+          .filter(
+            (category) =>
+              category.level === 2 && category.parentKey === batchCategory1,
+          )
+          .map((category) => category.name),
+      ])].sort(),
+    [batchCategory1, categories, rows],
+  );
+  const batchCategory3Options = useMemo(
+    () =>
+      [...new Set([
+        ...rows
+          .filter(
+            (row) =>
+              row.category1 === batchCategory1 &&
+              row.category2 === batchCategory2,
+          )
+          .map((row) => row.category3),
+        ...categories
+          .filter(
+            (category) =>
+              category.level === 3 &&
+              category.parentKey === `${batchCategory1}/${batchCategory2}`,
+          )
+          .map((category) => category.name),
+      ])].sort(),
+    [batchCategory1, batchCategory2, categories, rows],
   );
 
   const simulationCategories = useMemo(
@@ -395,8 +437,16 @@ export function ProductGridManager() {
   };
 
   const applyBatchCategory = async () => {
-    if (!batchCategoryPath || !selectedRows.length) return;
-    const [category1, category2, category3 = "未细分"] = batchCategoryPath.split(" / ");
+    if (
+      !batchCategory1 ||
+      !batchCategory2 ||
+      !batchCategory3 ||
+      !selectedRows.length
+    )
+      return;
+    const category1 = batchCategory1;
+    const category2 = batchCategory2;
+    const category3 = batchCategory3;
     const updates = selectedRows.map((row) => ({
       productId: row.id,
       patch: { category1, category2, category3 },
@@ -406,7 +456,7 @@ export function ProductGridManager() {
         category1,
         category2,
         category3,
-        categoryPath: batchCategoryPath,
+        categoryPath: categoryPath(category1, category2, category3),
         colorTag: category1 === "小玩具" ? "不适用" : row.colorTag,
       },
     }));
@@ -447,7 +497,9 @@ export function ProductGridManager() {
         })),
       },
     ]);
-    setBatchCategoryPath("");
+    setBatchCategory1("");
+    setBatchCategory2("");
+    setBatchCategory3("");
     setStatus(`已批量修改 ${updates.length} 个 SKU 的分类`);
   };
 
@@ -588,22 +640,53 @@ export function ProductGridManager() {
         <section className="skuBatchBar" aria-label="批量操作">
           <b>已选择 {selectedRows.length} 个 SKU</b>
           <label>
-            批量修改分类
+            产品大类
             <select
-              value={batchCategoryPath}
-              onChange={(event) => setBatchCategoryPath(event.target.value)}
+              value={batchCategory1}
+              onChange={(event) => {
+                setBatchCategory1(event.target.value);
+                setBatchCategory2("");
+                setBatchCategory3("");
+              }}
             >
-              <option value="">选择新的三级分类</option>
-              {categoryPaths.map((path) => (
-                <option key={path} value={path}>
-                  {path}
-                </option>
+              <option value="">选择产品大类</option>
+              {batchCategory1Options.map((category) => (
+                <option key={category}>{category}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            区域分类
+            <select
+              disabled={!batchCategory1}
+              value={batchCategory2}
+              onChange={(event) => {
+                setBatchCategory2(event.target.value);
+                setBatchCategory3("");
+              }}
+            >
+              <option value="">选择区域分类</option>
+              {batchCategory2Options.map((category) => (
+                <option key={category}>{category}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            三级分类
+            <select
+              disabled={!batchCategory2}
+              value={batchCategory3}
+              onChange={(event) => setBatchCategory3(event.target.value)}
+            >
+              <option value="">选择三级分类</option>
+              {batchCategory3Options.map((category) => (
+                <option key={category}>{category}</option>
               ))}
             </select>
           </label>
           <button
             className="primary"
-            disabled={!batchCategoryPath}
+            disabled={!batchCategory1 || !batchCategory2 || !batchCategory3}
             onClick={() => void applyBatchCategory()}
           >
             应用分类
