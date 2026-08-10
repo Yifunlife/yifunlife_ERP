@@ -577,8 +577,8 @@ img {
 }
 .cartItem {
   display: grid;
-  grid-template-columns: 25px 70px 1fr auto;
-  gap: 12px;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: center;
   border-bottom: 1px solid #eceeea;
   padding: 17px 0;
@@ -597,12 +597,23 @@ img {
 .cartInfo b {
   font-size: 13px;
   display: block;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.cartInfo {
+  min-width: 0;
 }
 .cartInfo small {
   display: block;
   color: #92999d;
   font-size: 9px;
   margin: 4px 0 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cartInfo strong {
   font-size: 13px;
@@ -1016,14 +1027,15 @@ img {
     width: 100vw;
   }
   .cartItem {
-    grid-template-columns: 20px 58px 1fr;
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    gap: 10px;
   }
   .cartItem img {
     width: 58px;
   }
   .qty {
-    grid-column: 3;
-    margin-top: -6px;
+    grid-column: auto;
+    margin-top: 0;
     width: max-content;
   }
   .quoteToolbar {
