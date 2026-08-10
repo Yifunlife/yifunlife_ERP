@@ -237,6 +237,8 @@ const money = (value: number | null, currency: "CNY" | "USD") => {
   }).format(value);
   return currency === "CNY" ? `CNY ¥${amount}` : `USD $${amount}`;
 };
+const englishProductName = (p: Pick<Product, "en">) =>
+  p.en.trim() || "English name pending";
 const quoteArea = (p: Product) => {
   const x = `${p.category2} ${p.name}`;
   if (/厨房|烘焙|奶茶|火锅|烧烤|烤鸭|面馆|甜品|熟食/.test(x))
@@ -1290,6 +1292,9 @@ export default function Home() {
                                   </div>
                                   <div className="packageSkuInfo">
                                     <b>{p.name}</b>
+                                    <small className={!p.en.trim() ? "missingEnglish" : ""}>
+                                      {englishProductName(p)}
+                                    </small>
                                     <small>
                                       {p.sku} ·{" "}
                                       {money(displayPrice(p), currency)}
@@ -1427,7 +1432,9 @@ export default function Home() {
                           {p.sku} · {p.brand || "YIFUN"}
                         </div>
                         <h3>{p.name}</h3>
-                        <p className="en">{p.en || "产品详情见规格说明"}</p>
+                        <p className={`en${p.en.trim() ? "" : " missingEnglish"}`}>
+                          {englishProductName(p)}
+                        </p>
                         {(p.category1 !== "小玩具" || p.isRecommended) && (
                           <div className="tagRow">
                             {p.category1 !== "小玩具" && (
@@ -2135,6 +2142,9 @@ export default function Home() {
                   </div>
                   <div className="cartInfo">
                     <b>{p.name}</b>
+                    <small className={!p.en.trim() ? "missingEnglish" : ""}>
+                      {englishProductName(p)}
+                    </small>
                     <small>{p.sku}</small>
                     <strong>
                       {money(
@@ -2299,7 +2309,9 @@ export default function Home() {
                           <td>{p.sku || "—"}</td>
                           <td>
                             <b>{p.name}</b>
-                            {p.en && <small>{p.en}</small>}
+                            <small className={!p.en.trim() ? "missingEnglish" : ""}>
+                              {englishProductName(p)}
+                            </small>
                           </td>
                           <td>
                             <div className="quoteImage">

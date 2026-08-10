@@ -483,6 +483,16 @@ img {
   text-overflow: ellipsis;
   margin: 0 0 10px;
 }
+.missingEnglish {
+  color: #a77932 !important;
+  font-style: italic;
+}
+.cartInfo .missingEnglish {
+  margin-bottom: 1px;
+}
+.cartInfo .missingEnglish + small {
+  margin-top: 1px;
+}
 .spec {
   border-top: 1px solid #eef0ec;
   padding-top: 12px;
