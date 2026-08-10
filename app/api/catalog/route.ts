@@ -9,6 +9,7 @@ import {
   productRecommendations,
 } from "../../../db/schema";
 import { getLoginSession } from "../../../lib/auth";
+import { pairedArea } from "../../../lib/area-pairing";
 
 export const dynamic = "force-dynamic";
 
@@ -110,7 +111,8 @@ export async function POST(request: Request) {
       | "category"
       | "recommendations"
       | "kitchenPackage"
-      | "organizeToyTiers";
+      | "organizeToyTiers"
+      | "organizePairedAreas";
     category?: typeof catalogCategories.$inferInsert;
     productId?: string;
     relatedIds?: string[];
@@ -190,6 +192,40 @@ export async function POST(request: Request) {
       ok: true,
       optionalSkuCount: toyProducts.length,
       areaCount: toyAreas.length,
+    });
+  }
+  if (payload.action === "organizePairedAreas") {
+    const products = await db.select().from(catalogProducts);
+    const pairedProducts = products.flatMap((product) => {
+      if (product.family !== "小玩具" && product.family !== "模拟设备") return [];
+      const area = pairedArea(product.category, product.name);
+      return area ? [{ product, area }] : [];
+    });
+    const unresolvedAreas = [
+      ...new Set(
+        products
+          .filter(
+            (product) =>
+              (product.family === "小玩具" || product.family === "模拟设备") &&
+              !pairedArea(product.category, product.name),
+          )
+          .map((product) => product.category),
+      ),
+    ];
+    const now = new Date().toISOString();
+    for (let index = 0; index < pairedProducts.length; index += 100) {
+      await env.DB.batch(
+        pairedProducts.slice(index, index + 100).map(({ product, area }) =>
+          env.DB.prepare(
+            "INSERT INTO product_overrides (product_id, category_2, updated_at) VALUES (?, ?, ?) ON CONFLICT(product_id) DO UPDATE SET category_2 = excluded.category_2, updated_at = excluded.updated_at",
+          ).bind(product.id, area, now),
+        ),
+      );
+    }
+    return Response.json({
+      ok: true,
+      updatedSkuCount: pairedProducts.length,
+      unresolvedAreas,
     });
   }
   return Response.json({ error: "invalid action" }, { status: 400 });

@@ -1,6 +1,7 @@
 "use client";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogProduct } from "./catalog-types";
+import { pairedAreasForMajor } from "../lib/area-pairing";
 type MajorCategory =
   | "职业体验 / Career Experience"
   | "生活场景 / Lifestyle Scene"
@@ -1292,8 +1293,14 @@ export default function Home() {
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("organizeToyTiers") ===
       "1";
+  const organizePairedAreas =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("organizePairedAreas") ===
+      "1";
   const toyTierSyncStarted = useRef(false);
+  const pairedAreaSyncStarted = useRef(false);
   const [toyTierSyncStatus, setToyTierSyncStatus] = useState("");
+  const [pairedAreaSyncStatus, setPairedAreaSyncStatus] = useState("");
   useEffect(() => {
     fetch("/api/auth/session")
       .then((r) => r.json())
@@ -1345,6 +1352,40 @@ export default function Home() {
       })
       .catch(() => setToyTierSyncStatus("配套玩具目录整理失败，请重试。"));
   }, [auth, organizeToyTiers]);
+  useEffect(() => {
+    if (
+      auth !== "signedIn" ||
+      !organizePairedAreas ||
+      pairedAreaSyncStarted.current
+    )
+      return;
+    pairedAreaSyncStarted.current = true;
+    setPairedAreaSyncStatus("正在统一模拟区与配套玩具的区域目录…");
+    fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "organizePairedAreas" }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (!result) throw new Error("Could not organize paired areas");
+        setPairedAreaSyncStatus(
+          result.unresolvedAreas.length
+            ? `已整理 ${result.updatedSkuCount} 个 SKU；仍有 ${result.unresolvedAreas.length} 个来源分类待核对。`
+            : `已整理 ${result.updatedSkuCount} 个 SKU，模拟区与配套玩具区域已对应。`,
+        );
+        return fetch("/api/catalog");
+      })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setOverrides(data.overrides || []);
+        setCategories(data.categories || []);
+      })
+      .catch(() =>
+        setPairedAreaSyncStatus("区域目录整理失败，请刷新后重试。"),
+      );
+  }, [auth, organizePairedAreas]);
   const products = useMemo<Product[]>(
     () =>
       storedCatalogProducts.map((p) => {
@@ -1839,6 +1880,9 @@ export default function Home() {
             {toyTierSyncStatus && (
               <p className="syncStatus">{toyTierSyncStatus}</p>
             )}
+            {pairedAreaSyncStatus && (
+              <p className="syncStatus">{pairedAreaSyncStatus}</p>
+            )}
           </div>
           <nav>
             {navigationMajors.map((major, i) => {
@@ -1925,7 +1969,10 @@ export default function Home() {
                             ) && section.matches(p),
                         );
                         const sectionCategories = [
-                          ...new Set(sectionProducts.map((p) => p.category2)),
+                          ...new Set([
+                            ...sectionProducts.map((p) => p.category2),
+                            ...pairedAreasForMajor(major),
+                          ]),
                         ];
                         const sectionKey = `${major}:${section.key}`;
                         const sectionExpanded = expandedProductGroups.has(sectionKey);
