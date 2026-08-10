@@ -1580,6 +1580,26 @@ img {
   white-space: normal;
   line-height: 1.25;
 }
+.quoteTable .quoteSerialHeader {
+  white-space: nowrap;
+}
+.quoteTable .quoteSerialHeader span {
+  display: block;
+  white-space: nowrap;
+}
+.quoteTable .quoteBilingual {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  line-height: 1.1;
+}
+.quoteTable .quoteBilingual > span {
+  white-space: nowrap;
+}
+.quoteTable .quoteBilingual small {
+  margin: 0;
+  white-space: nowrap;
+}
 .quoteTable td {
   padding: 8px 5px;
   text-align: center;
