@@ -4,7 +4,7 @@ import type { CatalogProduct } from "./catalog-types";
 type MajorCategory =
   | "职业体验 / Career Experience"
   | "生活场景 / Lifestyle Scene"
-  | "零售 / Retail"
+  | "零售（游玩必备） / Retail"
   | "农牧生活 / Agro-pastoral Life"
   | "动物世界 / Animal World"
   | "车生活 / Car Life"
@@ -74,7 +74,7 @@ type KitchenPackageRecord = {
 const majorCategories: MajorCategory[] = [
   "职业体验 / Career Experience",
   "生活场景 / Lifestyle Scene",
-  "零售 / Retail",
+  "零售（游玩必备） / Retail",
   "农牧生活 / Agro-pastoral Life",
   "动物世界 / Animal World",
   "车生活 / Car Life",
@@ -90,7 +90,7 @@ const navigationMajors: NavigationMajor[] = [
   "拼装手工 / Assemble by Hand",
   "机械传动 / Playground Scenes",
   "多媒体互动 / Multimedia Interactivity",
-  "零售 / Retail",
+  "零售（游玩必备） / Retail",
 ];
 const navigationMajorMembers = (major: NavigationMajor): MajorCategory[] =>
   major === "农牧生活 / 动物世界"
@@ -135,7 +135,7 @@ const majorCategoryByArea: Record<string, MajorCategory> = {
   桌面游戏区域配套玩具: "生活场景 / Lifestyle Scene",
   舞台区域配套玩具: "生活场景 / Lifestyle Scene",
   "(定制LOGO+0.27/双/定码定色/单码单色1000起，250双清箱)":
-    "零售 / Retail",
+    "零售（游玩必备） / Retail",
   牧场区: "农牧生活 / Agro-pastoral Life",
   牧场区域配套玩具: "农牧生活 / Agro-pastoral Life",
   母鸡生蛋区域配套玩具: "农牧生活 / Agro-pastoral Life",
