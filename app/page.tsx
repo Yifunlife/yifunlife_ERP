@@ -10,6 +10,7 @@ type MajorCategory =
   | "拼装手工 / Assemble by Hand"
   | "机械传动 / Playground Scenes"
   | "多媒体互动 / Multimedia Interactivity";
+type NavigationMajor = MajorCategory | "农牧生活 / 动物世界";
 type NavigationGroup = "all" | "simulation" | "toys";
 type Override = {
   productId: string;
@@ -79,6 +80,19 @@ const majorCategories: MajorCategory[] = [
   "机械传动 / Playground Scenes",
   "多媒体互动 / Multimedia Interactivity",
 ];
+const navigationMajors: NavigationMajor[] = [
+  "职业体验 / Career Experience",
+  "生活场景 / Lifestyle Scene",
+  "农牧生活 / 动物世界",
+  "车生活 / Car Life",
+  "拼装手工 / Assemble by Hand",
+  "机械传动 / Playground Scenes",
+  "多媒体互动 / Multimedia Interactivity",
+];
+const navigationMajorMembers = (major: NavigationMajor): MajorCategory[] =>
+  major === "农牧生活 / 动物世界"
+    ? ["农牧生活 / Agro-pastoral Life", "动物世界 / Animal World"]
+    : [major];
 const majorCategoryByArea: Record<string, MajorCategory> = {
   消防区设备: "职业体验 / Career Experience",
   消防站区域配套玩具: "职业体验 / Career Experience",
@@ -384,18 +398,25 @@ export default function Home() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [categoryFamily, setCategoryFamily] = useState("小玩具");
-  const [activeMajor, setActiveMajor] = useState<MajorCategory>(
-    majorCategories[0],
+  const [activeMajor, setActiveMajor] = useState<NavigationMajor>(
+    navigationMajors[0],
   );
-  const [expandedMajors, setExpandedMajors] = useState<Set<MajorCategory>>(
-    () => new Set([majorCategories[0]]),
+  const [expandedMajors, setExpandedMajors] = useState<Set<NavigationMajor>>(
+    () => new Set([navigationMajors[0]]),
   );
   const [category, setCategory] = useState("全部产品");
   const [navigationGroup, setNavigationGroup] =
     useState<NavigationGroup>("all");
-  const [expandedLifestyleGroups, setExpandedLifestyleGroups] = useState<
-    Set<NavigationGroup>
-  >(() => new Set(["simulation", "toys"]));
+  const [expandedProductGroups, setExpandedProductGroups] = useState<
+    Set<string>
+  >(() =>
+    new Set(
+      navigationMajors.flatMap((major) => [
+        `${major}:simulation`,
+        `${major}:toys`,
+      ]),
+    ),
+  );
   const [query, setQuery] = useState("");
   const [colorFilter, setColorFilter] = useState("全部颜色");
   const [screenOnly, setScreenOnly] = useState(false);
@@ -525,7 +546,9 @@ export default function Home() {
         .map((p) => p.category2),
     ),
   ];
-  const majorProducts = products.filter((p) => p.majorCategory === activeMajor);
+  const majorProducts = products.filter((p) =>
+    navigationMajorMembers(activeMajor).includes(p.majorCategory),
+  );
   const isLifestyleMajor = activeMajor === "生活场景 / Lifestyle Scene";
   const isKitchenView =
     isLifestyleMajor && category === "厨房专区";
@@ -569,8 +592,7 @@ export default function Home() {
     .filter(
     (p) =>
       (category === "全部产品" || p.category2 === category) &&
-      (!isLifestyleMajor ||
-        navigationGroup === "all" ||
+      (navigationGroup === "all" ||
         (navigationGroup === "simulation" && p.category1 !== "小玩具") ||
         (navigationGroup === "toys" && p.category1 === "小玩具")) &&
       (!query ||
@@ -583,9 +605,7 @@ export default function Home() {
     )
     .sort(
       (a, b) =>
-        isLifestyleMajor
-          ? Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具")
-          : 0,
+        Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具"),
     );
   const grouped = Object.entries(
     visible.reduce<Record<string, Product[]>>((a, p) => {
@@ -596,9 +616,9 @@ export default function Home() {
   const catalogTitle =
     query
       ? `“${query}” 的结果`
-      : isLifestyleMajor && category === "全部产品" && navigationGroup === "simulation"
+      : category === "全部产品" && navigationGroup === "simulation"
         ? "模拟区"
-        : isLifestyleMajor && category === "全部产品" && navigationGroup === "toys"
+        : category === "全部产品" && navigationGroup === "toys"
           ? "配套玩具"
           : category;
   const cartItems = products
@@ -954,7 +974,7 @@ export default function Home() {
             </p>
           </div>
           <nav>
-            {majorCategories.map((major, i) => {
+            {navigationMajors.map((major, i) => {
               const expanded = expandedMajors.has(major);
               return (
                 <div
@@ -964,14 +984,17 @@ export default function Home() {
                 <button
                   className="navHead"
                   onClick={() => {
-                    if (expanded) {
+                    if (expanded && activeMajor === major) {
                       setExpandedMajors((current) => {
                         const next = new Set(current);
                         next.delete(major);
                         return next;
                       });
                     } else {
-                      setExpandedMajors((current) => new Set(current).add(major));
+                      if (!expanded)
+                        setExpandedMajors((current) =>
+                          new Set(current).add(major),
+                        );
                       setActiveMajor(major);
                       setCategory("全部产品");
                       setNavigationGroup("all");
@@ -982,10 +1005,20 @@ export default function Home() {
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <span className="navText">
-                    <b>{major.split(" / ")[0]}</b>
+                    <b>
+                      {major === "农牧生活 / 动物世界"
+                        ? major
+                        : major.split(" / ")[0]}
+                    </b>
                     <small>
-                      {major.split(" / ")[1]} ·{" "}
-                      {products.filter((p) => p.majorCategory === major).length}{" "}
+                      {major === "农牧生活 / 动物世界"
+                        ? "Agro-pastoral Life · Animal World"
+                        : major.split(" / ")[1]} ·{" "}
+                      {
+                        products.filter((p) =>
+                          navigationMajorMembers(major).includes(p.majorCategory),
+                        ).length
+                      }{" "}
                       项
                     </small>
                   </span>
@@ -1021,8 +1054,7 @@ export default function Home() {
                     >
                       全部产品
                     </button>
-                    {major === "生活场景 / Lifestyle Scene" ? (
-                      ([
+                    {([
                         {
                           key: "simulation" as const,
                           name: "模拟区",
@@ -1035,11 +1067,16 @@ export default function Home() {
                         },
                       ]).map((section) => {
                         const sectionProducts = products.filter(
-                          (p) => p.majorCategory === major && section.matches(p),
+                          (p) =>
+                            navigationMajorMembers(major).includes(
+                              p.majorCategory,
+                            ) && section.matches(p),
                         );
                         const sectionCategories = [
                           ...new Set(sectionProducts.map((p) => p.category2)),
                         ];
+                        const sectionKey = `${major}:${section.key}`;
+                        const sectionExpanded = expandedProductGroups.has(sectionKey);
                         return (
                           <div className="subnavGroup" key={section.key}>
                             <div
@@ -1063,25 +1100,21 @@ export default function Home() {
                               <button
                                 className="subnavGroupToggle"
                                 aria-label={`${
-                                  expandedLifestyleGroups.has(section.key)
-                                    ? "收起"
-                                    : "展开"
+                                  sectionExpanded ? "收起" : "展开"
                                 }${section.name}`}
                                 onClick={() =>
-                                  setExpandedLifestyleGroups((current) => {
+                                  setExpandedProductGroups((current) => {
                                     const next = new Set(current);
-                                    if (next.has(section.key)) next.delete(section.key);
-                                    else next.add(section.key);
+                                    if (next.has(sectionKey)) next.delete(sectionKey);
+                                    else next.add(sectionKey);
                                     return next;
                                   })
                                 }
                               >
-                                {expandedLifestyleGroups.has(section.key)
-                                  ? "−"
-                                  : "+"}
+                                {sectionExpanded ? "−" : "+"}
                               </button>
                             </div>
-                            {expandedLifestyleGroups.has(section.key) &&
+                            {sectionExpanded &&
                               sectionCategories.map((c) => (
                               <button
                                 className={category === c ? "on" : ""}
@@ -1103,35 +1136,7 @@ export default function Home() {
                             ))}
                           </div>
                         );
-                      })
-                    ) : (
-                      [
-                        ...new Set(
-                          products
-                            .filter((p) => p.majorCategory === major)
-                            .map((p) => p.category2),
-                        ),
-                      ].map((c) => (
-                        <button
-                          className={category === c ? "on" : ""}
-                          onClick={() => {
-                            setCategory(c);
-                            setNavigationGroup("all");
-                          }}
-                          key={c}
-                        >
-                          {c}
-                          <span>
-                            {
-                              products.filter(
-                                (p) =>
-                                  p.majorCategory === major && p.category2 === c,
-                              ).length
-                            }
-                          </span>
-                        </button>
-                      ))
-                    )}
+                      })}
                   </div>
                 )}
               </div>
