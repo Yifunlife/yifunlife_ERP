@@ -1028,19 +1028,6 @@ export default function Home() {
                 </button>
                 {expanded && (
                   <div className="subnav">
-                    {major === "生活场景 / Lifestyle Scene" && (
-                      <button
-                        className={category === "厨房专区" ? "on" : ""}
-                        onClick={() => {
-                          setCategory("厨房专区");
-                          setKitchenMode("packages");
-                          setNavigationGroup("all");
-                        }}
-                      >
-                        厨房专区 / Kitchen
-                        <span>{kitchenProducts.length}</span>
-                      </button>
-                    )}
                     <button
                       className={
                         category === "全部产品" && navigationGroup === "all"
@@ -1055,6 +1042,15 @@ export default function Home() {
                       全部产品
                     </button>
                     {([
+                        ...(major === "生活场景 / Lifestyle Scene"
+                          ? [
+                              {
+                                key: "packages" as const,
+                                name: "套餐 / Packages",
+                                matches: () => false,
+                              },
+                            ]
+                          : []),
                         {
                           key: "simulation" as const,
                           name: "模拟区",
@@ -1066,6 +1062,7 @@ export default function Home() {
                           matches: (p: Product) => p.category1 === "小玩具",
                         },
                       ]).map((section) => {
+                        const isPackageSection = section.key === "packages";
                         const sectionProducts = products.filter(
                           (p) =>
                             navigationMajorMembers(major).includes(
@@ -1081,8 +1078,10 @@ export default function Home() {
                           <div className="subnavGroup" key={section.key}>
                             <div
                               className={
-                                category === "全部产品" &&
-                                navigationGroup === section.key
+                                (isPackageSection && category === "厨房专区") ||
+                                (!isPackageSection &&
+                                  category === "全部产品" &&
+                                  navigationGroup === section.key)
                                   ? "subnavGroupHead on"
                                   : "subnavGroupHead"
                               }
@@ -1090,31 +1089,44 @@ export default function Home() {
                               <button
                                 className="subnavGroupSelect"
                                 onClick={() => {
-                                  setCategory("全部产品");
-                                  setNavigationGroup(section.key);
+                                  if (isPackageSection) {
+                                    setCategory("厨房专区");
+                                    setKitchenMode("packages");
+                                    setNavigationGroup("all");
+                                  } else {
+                                    setCategory("全部产品");
+                                    setNavigationGroup(section.key);
+                                  }
                                 }}
                               >
                                 <b>{section.name}</b>
-                                <span>{sectionProducts.length}</span>
+                                <span>
+                                  {isPackageSection
+                                    ? kitchenPackages.length
+                                    : sectionProducts.length}
+                                </span>
                               </button>
-                              <button
-                                className="subnavGroupToggle"
-                                aria-label={`${
-                                  sectionExpanded ? "收起" : "展开"
-                                }${section.name}`}
-                                onClick={() =>
-                                  setExpandedProductGroups((current) => {
-                                    const next = new Set(current);
-                                    if (next.has(sectionKey)) next.delete(sectionKey);
-                                    else next.add(sectionKey);
-                                    return next;
-                                  })
-                                }
-                              >
-                                {sectionExpanded ? "−" : "+"}
-                              </button>
+                              {!isPackageSection && (
+                                <button
+                                  className="subnavGroupToggle"
+                                  aria-label={`${
+                                    sectionExpanded ? "收起" : "展开"
+                                  }${section.name}`}
+                                  onClick={() =>
+                                    setExpandedProductGroups((current) => {
+                                      const next = new Set(current);
+                                      if (next.has(sectionKey)) next.delete(sectionKey);
+                                      else next.add(sectionKey);
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  {sectionExpanded ? "−" : "+"}
+                                </button>
+                              )}
                             </div>
-                            {sectionExpanded &&
+                            {!isPackageSection &&
+                              sectionExpanded &&
                               sectionCategories.map((c) => (
                               <button
                                 className={category === c ? "on" : ""}
