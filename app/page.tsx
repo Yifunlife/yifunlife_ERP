@@ -1371,7 +1371,7 @@ export default function Home() {
         if (!result) throw new Error("Could not organize paired areas");
         setPairedAreaSyncStatus(
           result.unresolvedAreas.length
-            ? `已整理 ${result.updatedSkuCount} 个 SKU；仍有 ${result.unresolvedAreas.length} 个来源分类待核对。`
+            ? `已整理 ${result.updatedSkuCount} 个 SKU；待核对来源分类：${result.unresolvedAreas.join("、")}`
             : `已整理 ${result.updatedSkuCount} 个 SKU，模拟区与配套玩具区域已对应。`,
         );
         return fetch("/api/catalog");
