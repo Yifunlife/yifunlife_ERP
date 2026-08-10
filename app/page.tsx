@@ -1234,7 +1234,6 @@ export default function Home() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [categoryFamily, setCategoryFamily] = useState("小玩具");
   const [activeMajor, setActiveMajor] = useState<NavigationMajor>(
     navigationMajors[0],
   );
@@ -1267,10 +1266,6 @@ export default function Home() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [editor, setEditor] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Product | null>(null);
-  const [manageOpen, setManageOpen] = useState(false);
-  const [categoryName, setCategoryName] = useState("");
-  const [categoryLevel, setCategoryLevel] = useState(2);
-  const [categoryParent, setCategoryParent] = useState("");
   const [relatedSearch, setRelatedSearch] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -1430,13 +1425,6 @@ export default function Home() {
         });
       });
   }, [products, rescanAllColours]);
-  const level2 = [
-    ...new Set(
-      products
-        .filter((p) => p.category1 === categoryFamily)
-        .map((p) => p.category2),
-    ),
-  ];
   const majorProducts = products.filter((p) =>
     navigationMajorMembers(activeMajor).includes(p.majorCategory),
   );
@@ -1724,25 +1712,6 @@ export default function Home() {
         );
     }
   };
-  const createCategory = async () => {
-    if (!categoryName.trim()) return;
-    const c = {
-      id: crypto.randomUUID(),
-      level: categoryLevel,
-      parentKey: categoryParent,
-      name: categoryName.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    const r = await fetch("/api/catalog", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "category", category: c }),
-    });
-    if (r.ok) {
-      setCategories((x) => [...x, c]);
-      setCategoryName("");
-    }
-  };
   const login = async (event: FormEvent) => {
     event.preventDefault();
     setLoginError("");
@@ -1842,8 +1811,11 @@ export default function Home() {
           >
             筛选器
           </button>
-          <button className="outline" onClick={() => setManageOpen(true)}>
-            分类管理
+          <button
+            className="outline"
+            onClick={() => window.open("/product-list", "_blank", "noopener")}
+          >
+            产品清单管理
           </button>
           <button className="cartButton" onClick={() => setCartOpen(true)}>
             <span>报价清单</span>
@@ -2718,89 +2690,6 @@ export default function Home() {
               <button className="primary" onClick={save}>
                 保存 SKU 修改
               </button>
-            </div>
-          </aside>
-        </div>
-      )}
-      {manageOpen && (
-        <div className="overlay">
-          <aside className="managerDrawer">
-            <div className="drawerHead">
-              <div>
-                <span>TAXONOMY</span>
-                <h2>分类管理</h2>
-              </div>
-              <button onClick={() => setManageOpen(false)}>×</button>
-            </div>
-            <div className="editorBody">
-              <p className="muted">
-                一级大目录已固定为《2026产品册》的八大类。可在这里维护产品大类下的区域分类与三级分类。
-              </p>
-              <label>
-                产品大类
-                <select
-                  value={categoryFamily}
-                  onChange={(e) => {
-                    setCategoryFamily(e.target.value);
-                    setCategoryParent("");
-                  }}
-                >
-                  {["小玩具", "模拟设备", "大型设备"].map((x) => (
-                    <option key={x}>{x}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                分类层级
-                <select
-                  value={categoryLevel}
-                  onChange={(e) => setCategoryLevel(Number(e.target.value))}
-                >
-                  <option value={2}>二级分类</option>
-                  <option value={3}>三级分类</option>
-                </select>
-              </label>
-              <label>
-                父级
-                <select
-                  value={categoryParent}
-                  onChange={(e) => setCategoryParent(e.target.value)}
-                >
-                  <option value="">请选择父级</option>
-                  {categoryLevel === 2
-                    ? [categoryFamily].map((x) => <option key={x}>{x}</option>)
-                    : level2.map((x) => (
-                        <option key={x} value={`${categoryFamily}/${x}`}>
-                          {categoryFamily} / {x}
-                        </option>
-                      ))}
-                </select>
-              </label>
-              <label>
-                分类名称
-                <input
-                  value={categoryName}
-                  onChange={(e) => setCategoryName(e.target.value)}
-                  placeholder={
-                    categoryLevel === 2
-                      ? "例如：节日主题玩具"
-                      : "例如：海洋蓝主题"
-                  }
-                />
-              </label>
-              <button className="primary wide" onClick={createCategory}>
-                新增分类
-              </button>
-              <div className="taxonomyList">
-                {categories.map((c) => (
-                  <div key={c.id}>
-                    <small>
-                      第 {c.level} 级 · {c.parentKey || "根"}
-                    </small>
-                    <b>{c.name}</b>
-                  </div>
-                ))}
-              </div>
             </div>
           </aside>
         </div>

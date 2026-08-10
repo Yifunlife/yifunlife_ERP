@@ -374,6 +374,109 @@ img {
   font-size: 11px;
   margin-top: 8px;
 }
+.skuGridPage {
+  min-height: 100dvh;
+  background: #f5f7f4;
+  color: var(--ink);
+  padding: 36px clamp(22px, 4vw, 64px) 48px;
+}
+.skuGridHeader {
+  max-width: 1700px;
+  margin: 0 auto 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 24px;
+  border-bottom: 4px solid var(--navy);
+  padding-bottom: 18px;
+}
+.skuGridHeader span {
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+.skuGridHeader h1 {
+  font-size: clamp(30px, 4vw, 46px);
+  margin: 8px 0 4px;
+  color: var(--navy);
+}
+.skuGridHeader p,
+.skuGridToolbar small {
+  color: #71808b;
+  font-size: 13px;
+}
+.skuGridToolbar {
+  max-width: 1700px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+.skuGridToolbar label {
+  display: grid;
+  gap: 7px;
+  color: #52636f;
+  font-size: 12px;
+  font-weight: 700;
+}
+.skuGridToolbar input {
+  width: min(520px, 72vw);
+  border: 1px solid #cbd4d0;
+  border-radius: 7px;
+  background: #fff;
+  padding: 11px 13px;
+  color: var(--ink);
+  font: inherit;
+}
+.skuGridTable {
+  max-width: 1700px;
+  height: calc(100dvh - 235px);
+  min-height: 510px;
+  margin: 0 auto;
+  --ag-font-family: inherit;
+  --ag-font-size: 13px;
+  --ag-header-background-color: var(--navy);
+  --ag-header-foreground-color: #fff;
+  --ag-background-color: #fff;
+  --ag-foreground-color: var(--ink);
+  --ag-border-color: #dfe5e0;
+  --ag-row-border-color: #e5ebe7;
+  --ag-odd-row-background-color: #f9faf8;
+  --ag-selected-row-background-color: #eef4df;
+  --ag-range-selection-border-color: var(--lime);
+  --ag-input-focus-border-color: var(--lime);
+}
+.skuGridTable .ag-header-cell-label {
+  font-weight: 800;
+}
+.skuGridTable .ag-cell {
+  display: flex;
+  align-items: center;
+}
+.skuGridImage {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 5px;
+  background: #f2f4f1;
+}
+.skuGridImageEmpty {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 5px;
+  background: #edf0ec;
+  color: #93a098;
+  font-size: 10px;
+}
+@media (max-width: 720px) {
+  .skuGridPage { padding: 22px 16px; }
+  .skuGridHeader, .skuGridToolbar { align-items: start; flex-direction: column; }
+  .skuGridTable { height: calc(100dvh - 300px); }
+}
 .sideFoot {
   margin-top: auto;
   border-top: 1px solid rgba(255, 255, 255, 0.13);
