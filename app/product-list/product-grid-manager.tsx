@@ -148,6 +148,12 @@ const normalizedRelation = (relation: ProductRelation): ProductRelation => ({
   quantity: Math.max(1, Math.floor(Number(relation.quantity) || 1)),
 });
 
+const relationQuantityTotal = (relations: ProductRelation[]) =>
+  relations.reduce(
+    (total, relation) => total + Math.max(1, Math.floor(Number(relation.quantity) || 1)),
+    0,
+  );
+
 const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] => {
   const overrideById = new Map(overrides.map((override) => [override.productId, override]));
   return products.map((product) => {
@@ -306,6 +312,14 @@ export function ProductGridManager() {
     });
     return counts;
   }, [relations]);
+  const selectedToyQuantity = useMemo(
+    () =>
+      [...pairingTargetIds].reduce(
+        (total, productId) => total + (pairingQuantities[productId] || 1),
+        0,
+      ),
+    [pairingQuantities, pairingTargetIds],
+  );
 
   const openPairingManager = () => {
     setPairingCategory((current) => current || simulationCategories[0] || "");
@@ -337,7 +351,7 @@ export function ProductGridManager() {
     );
     setPairingSavedMessage(
       savedRelations.length
-        ? `已载入该模拟产品的 ${savedRelations.length} 个已保存配套玩具。`
+        ? `已载入 ${savedRelations.length} 个已保存配套玩具，总数量 ${relationQuantityTotal(savedRelations)}。`
         : "该模拟产品暂未保存配套玩具。",
     );
   };
@@ -402,9 +416,10 @@ export function ProductGridManager() {
       ...current.filter((relation) => relation.productId !== pairingSourceId),
       ...savedRelations,
     ]);
-    setStatus(`已保存 ${pairingTargetIds.size} 个配套玩具关联`);
+    const savedQuantity = relationQuantityTotal(savedRelations);
+    setStatus(`已保存 ${savedRelations.length} 个配套玩具 · 总数量 ${savedQuantity}`);
     setPairingSavedMessage(
-      `已保存 ${savedRelations.length} 个配套玩具。窗口会保持打开，方便你立即核对。`,
+      `已保存 ${savedRelations.length} 个配套玩具，总数量 ${savedQuantity}。窗口会保持打开，方便你立即核对。`,
     );
   };
 
@@ -838,7 +853,7 @@ export function ProductGridManager() {
               <section>
                 <header>
                   <b>配套玩具</b>
-                  <span>已选 {pairingTargetIds.size} · {pairingToyRows.length} 项</span>
+                  <span>已选 {pairingTargetIds.size} SKU · 总数量 {selectedToyQuantity} · 共 {pairingToyRows.length} 项</span>
                 </header>
                 <div className="pairingThumbGrid pairingToyGrid">
                   {pairingToyRows.map((product) => (
@@ -893,7 +908,7 @@ export function ProductGridManager() {
               <span>
                 {pairingSavedMessage ||
                   (pairingSourceId
-                    ? `当前选择 ${pairingTargetIds.size} 个配套玩具；保存后会保留在该模拟产品下。`
+                    ? `当前选择 ${pairingTargetIds.size} 个配套玩具，总数量 ${selectedToyQuantity}；保存后会保留在该模拟产品下。`
                     : "请选择左侧模拟区产品；带“已配对”标记的产品已有保存记录。")}
               </span>
               <button
