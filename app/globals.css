@@ -807,6 +807,18 @@ img {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pairingSavedBadge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  border-radius: 3px;
+  background: var(--lime-bright);
+  color: #253b4a;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 5px;
+}
 .pairingToyCard {
   min-width: 0;
   border: 1px solid #dbe3da;

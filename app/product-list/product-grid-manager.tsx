@@ -199,6 +199,7 @@ export function ProductGridManager() {
   const [pairingQuantities, setPairingQuantities] = useState<Record<string, number>>({});
   const [pairingSearch, setPairingSearch] = useState("");
   const [pairingSaving, setPairingSaving] = useState(false);
+  const [pairingSavedMessage, setPairingSavedMessage] = useState("");
 
   const load = async () => {
     const response = await fetch("/api/catalog");
@@ -298,6 +299,13 @@ export function ProductGridManager() {
       ),
     [pairingCategory, rows],
   );
+  const pairingCountsBySourceId = useMemo(() => {
+    const counts = new Map<string, number>();
+    relations.forEach((relation) => {
+      counts.set(relation.productId, (counts.get(relation.productId) || 0) + 1);
+    });
+    return counts;
+  }, [relations]);
 
   const openPairingManager = () => {
     setPairingCategory((current) => current || simulationCategories[0] || "");
@@ -305,6 +313,7 @@ export function ProductGridManager() {
     setPairingTargetIds(new Set());
     setPairingQuantities({});
     setPairingSearch("");
+    setPairingSavedMessage("");
     setPairingOpen(true);
   };
 
@@ -325,6 +334,11 @@ export function ProductGridManager() {
           relation.quantity || 1,
         ]),
       ),
+    );
+    setPairingSavedMessage(
+      savedRelations.length
+        ? `已载入该模拟产品的 ${savedRelations.length} 个已保存配套玩具。`
+        : "该模拟产品暂未保存配套玩具。",
     );
   };
 
@@ -389,7 +403,9 @@ export function ProductGridManager() {
       ...savedRelations,
     ]);
     setStatus(`已保存 ${pairingTargetIds.size} 个配套玩具关联`);
-    setPairingOpen(false);
+    setPairingSavedMessage(
+      `已保存 ${savedRelations.length} 个配套玩具。窗口会保持打开，方便你立即核对。`,
+    );
   };
 
   const saveChange = async (event: CellValueChangedEvent<GridRow>) => {
@@ -771,6 +787,7 @@ export function ProductGridManager() {
                     setPairingSourceId("");
                     setPairingTargetIds(new Set());
                     setPairingQuantities({});
+                    setPairingSavedMessage("");
                   }}
                 >
                   {simulationCategories.map((category) => (
@@ -796,20 +813,26 @@ export function ProductGridManager() {
                   <span>已选 {pairingSourceId ? 1 : 0} · {pairingSimulationRows.length} 项</span>
                 </header>
                 <div className="pairingThumbGrid pairingSimulationGrid">
-                  {pairingSimulationRows.map((product) => (
-                    <button
-                      className={`pairingSimulationCard ${
-                        product.id === pairingSourceId ? "selected" : ""
-                      }`}
-                      key={product.id}
-                      onClick={() => selectPairingSource(product.id)}
-                      title={`${product.productName} · ${product.sku}`}
-                      aria-label={`选择 ${product.productName}`}
-                    >
-                      {product.image && <img src={product.image} alt="" />}
-                      <span className="pairingSku">{product.sku}</span>
-                    </button>
-                  ))}
+                  {pairingSimulationRows.map((product) => {
+                    const savedCount = pairingCountsBySourceId.get(product.id) || 0;
+                    return (
+                      <button
+                        className={`pairingSimulationCard ${
+                          product.id === pairingSourceId ? "selected" : ""
+                        }`}
+                        key={product.id}
+                        onClick={() => selectPairingSource(product.id)}
+                        title={`${product.productName} · ${product.sku}`}
+                        aria-label={`选择 ${product.productName}`}
+                      >
+                        {product.image && <img src={product.image} alt="" />}
+                        {savedCount > 0 && (
+                          <span className="pairingSavedBadge">已配对 {savedCount}</span>
+                        )}
+                        <span className="pairingSku">{product.sku}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
               <section>
@@ -868,9 +891,10 @@ export function ProductGridManager() {
             </div>
             <footer className="pairingFoot">
               <span>
-                {pairingSourceId
-                  ? `已选择 ${pairingTargetIds.size} 个配套玩具`
-                  : "请选择左侧模拟区产品"}
+                {pairingSavedMessage ||
+                  (pairingSourceId
+                    ? `当前选择 ${pairingTargetIds.size} 个配套玩具；保存后会保留在该模拟产品下。`
+                    : "请选择左侧模拟区产品；带“已配对”标记的产品已有保存记录。")}
               </span>
               <button
                 className="primary"
