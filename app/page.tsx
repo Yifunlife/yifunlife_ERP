@@ -1220,7 +1220,7 @@ export default function Home() {
   >([]);
   const [kitchenMode, setKitchenMode] = useState<
     "packages" | "main" | "addons"
-  >("packages");
+  >("main");
   const [packageSelections, setPackageSelections] = useState<
     Record<string, number>
   >({});
@@ -1943,15 +1943,6 @@ export default function Home() {
                 {expanded && (
                   <div className="subnav">
                     {([
-                        ...(major === "生活场景 / Lifestyle Scene"
-                          ? [
-                              {
-                                key: "packages" as const,
-                                name: "套餐 / Packages",
-                                matches: () => false,
-                              },
-                            ]
-                          : []),
                         {
                           key: "simulation" as const,
                           name: "模拟区",
@@ -1963,7 +1954,6 @@ export default function Home() {
                           matches: (p: Product) => p.category1 === "小玩具",
                         },
                       ]).map((section) => {
-                        const isPackageSection = section.key === "packages";
                         const sectionProducts = products.filter(
                           (p) =>
                             navigationMajorMembers(major).includes(
@@ -1986,10 +1976,8 @@ export default function Home() {
                           <div className="subnavGroup" key={section.key}>
                             <div
                               className={
-                                (isPackageSection && category === "厨房专区") ||
-                                (!isPackageSection &&
-                                  category === "全部产品" &&
-                                  navigationGroup === section.key)
+                                category === "全部产品" &&
+                                navigationGroup === section.key
                                   ? "subnavGroupHead on"
                                   : "subnavGroupHead"
                               }
@@ -1997,48 +1985,33 @@ export default function Home() {
                               <button
                                 className="subnavGroupSelect"
                                 onClick={() => {
-                                  if (isPackageSection) {
-                                    setCategory("厨房专区");
-                                    setCategory3Filter("");
-                                    setSelectedCategoryKey("");
-                                    setKitchenMode("packages");
-                                    setNavigationGroup("all");
-                                  } else {
-                                    setCategory("全部产品");
-                                    setCategory3Filter("");
-                                    setSelectedCategoryKey("");
-                                    setNavigationGroup(section.key);
-                                  }
+                                  setCategory("全部产品");
+                                  setCategory3Filter("");
+                                  setSelectedCategoryKey("");
+                                  setNavigationGroup(section.key);
                                 }}
                               >
                                 <b>{section.name}</b>
-                                <span>
-                                  {isPackageSection
-                                    ? kitchenPackages.length
-                                    : sectionProducts.length}
-                                </span>
+                                <span>{sectionProducts.length}</span>
                               </button>
-                              {!isPackageSection && (
-                                <button
-                                  className="subnavGroupToggle"
-                                  aria-label={`${
-                                    sectionExpanded ? "收起" : "展开"
-                                  }${section.name}`}
-                                  onClick={() =>
-                                    setExpandedProductGroups((current) => {
-                                      const next = new Set(current);
-                                      if (next.has(sectionKey)) next.delete(sectionKey);
-                                      else next.add(sectionKey);
-                                      return next;
-                                    })
-                                  }
-                                >
-                                  {sectionExpanded ? "−" : "+"}
-                                </button>
-                              )}
+                              <button
+                                className="subnavGroupToggle"
+                                aria-label={`${
+                                  sectionExpanded ? "收起" : "展开"
+                                }${section.name}`}
+                                onClick={() =>
+                                  setExpandedProductGroups((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(sectionKey)) next.delete(sectionKey);
+                                    else next.add(sectionKey);
+                                    return next;
+                                  })
+                                }
+                              >
+                                {sectionExpanded ? "−" : "+"}
+                              </button>
                             </div>
-                            {!isPackageSection &&
-                              sectionExpanded &&
+                            {sectionExpanded &&
                               sectionCategories.map((c) => {
                                 const categoryProducts = sectionProducts.filter(
                                   (p) => p.category2 === c,
@@ -2161,7 +2134,7 @@ export default function Home() {
               <h2>{catalogTitle}</h2>
               <p>
                 {isKitchenView
-                  ? "套餐与单点互不影响；套餐成员直接引用独立 SKU 的名称、价格与库存。"
+                  ? "点击产品卡片打开 SKU 编辑抽屉，黄色按钮将产品加入报价单。"
                   : "一级目录依据 2026 产品册；点击产品卡片打开 SKU 编辑抽屉，黄色按钮将产品加入报价单。"}
               </p>
             </div>
@@ -2169,12 +2142,6 @@ export default function Home() {
           {isKitchenView && (
             <div className="kitchenTabs">
               <div className="kitchenModeTabs">
-                <button
-                  className={kitchenMode === "packages" ? "on" : ""}
-                  onClick={() => setKitchenMode("packages")}
-                >
-                  套餐 / Packages
-                </button>
                 <button
                   className={kitchenMode === "main" ? "on" : ""}
                   onClick={() => setKitchenMode("main")}
@@ -2188,15 +2155,6 @@ export default function Home() {
                   附件玩具 / Add-on toys
                 </button>
               </div>
-              <button
-                className="outline"
-                onClick={() => {
-                  setPackageDraft(kitchenPackages[0]);
-                  setPackageManagerOpen(true);
-                }}
-              >
-                管理厨房套餐
-              </button>
             </div>
           )}
           {filtersOpen && (
