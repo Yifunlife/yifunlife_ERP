@@ -26,6 +26,28 @@ const recommendationForClient = (recommendation: {
   quantity: Math.max(1, Math.floor(Number(recommendation.quantity) || 1)),
 });
 
+async function ensureRecommendationQuantityColumn() {
+  const columns = await env.DB
+    .prepare("PRAGMA table_info(product_recommendations)")
+    .all<{ name: string }>();
+  if (columns.results.some((column) => column.name === "quantity")) return;
+
+  try {
+    await env.DB
+      .prepare(
+        "ALTER TABLE product_recommendations ADD COLUMN quantity integer NOT NULL DEFAULT 1",
+      )
+      .run();
+  } catch {
+    const checkedColumns = await env.DB
+      .prepare("PRAGMA table_info(product_recommendations)")
+      .all<{ name: string }>();
+    if (!checkedColumns.results.some((column) => column.name === "quantity")) {
+      throw new Error("Unable to add the product recommendation quantity column");
+    }
+  }
+}
+
 async function getStoredCatalogBackup() {
   const object = await env.PRODUCT_IMAGES.get("catalog/catalog.json");
   if (!object) return [];
@@ -56,6 +78,7 @@ async function getStoredCatalogBackup() {
 export async function GET(request: Request) {
   if (!(await getLoginSession(request)))
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  await ensureRecommendationQuantityColumn();
   const db = getDb();
   const [products, overrides, categories, recommendations, packages] = await Promise.all([
     db.select().from(catalogProducts),
@@ -116,6 +139,7 @@ export async function PATCH(request: Request) {
 export async function POST(request: Request) {
   if (!(await getLoginSession(request)))
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  await ensureRecommendationQuantityColumn();
   const payload = (await request.json()) as {
     action:
       | "category"
