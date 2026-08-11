@@ -58,6 +58,7 @@ export const productRecommendations = sqliteTable(
   {
     productId: text("product_id").notNull(),
     relatedProductId: text("related_product_id").notNull(),
+    quantity: integer("quantity").notNull().default(1),
   },
   (table) => [
     primaryKey({ columns: [table.productId, table.relatedProductId] }),

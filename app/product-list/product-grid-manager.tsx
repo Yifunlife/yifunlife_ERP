@@ -39,6 +39,7 @@ type Category = {
 type ProductRelation = {
   productId: string;
   relatedProductId: string;
+  quantity?: number;
 };
 
 type GridRow = {
@@ -186,6 +187,8 @@ export function ProductGridManager() {
   const [pairingTargetIds, setPairingTargetIds] = useState<Set<string>>(
     new Set(),
   );
+  const [pairingQuantities, setPairingQuantities] = useState<Record<string, number>>({});
+  const [pairingSearch, setPairingSearch] = useState("");
   const [pairingSaving, setPairingSaving] = useState(false);
 
   const load = async () => {
@@ -266,47 +269,87 @@ export function ProductGridManager() {
     [rows],
   );
   const pairingSimulationRows = useMemo(
-    () =>
-      rows.filter(
-        (row) =>
-          row.category1 !== "小玩具" && row.category2 === pairingCategory,
-      ),
-    [pairingCategory, rows],
+    () => {
+      const query = pairingSearch.trim().toLowerCase();
+      return rows.filter((row) =>
+        row.category1 !== "小玩具" &&
+        row.category2 === pairingCategory &&
+        (!query || `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)),
+      );
+    },
+    [pairingCategory, pairingSearch, rows],
   );
   const pairingToyRows = useMemo(
-    () =>
-      rows.filter(
-        (row) =>
-          row.category1 === "小玩具" && row.category2 === pairingCategory,
-      ),
-    [pairingCategory, rows],
+    () => {
+      const query = pairingSearch.trim().toLowerCase();
+      return rows.filter((row) =>
+        row.category1 === "小玩具" &&
+        row.category2 === pairingCategory &&
+        (!query || `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)),
+      );
+    },
+    [pairingCategory, pairingSearch, rows],
   );
 
   const openPairingManager = () => {
     setPairingCategory((current) => current || simulationCategories[0] || "");
     setPairingSourceId("");
     setPairingTargetIds(new Set());
+    setPairingQuantities({});
+    setPairingSearch("");
     setPairingOpen(true);
   };
 
   const selectPairingSource = (productId: string) => {
+    const savedRelations = relations.filter(
+      (relation) => relation.productId === productId,
+    );
     setPairingSourceId(productId);
     setPairingTargetIds(
       new Set(
-        relations
-          .filter((relation) => relation.productId === productId)
-          .map((relation) => relation.relatedProductId),
+        savedRelations.map((relation) => relation.relatedProductId),
+      ),
+    );
+    setPairingQuantities(
+      Object.fromEntries(
+        savedRelations.map((relation) => [
+          relation.relatedProductId,
+          relation.quantity || 1,
+        ]),
       ),
     );
   };
 
-  const togglePairingTarget = (productId: string) =>
+  const togglePairingTarget = (productId: string) => {
     setPairingTargetIds((current) => {
       const next = new Set(current);
       if (next.has(productId)) next.delete(productId);
       else next.add(productId);
       return next;
     });
+    setPairingQuantities((current) => {
+      const next = { ...current };
+      if (next[productId]) delete next[productId];
+      else next[productId] = 1;
+      return next;
+    });
+  };
+
+  const setPairingQuantity = (productId: string, value: number) => {
+    const quantity = Math.max(0, Math.floor(Number(value) || 0));
+    setPairingTargetIds((current) => {
+      const next = new Set(current);
+      if (quantity) next.add(productId);
+      else next.delete(productId);
+      return next;
+    });
+    setPairingQuantities((current) => {
+      const next = { ...current };
+      if (quantity) next[productId] = quantity;
+      else delete next[productId];
+      return next;
+    });
+  };
 
   const savePairing = async () => {
     if (!pairingSourceId) return;
@@ -317,7 +360,10 @@ export function ProductGridManager() {
       body: JSON.stringify({
         action: "recommendations",
         productId: pairingSourceId,
-        relatedIds: [...pairingTargetIds],
+        relatedProducts: [...pairingTargetIds].map((relatedProductId) => ({
+          relatedProductId,
+          quantity: pairingQuantities[relatedProductId] || 1,
+        })),
       }),
     });
     setPairingSaving(false);
@@ -330,6 +376,7 @@ export function ProductGridManager() {
       ...[...pairingTargetIds].map((relatedProductId) => ({
         productId: pairingSourceId,
         relatedProductId,
+        quantity: pairingQuantities[relatedProductId] || 1,
       })),
     ]);
     setStatus(`已保存 ${pairingTargetIds.size} 个配套玩具关联`);
@@ -714,6 +761,7 @@ export function ProductGridManager() {
                     setPairingCategory(event.target.value);
                     setPairingSourceId("");
                     setPairingTargetIds(new Set());
+                    setPairingQuantities({});
                   }}
                 >
                   {simulationCategories.map((category) => (
@@ -721,26 +769,36 @@ export function ProductGridManager() {
                   ))}
                 </select>
               </label>
-              <p>先选择左侧模拟区产品，再在右侧勾选一个或多个配套玩具。</p>
+              <label className="pairingSearch">
+                查找产品或款号
+                <input
+                  value={pairingSearch}
+                  onChange={(event) => setPairingSearch(event.target.value)}
+                  placeholder="输入名称、英文或款号"
+                  type="search"
+                />
+              </label>
+              <p>先选择左侧模拟区产品，再在右侧选择配套玩具并填写数量。</p>
             </div>
             <div className="pairingColumns">
               <section>
                 <header>
                   <b>模拟区产品</b>
-                  <span>{pairingSimulationRows.length} 项</span>
+                  <span>已选 {pairingSourceId ? 1 : 0} · {pairingSimulationRows.length} 项</span>
                 </header>
-                <div className="pairingThumbGrid">
+                <div className="pairingThumbGrid pairingSimulationGrid">
                   {pairingSimulationRows.map((product) => (
                     <button
-                      className={
+                      className={`pairingSimulationCard ${
                         product.id === pairingSourceId ? "selected" : ""
-                      }
+                      }`}
                       key={product.id}
                       onClick={() => selectPairingSource(product.id)}
                       title={`${product.productName} · ${product.sku}`}
                       aria-label={`选择 ${product.productName}`}
                     >
                       {product.image && <img src={product.image} alt="" />}
+                      <span className="pairingSku">{product.sku}</span>
                     </button>
                   ))}
                 </div>
@@ -748,22 +806,53 @@ export function ProductGridManager() {
               <section>
                 <header>
                   <b>配套玩具</b>
-                  <span>{pairingToyRows.length} 项</span>
+                  <span>已选 {pairingTargetIds.size} · {pairingToyRows.length} 项</span>
                 </header>
-                <div className="pairingThumbGrid">
+                <div className="pairingThumbGrid pairingToyGrid">
                   {pairingToyRows.map((product) => (
-                    <button
+                    <article
                       className={
-                        pairingTargetIds.has(product.id) ? "selected" : ""
+                        `pairingToyCard ${pairingTargetIds.has(product.id) ? "selected" : ""}`
                       }
-                      disabled={!pairingSourceId}
                       key={product.id}
-                      onClick={() => togglePairingTarget(product.id)}
-                      title={`${product.productName} · ${product.sku}`}
-                      aria-label={`关联 ${product.productName}`}
                     >
-                      {product.image && <img src={product.image} alt="" />}
-                    </button>
+                      <button
+                        className="pairingToyThumb"
+                        disabled={!pairingSourceId}
+                        onClick={() => togglePairingTarget(product.id)}
+                        title={`${product.productName} · ${product.sku}`}
+                        aria-label={`关联 ${product.productName}`}
+                      >
+                        {product.image && <img src={product.image} alt="" />}
+                        <span className="pairingSku">{product.sku}</span>
+                      </button>
+                      <div className="pairingQuantity" aria-label={`${product.sku} 的数量`}>
+                        <button
+                          aria-label={`减少 ${product.sku} 数量`}
+                          disabled={!pairingSourceId || !pairingTargetIds.has(product.id)}
+                          onClick={() => setPairingQuantity(product.id, (pairingQuantities[product.id] || 1) - 1)}
+                          type="button"
+                        >
+                          −
+                        </button>
+                        <input
+                          aria-label={`${product.sku} 数量`}
+                          disabled={!pairingSourceId}
+                          min="0"
+                          onChange={(event) => setPairingQuantity(product.id, Number(event.target.value))}
+                          type="number"
+                          value={pairingQuantities[product.id] || 0}
+                        />
+                        <button
+                          aria-label={`增加 ${product.sku} 数量`}
+                          disabled={!pairingSourceId}
+                          onClick={() => setPairingQuantity(product.id, (pairingQuantities[product.id] || 0) + 1)}
+                          type="button"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </article>
                   ))}
                 </div>
               </section>

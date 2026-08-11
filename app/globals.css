@@ -647,6 +647,7 @@ img {
 .pairingFilters {
   display: flex;
   align-items: end;
+  flex-wrap: wrap;
   gap: 20px;
   border-bottom: 1px solid #dde5dc;
   background: #fff;
@@ -668,6 +669,15 @@ img {
   padding: 8px 10px;
   font: inherit;
 }
+.pairingSearch input {
+  min-width: 260px;
+  border: 1px solid #c4d0c6;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  font: inherit;
+}
 .pairingFilters p {
   margin: 0 0 8px;
   color: #7a8991;
@@ -677,7 +687,7 @@ img {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 2fr;
 }
 .pairingColumns > section {
   min-width: 0;
@@ -701,13 +711,24 @@ img {
 }
 .pairingThumbGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
   align-content: start;
   gap: 11px;
-  overflow: auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-color: #9aabb3 #edf1ec;
+  scrollbar-gutter: stable;
   padding: 17px;
 }
-.pairingThumbGrid button {
+.pairingSimulationGrid {
+  grid-template-columns: repeat(auto-fill, minmax(94px, 1fr));
+}
+.pairingToyGrid {
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+.pairingSimulationCard,
+.pairingToyThumb {
+  position: relative;
   aspect-ratio: 1;
   overflow: hidden;
   border: 1px solid #dbe3da;
@@ -715,18 +736,24 @@ img {
   background: #fff;
   padding: 4px;
 }
-.pairingThumbGrid button:empty {
+.pairingSimulationCard:empty,
+.pairingToyThumb:empty {
   background: #edf1ec;
 }
-.pairingThumbGrid button:not(:disabled):hover {
+.pairingSimulationCard:not(:disabled):hover,
+.pairingToyThumb:not(:disabled):hover {
   border-color: var(--lime);
 }
-.pairingThumbGrid button.selected {
+.pairingSimulationCard.selected,
+.pairingToyCard.selected .pairingToyThumb {
   border: 3px solid var(--lime-bright);
   background: #edf5df;
   box-shadow: 0 0 0 2px rgba(211, 211, 60, 0.2);
 }
-.pairingThumbGrid button:disabled {
+.pairingSimulationCard:disabled,
+.pairingToyThumb:disabled,
+.pairingQuantity button:disabled,
+.pairingQuantity input:disabled {
   cursor: not-allowed;
   opacity: 0.52;
 }
@@ -734,6 +761,62 @@ img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.pairingSku {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(11, 47, 76, 0.86);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pairingToyCard {
+  min-width: 0;
+  border: 1px solid #dbe3da;
+  border-radius: 8px;
+  background: #fff;
+  padding: 5px;
+}
+.pairingToyCard.selected {
+  border-color: var(--lime-bright);
+  background: #f6faef;
+}
+.pairingToyThumb {
+  width: 100%;
+}
+.pairingQuantity {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+}
+.pairingQuantity button,
+.pairingQuantity input {
+  height: 28px;
+  border: 1px solid #cfd8d1;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--navy);
+  font: inherit;
+  font-weight: 800;
+  text-align: center;
+}
+.pairingQuantity input {
+  min-width: 0;
+  padding: 0 2px;
+}
+.pairingQuantity input::-webkit-inner-spin-button,
+.pairingQuantity input::-webkit-outer-spin-button {
+  margin: 0;
 }
 .pairingFoot {
   display: flex;
@@ -762,8 +845,12 @@ img {
   .pairingFilters { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 16px; }
   .pairingFilters select { min-width: 0; width: 100%; }
   .pairingFilters p { margin: 0; }
-  .pairingColumns { grid-template-columns: 1fr 1fr; }
-  .pairingThumbGrid { grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); gap: 7px; padding: 10px; }
+  .pairingSearch input { min-width: 0; width: 100%; }
+  .pairingColumns { grid-template-columns: 1fr 2fr; }
+  .pairingThumbGrid { gap: 7px; padding: 10px; }
+  .pairingSimulationGrid { grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); }
+  .pairingToyGrid { grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); }
+  .pairingQuantity { grid-template-columns: 24px minmax(0, 1fr) 24px; }
   .pairingFoot { padding: 12px 16px; }
 }
 .sideFoot {

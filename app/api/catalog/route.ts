@@ -116,6 +116,7 @@ export async function POST(request: Request) {
     category?: typeof catalogCategories.$inferInsert;
     productId?: string;
     relatedIds?: string[];
+    relatedProducts?: Array<{ relatedProductId: string; quantity: number }>;
     package?: typeof kitchenPackages.$inferInsert;
   };
   const db = getDb();
@@ -124,16 +125,22 @@ export async function POST(request: Request) {
     return Response.json({ category: payload.category }, { status: 201 });
   }
   if (payload.action === "recommendations" && payload.productId) {
+    const relatedProducts = payload.relatedProducts ||
+      (payload.relatedIds || []).map((relatedProductId) => ({
+        relatedProductId,
+        quantity: 1,
+      }));
     await db
       .delete(productRecommendations)
       .where(eq(productRecommendations.productId, payload.productId));
-    if (payload.relatedIds?.length)
+    if (relatedProducts.length)
       await db
         .insert(productRecommendations)
         .values(
-          payload.relatedIds.map((relatedProductId) => ({
+          relatedProducts.map(({ relatedProductId, quantity }) => ({
             productId: payload.productId!,
             relatedProductId,
+            quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
           })),
         );
     return Response.json({ ok: true });
