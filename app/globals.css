@@ -687,11 +687,8 @@ img {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 2fr;
-  overflow: hidden;
-}
-.pairingColumns.simulationDense {
   grid-template-columns: 3fr 4fr;
+  overflow: hidden;
 }
 .pairingColumns > section {
   min-width: 0;
@@ -878,7 +875,7 @@ img {
   .pairingFilters select { min-width: 0; width: 100%; }
   .pairingFilters p { margin: 0; }
   .pairingSearch input { min-width: 0; width: 100%; }
-  .pairingColumns, .pairingColumns.simulationDense { grid-template-columns: 3fr 4fr; }
+  .pairingColumns { grid-template-columns: 3fr 4fr; }
   .pairingThumbGrid { gap: 7px; padding: 10px; }
   .pairingSimulationGrid { grid-auto-rows: 82px; }
   .pairingToyGrid { grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); }
