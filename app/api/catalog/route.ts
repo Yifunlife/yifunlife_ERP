@@ -16,6 +16,16 @@ export const dynamic = "force-dynamic";
 const imageUrl = (key: string) =>
   key ? `/api/catalog/image?key=${encodeURIComponent(key)}` : "";
 
+const recommendationForClient = (recommendation: {
+  productId: string;
+  relatedProductId: string;
+  quantity: unknown;
+}) => ({
+  productId: recommendation.productId,
+  relatedProductId: recommendation.relatedProductId,
+  quantity: Math.max(1, Math.floor(Number(recommendation.quantity) || 1)),
+});
+
 async function getStoredCatalogBackup() {
   const object = await env.PRODUCT_IMAGES.get("catalog/catalog.json");
   if (!object) return [];
@@ -77,7 +87,7 @@ export async function GET(request: Request) {
     products: catalog,
     overrides,
     categories,
-    recommendations,
+    recommendations: recommendations.map(recommendationForClient),
     packages,
   });
 }
@@ -143,7 +153,14 @@ export async function POST(request: Request) {
             quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
           })),
         );
-    return Response.json({ ok: true });
+    const savedRecommendations = await db
+      .select()
+      .from(productRecommendations)
+      .where(eq(productRecommendations.productId, payload.productId));
+    return Response.json({
+      ok: true,
+      recommendations: savedRecommendations.map(recommendationForClient),
+    });
   }
   if (payload.action === "kitchenPackage" && payload.package) {
     const values = { ...payload.package, updatedAt: new Date().toISOString() };

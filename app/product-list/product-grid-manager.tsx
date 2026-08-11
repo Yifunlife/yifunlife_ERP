@@ -39,7 +39,7 @@ type Category = {
 type ProductRelation = {
   productId: string;
   relatedProductId: string;
-  quantity?: number;
+  quantity?: number | string;
 };
 
 type GridRow = {
@@ -139,6 +139,11 @@ PickerEditor.displayName = "PickerEditor";
 const categoryPath = (category1: string, category2: string, category3: string) =>
   [category1, category2, category3].filter(Boolean).join(" / ");
 
+const normalizedRelation = (relation: ProductRelation): ProductRelation => ({
+  ...relation,
+  quantity: Math.max(1, Math.floor(Number(relation.quantity) || 1)),
+});
+
 const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] => {
   const overrideById = new Map(overrides.map((override) => [override.productId, override]));
   return products.map((product) => {
@@ -200,7 +205,7 @@ export function ProductGridManager() {
     const data = await response.json();
     setRows(gridRows(data.products || [], data.overrides || []));
     setCategories(data.categories || []);
-    setRelations(data.recommendations || []);
+    setRelations((data.recommendations || []).map(normalizedRelation));
     setStatus(`${(data.products || []).length} 个 SKU · 双击分类或颜色即可修改`);
   };
 
@@ -273,22 +278,20 @@ export function ProductGridManager() {
       const query = pairingSearch.trim().toLowerCase();
       return rows.filter((row) =>
         row.category1 !== "小玩具" &&
-        row.category2 === pairingCategory &&
-        (!query || `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)),
+        (query
+          ? `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)
+          : row.category2 === pairingCategory),
       );
     },
     [pairingCategory, pairingSearch, rows],
   );
   const pairingToyRows = useMemo(
-    () => {
-      const query = pairingSearch.trim().toLowerCase();
-      return rows.filter((row) =>
-        row.category1 === "小玩具" &&
-        row.category2 === pairingCategory &&
-        (!query || `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)),
-      );
-    },
-    [pairingCategory, pairingSearch, rows],
+    () =>
+      rows.filter(
+        (row) =>
+          row.category1 === "小玩具" && row.category2 === pairingCategory,
+      ),
+    [pairingCategory, rows],
   );
 
   const openPairingManager = () => {
@@ -366,18 +369,19 @@ export function ProductGridManager() {
         })),
       }),
     });
-    setPairingSaving(false);
     if (!response.ok) {
+      setPairingSaving(false);
       setStatus("配对保存失败，请重试。");
       return;
     }
+    const data = (await response.json()) as {
+      recommendations?: ProductRelation[];
+    };
+    const savedRelations = (data.recommendations || []).map(normalizedRelation);
+    setPairingSaving(false);
     setRelations((current) => [
       ...current.filter((relation) => relation.productId !== pairingSourceId),
-      ...[...pairingTargetIds].map((relatedProductId) => ({
-        productId: pairingSourceId,
-        relatedProductId,
-        quantity: pairingQuantities[relatedProductId] || 1,
-      })),
+      ...savedRelations,
     ]);
     setStatus(`已保存 ${pairingTargetIds.size} 个配套玩具关联`);
     setPairingOpen(false);
