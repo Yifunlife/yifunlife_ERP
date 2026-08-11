@@ -19,6 +19,7 @@ import { AgGridReact } from "ag-grid-react";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import type { CatalogProduct } from "../catalog-types";
+import { pairedArea } from "../../lib/area-pairing";
 
 type Override = {
   productId: string;
@@ -138,6 +139,9 @@ PickerEditor.displayName = "PickerEditor";
 
 const categoryPath = (category1: string, category2: string, category3: string) =>
   [category1, category2, category3].filter(Boolean).join(" / ");
+
+const pairingAreaForRow = (row: GridRow) =>
+  pairedArea(row.category2, row.productName) || row.category2;
 
 const normalizedRelation = (relation: ProductRelation): ProductRelation => ({
   ...relation,
@@ -269,7 +273,7 @@ export function ProductGridManager() {
       [...new Set(
         rows
           .filter((row) => row.category1 !== "小玩具")
-          .map((row) => row.category2),
+          .map(pairingAreaForRow),
       )].sort(),
     [rows],
   );
@@ -280,7 +284,7 @@ export function ProductGridManager() {
         row.category1 !== "小玩具" &&
         (query
           ? `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)
-          : row.category2 === pairingCategory),
+          : pairingAreaForRow(row) === pairingCategory),
       );
     },
     [pairingCategory, pairingSearch, rows],
@@ -289,7 +293,8 @@ export function ProductGridManager() {
     () =>
       rows.filter(
         (row) =>
-          row.category1 === "小玩具" && row.category2 === pairingCategory,
+          row.category1 === "小玩具" &&
+          pairingAreaForRow(row) === pairingCategory,
       ),
     [pairingCategory, rows],
   );
