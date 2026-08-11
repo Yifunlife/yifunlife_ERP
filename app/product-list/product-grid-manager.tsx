@@ -780,7 +780,13 @@ export function ProductGridManager() {
               </label>
               <p>先选择左侧模拟区产品，再在右侧选择配套玩具并填写数量。</p>
             </div>
-            <div className="pairingColumns">
+            <div
+              className={`pairingColumns ${
+                pairingSimulationRows.length > pairingToyRows.length
+                  ? "simulationDense"
+                  : ""
+              }`}
+            >
               <section>
                 <header>
                   <b>模拟区产品</b>
