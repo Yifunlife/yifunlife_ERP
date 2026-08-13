@@ -158,6 +158,7 @@ export async function POST(request: Request) {
       productId: string;
       productPatch?: Partial<typeof catalogProducts.$inferInsert>;
       overridePatch?: Partial<typeof productOverrides.$inferInsert>;
+      replaceExisting?: boolean;
     }>;
   };
   const db = getDb();
@@ -188,7 +189,10 @@ export async function POST(request: Request) {
       if (!current) continue;
       const productPatch = Object.fromEntries(
         Object.entries(supplement.productPatch || {}).filter(
-          ([key, value]) => !isEmpty(value) && isEmpty(current[key as keyof typeof current]),
+          ([key, value]) =>
+            !isEmpty(value) &&
+            (supplement.replaceExisting ||
+              isEmpty(current[key as keyof typeof current])),
         ),
       );
       if (Object.keys(productPatch).length) {
@@ -207,7 +211,12 @@ export async function POST(request: Request) {
             key !== "productId" &&
             key !== "updatedAt" &&
             !isEmpty(value) &&
-            isEmpty(currentOverride?.[key as keyof typeof productOverrides.$inferSelect]),
+            (supplement.replaceExisting ||
+              isEmpty(
+                currentOverride?.[
+                  key as keyof typeof productOverrides.$inferSelect
+                ],
+              )),
         ),
       );
       if (Object.keys(overridePatch).length) {
