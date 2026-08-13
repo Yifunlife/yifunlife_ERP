@@ -146,14 +146,86 @@ export async function POST(request: Request) {
       | "recommendations"
       | "kitchenPackage"
       | "organizeToyTiers"
-      | "organizePairedAreas";
+      | "organizePairedAreas"
+      | "catalogImport";
     category?: typeof catalogCategories.$inferInsert;
     productId?: string;
     relatedIds?: string[];
     relatedProducts?: Array<{ relatedProductId: string; quantity: number }>;
     package?: typeof kitchenPackages.$inferInsert;
+    products?: Array<typeof catalogProducts.$inferInsert>;
+    supplements?: Array<{
+      productId: string;
+      productPatch?: Partial<typeof catalogProducts.$inferInsert>;
+      overridePatch?: Partial<typeof productOverrides.$inferInsert>;
+    }>;
   };
   const db = getDb();
+  if (payload.action === "catalogImport") {
+    const products = payload.products || [];
+    const supplements = payload.supplements || [];
+    const [existingProducts, existingOverrides] = await Promise.all([
+      db.select().from(catalogProducts),
+      db.select().from(productOverrides),
+    ]);
+    const productById = new Map(existingProducts.map((product) => [product.id, product]));
+    const overrideByProductId = new Map(
+      existingOverrides.map((override) => [override.productId, override]),
+    );
+    const isEmpty = (value: unknown) => value === null || value === undefined || value === "";
+    let added = 0;
+    let supplemented = 0;
+
+    for (const product of products) {
+      if (productById.has(product.id)) continue;
+      await db.insert(catalogProducts).values(product).onConflictDoNothing();
+      productById.set(product.id, product);
+      added += 1;
+    }
+
+    for (const supplement of supplements) {
+      const current = productById.get(supplement.productId);
+      if (!current) continue;
+      const productPatch = Object.fromEntries(
+        Object.entries(supplement.productPatch || {}).filter(
+          ([key, value]) => !isEmpty(value) && isEmpty(current[key as keyof typeof current]),
+        ),
+      );
+      if (Object.keys(productPatch).length) {
+        await db
+          .update(catalogProducts)
+          .set(productPatch)
+          .where(eq(catalogProducts.id, supplement.productId));
+        Object.assign(current, productPatch);
+        supplemented += 1;
+      }
+
+      const currentOverride = overrideByProductId.get(supplement.productId);
+      const overridePatch = Object.fromEntries(
+        Object.entries(supplement.overridePatch || {}).filter(
+          ([key, value]) =>
+            key !== "productId" &&
+            key !== "updatedAt" &&
+            !isEmpty(value) &&
+            isEmpty(currentOverride?.[key as keyof typeof productOverrides.$inferSelect]),
+        ),
+      );
+      if (Object.keys(overridePatch).length) {
+        const values = {
+          productId: supplement.productId,
+          ...overridePatch,
+          updatedAt: new Date().toISOString(),
+        } as typeof productOverrides.$inferInsert;
+        await db
+          .insert(productOverrides)
+          .values(values)
+          .onConflictDoUpdate({ target: productOverrides.productId, set: values });
+        overrideByProductId.set(supplement.productId, values as typeof productOverrides.$inferSelect);
+        supplemented += 1;
+      }
+    }
+    return Response.json({ ok: true, added, supplemented });
+  }
   if (payload.action === "category" && payload.category) {
     await db.insert(catalogCategories).values(payload.category);
     return Response.json({ category: payload.category }, { status: 201 });
