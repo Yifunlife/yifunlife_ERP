@@ -93,6 +93,11 @@ const navigationMajors: NavigationMajor[] = [
   "多媒体互动 / Multimedia Interactivity",
   "零售（游玩必备） / Retail",
 ];
+const unpairedNavigationMajors = new Set<NavigationMajor>([
+  "机械传动 / Playground Scenes",
+  "多媒体互动 / Multimedia Interactivity",
+  "零售（游玩必备） / Retail",
+]);
 const navigationMajorMembers = (major: NavigationMajor): MajorCategory[] =>
   major === "农牧生活 / 动物世界"
     ? ["农牧生活 / Agro-pastoral Life", "动物世界 / Animal World"]
@@ -1946,14 +1951,20 @@ export default function Home() {
                         {
                           key: "simulation" as const,
                           name: "模拟区",
-                          matches: (p: Product) => p.category1 !== "小玩具",
+                          matches: (p: Product) =>
+                            unpairedNavigationMajors.has(major) ||
+                            p.category1 !== "小玩具",
                         },
                         {
                           key: "toys" as const,
                           name: "配套玩具",
                           matches: (p: Product) => p.category1 === "小玩具",
                         },
-                      ]).map((section) => {
+                      ]).filter(
+                        (section) =>
+                          section.key !== "toys" ||
+                          !unpairedNavigationMajors.has(major),
+                      ).map((section) => {
                         const sectionProducts = products.filter(
                           (p) =>
                             navigationMajorMembers(major).includes(
