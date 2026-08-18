@@ -2615,16 +2615,18 @@ export default function Home() {
                       }
                     >
                       <option>未细分</option>
-                      {categories
-                        .filter(
-                          (c) =>
-                            c.level === 3 &&
-                            c.parentKey ===
-                              `${draft.category1}/${draft.category2}`,
-                        )
-                        .map((c) => (
-                          <option key={c.id}>{c.name}</option>
-                        ))}
+                      {[...new Set(
+                        categories
+                          .filter(
+                            (c) =>
+                              c.level === 3 &&
+                              c.parentKey ===
+                                `${draft.category1}/${draft.category2}`,
+                          )
+                          .map((c) => c.name),
+                      )].map((name) => (
+                        <option key={name}>{name}</option>
+                      ))}
                     </select>
                   </label>
                 </div>
