@@ -1961,7 +1961,7 @@ export default function Home() {
                             ) && section.matches(p),
                         );
                         const pairedCategories = pairedAreasForMajor(major);
-                        const sectionCategories = [
+                        const sectionCategories = [...new Set([
                           ...pairedCategories,
                           ...sectionProducts
                             .map((p) => p.category2)
@@ -1969,7 +1969,8 @@ export default function Home() {
                               (categoryName) =>
                                 !pairedCategories.includes(categoryName),
                             ),
-                        ];
+                        ])];
+                        if (!sectionProducts.length) return null;
                         const sectionKey = `${major}:${section.key}`;
                         const sectionExpanded = expandedProductGroups.has(sectionKey);
                         return (

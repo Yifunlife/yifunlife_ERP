@@ -275,26 +275,39 @@ export function ProductGridManager() {
     [batchCategory1, batchCategory2, categories, rows],
   );
 
+  const pairingToyAreas = useMemo(
+    () => new Set(
+      rows
+        .filter((row) => row.category1 === "小玩具")
+        .map(pairingAreaForRow),
+    ),
+    [rows],
+  );
   const simulationCategories = useMemo(
     () =>
       [...new Set(
         rows
-          .filter((row) => row.category1 !== "小玩具")
+          .filter(
+            (row) =>
+              row.category1 !== "小玩具" &&
+              pairingToyAreas.has(pairingAreaForRow(row)),
+          )
           .map(pairingAreaForRow),
       )].sort(),
-    [rows],
+    [pairingToyAreas, rows],
   );
   const pairingSimulationRows = useMemo(
     () => {
       const query = pairingSearch.trim().toLowerCase();
       return rows.filter((row) =>
         row.category1 !== "小玩具" &&
+        pairingToyAreas.has(pairingAreaForRow(row)) &&
         (query
           ? `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)
           : pairingAreaForRow(row) === pairingCategory),
       );
     },
-    [pairingCategory, pairingSearch, rows],
+    [pairingCategory, pairingSearch, pairingToyAreas, rows],
   );
   const pairingToyRows = useMemo(
     () =>

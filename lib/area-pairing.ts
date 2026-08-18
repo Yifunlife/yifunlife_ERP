@@ -4,9 +4,7 @@ type MajorArea =
   | "农牧生活 / Agro-pastoral Life"
   | "动物世界 / Animal World"
   | "车生活 / Car Life"
-  | "拼装手工 / Assemble by Hand"
-  | "机械传动 / Playground Scenes"
-  | "多媒体互动 / Multimedia Interactivity";
+  | "拼装手工 / Assemble by Hand";
 
 export const pairedAreasByMajor: Record<MajorArea, string[]> = {
   "职业体验 / Career Experience": [
@@ -25,12 +23,6 @@ export const pairedAreasByMajor: Record<MajorArea, string[]> = {
   "动物世界 / Animal World": ["宠物医院区", "宠物之家区", "沐浴区", "恐龙区"],
   "车生活 / Car Life": ["赛车区", "修车区", "洗车区"],
   "拼装手工 / Assemble by Hand": ["排雷区", "沙池区", "积木区", "KTV区"],
-  "机械传动 / Playground Scenes": [
-    "摩天轮区", "旋转木马区", "小火车区", "小球运动区", "水科技区",
-  ],
-  "多媒体互动 / Multimedia Interactivity": [
-    "多媒体互动区", "数字体育区", "VR区", "攀岩区", "运动区",
-  ],
 };
 
 export function pairedAreasForMajor(major: string) {
