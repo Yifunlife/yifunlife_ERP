@@ -1971,7 +1971,8 @@ export default function Home() {
                               p.majorCategory,
                             ) && section.matches(p),
                         );
-                        const pairedCategories = pairedAreasForMajor(major);
+                        const pairedCategories =
+                          section.key === "toys" ? pairedAreasForMajor(major) : [];
                         const sectionCategories = [...new Set([
                           ...pairedCategories,
                           ...sectionProducts
