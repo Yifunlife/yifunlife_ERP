@@ -1475,6 +1475,7 @@ export default function Home() {
   const majorProducts = products.filter((p) =>
     navigationMajorMembers(activeMajor).includes(p.majorCategory),
   );
+  const hasGlobalQuery = query.trim().length > 0;
   const isLifestyleMajor = activeMajor === "生活场景 / Lifestyle Scene";
   const isKitchenView =
     isLifestyleMajor && category === "厨房专区";
@@ -1507,7 +1508,9 @@ export default function Home() {
     ? savedKitchenPackages
     : [kitchenPackageTemplate];
   const visible = [...(
-    isKitchenView
+    hasGlobalQuery
+      ? products
+      : isKitchenView
       ? kitchenMode === "main"
         ? kitchenMainProducts
         : kitchenMode === "addons"
@@ -1517,15 +1520,15 @@ export default function Home() {
   )]
     .filter(
     (p) =>
-      (category === "全部产品" || p.category2 === category) &&
-      (!category3Filter || p.category3 === category3Filter) &&
-      (navigationGroup === "all" ||
+      (hasGlobalQuery || category === "全部产品" || p.category2 === category) &&
+      (hasGlobalQuery || !category3Filter || p.category3 === category3Filter) &&
+      (hasGlobalQuery || navigationGroup === "all" ||
         (navigationGroup === "simulation" && p.category1 !== "小玩具") ||
         (navigationGroup === "toys" && p.category1 === "小玩具")) &&
-      (!query ||
+      (!hasGlobalQuery ||
         `${p.sku}${p.name}${p.en}${p.majorCategory}${p.category1}${p.category2}${p.category3}`
           .toLowerCase()
-          .includes(query.toLowerCase())) &&
+          .includes(query.trim().toLowerCase())) &&
       (colorFilter === "全部颜色" || p.colorTag === colorFilter) &&
       (!screenOnly || p.hasScreen) &&
       (!recommendedOnly || p.isRecommended),
@@ -2141,7 +2144,7 @@ export default function Home() {
           <div className="catalogHead">
             <div>
               <span className="eyebrow">
-                {activeMajor} ·{" "}
+                {hasGlobalQuery ? "全局搜索 / Global Search" : activeMajor} ·{" "}
                 {isKitchenView ? kitchenProducts.length : visible.length} ITEMS
               </span>
               <h2>{catalogTitle}</h2>
