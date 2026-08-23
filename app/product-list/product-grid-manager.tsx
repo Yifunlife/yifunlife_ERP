@@ -507,6 +507,39 @@ export function ProductGridManager({
     );
   };
 
+  const clearAllKitchenPairings = async () => {
+    setAreaRuleApplying(true);
+    setPairingSavedMessage("");
+    const sources = rows.filter(
+      (row) => row.category1 !== "小玩具" && pairingAreaForRow(row) === "厨房区",
+    );
+    const results: Response[] = [];
+    for (let index = 0; index < sources.length; index += 4) {
+      const batch = await Promise.all(
+        sources.slice(index, index + 4).map((source) =>
+          fetch("/api/catalog", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "recommendations",
+              productId: source.id,
+              relatedProducts: [],
+            }),
+          }),
+        ),
+      );
+      results.push(...batch);
+      if (batch.some((response) => !response.ok)) break;
+    }
+    setAreaRuleApplying(false);
+    if (results.some((response) => !response.ok)) {
+      setPairingSavedMessage("厨房配对清空失败，请重试。");
+      return;
+    }
+    await load();
+    setPairingSavedMessage(`已清空 ${sources.length} 台厨房模拟设备的全部玩具配对。`);
+  };
+
   const closePairingManager = () => {
     window.location.assign("/product-list");
   };
@@ -1093,6 +1126,13 @@ export function ProductGridManager({
                   onClick={() => void applyAllKitchenToys()}
                 >
                   {areaRuleApplying ? "配对保存中…" : "匹配全部厨房玩具（每个 ×1）"}
+                </button>
+                <button
+                  className="outline"
+                  disabled={areaRuleApplying}
+                  onClick={() => void clearAllKitchenPairings()}
+                >
+                  {areaRuleApplying ? "配对清空中…" : "清空全部厨房配对"}
                 </button>
               </section>
             )}
