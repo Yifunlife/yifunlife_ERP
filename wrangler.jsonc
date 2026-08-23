@@ -8,11 +8,5 @@
       "enabled": true,
       "invocation_logs": true
     }
-  },
-  "send_email": [
-    {
-      "name": "AUTH_EMAIL",
-      "remote": true
-    }
-  ]
+  }
 }
