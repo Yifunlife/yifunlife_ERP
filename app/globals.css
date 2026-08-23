@@ -1029,6 +1029,11 @@ img {
   border-right: 1px solid #e0e7df;
   border-bottom: 1px solid #e0e7df;
 }
+.pairingMatrix tr > :first-child {
+  position: sticky;
+  left: 0;
+  box-shadow: 5px 0 10px rgba(34, 57, 72, 0.08);
+}
 .pairingMatrix thead th {
   position: sticky;
   z-index: 3;
@@ -1064,9 +1069,7 @@ img {
   font-weight: 500;
 }
 .pairingMatrix .pairingMatrixDeviceHead {
-  position: sticky;
-  z-index: 5;
-  left: 0;
+  z-index: 6;
   width: 220px;
   min-width: 220px;
   max-width: 220px;
@@ -1082,9 +1085,7 @@ img {
   font-weight: 500;
 }
 .pairingMatrixSource {
-  position: sticky;
-  z-index: 2;
-  left: 0;
+  z-index: 4;
   display: flex;
   align-items: center;
   width: 220px;
