@@ -247,7 +247,11 @@ const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] 
   });
 };
 
-export function ProductGridManager() {
+export function ProductGridManager({
+  pairingStandalone = false,
+}: {
+  pairingStandalone?: boolean;
+}) {
   const [rows, setRows] = useState<GridRow[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
@@ -258,7 +262,7 @@ export function ProductGridManager() {
   const [batchCategory2, setBatchCategory2] = useState("");
   const [batchCategory3, setBatchCategory3] = useState("");
   const [relations, setRelations] = useState<ProductRelation[]>([]);
-  const [pairingOpen, setPairingOpen] = useState(false);
+  const [pairingOpen, setPairingOpen] = useState(pairingStandalone);
   const [pairingCategory, setPairingCategory] = useState("");
   const [pairingSourceId, setPairingSourceId] = useState("");
   const [pairingTargetIds, setPairingTargetIds] = useState<Set<string>>(
@@ -404,6 +408,11 @@ export function ProductGridManager() {
     [areaPairingRules],
   );
 
+  useEffect(() => {
+    if (pairingStandalone && !pairingCategory && simulationCategories.length)
+      setPairingCategory(simulationCategories[0]);
+  }, [pairingCategory, pairingStandalone, simulationCategories]);
+
   const saveKitchenAreaRules = async () => {
     setAreaRuleSaving(true);
     setPairingSavedMessage("");
@@ -477,6 +486,10 @@ export function ProductGridManager() {
   };
 
   const openPairingManager = () => {
+    if (!pairingStandalone) {
+      window.open("/product-pairing", "_blank", "noopener,noreferrer");
+      return;
+    }
     setPairingCategory((current) => current || simulationCategories[0] || "");
     setPairingSourceId("");
     setPairingTargetIds(new Set());
@@ -484,6 +497,11 @@ export function ProductGridManager() {
     setPairingSearch("");
     setPairingSavedMessage("");
     setPairingOpen(true);
+  };
+
+  const closePairingManager = () => {
+    if (pairingStandalone) window.location.assign("/product-list");
+    else setPairingOpen(false);
   };
 
   const selectPairingSource = (productId: string) => {
@@ -824,7 +842,7 @@ export function ProductGridManager() {
   );
 
   return (
-    <main className="skuGridPage">
+    <main className={`skuGridPage ${pairingStandalone ? "pairingStandalone" : ""}`}>
       <header className="skuGridHeader">
         <div>
           <span>PRODUCT LIST MANAGEMENT</span>
@@ -943,7 +961,7 @@ export function ProductGridManager() {
                 <span>PRODUCT PAIRING</span>
                 <h2>管理配对</h2>
               </div>
-              <button onClick={() => setPairingOpen(false)} aria-label="关闭配对管理">
+              <button onClick={closePairingManager} aria-label="返回产品清单">
                 ×
               </button>
             </header>
