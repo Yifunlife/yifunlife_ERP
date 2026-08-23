@@ -566,7 +566,7 @@ export function ProductGridManager({
   };
 
   const closePairingManager = () => {
-    window.location.assign("/product-list");
+    window.history.back();
   };
 
   const selectPairingSource = (productId: string) => {
