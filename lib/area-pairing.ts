@@ -34,6 +34,10 @@ export function pairedAreasForMajor(major: string) {
   return pairedAreasByMajor[major as MajorArea] || [];
 }
 
+const canonicalPairedAreas = new Set(
+  Object.values(pairedAreasByMajor).flat(),
+);
+
 const exactAreaMap: Record<string, string> = {
   航空区设备: "航空区",
   消防区设备: "消防区",
@@ -89,6 +93,9 @@ export function isPairableArea(sourceArea: string) {
 }
 
 export function pairedArea(sourceArea: string, productName: string) {
+  // 分类整理后，模拟设备与配套玩具会共同使用标准区域名。
+  // 这些名称本身就是可配对区域，不应再回退到旧的来源分类规则。
+  if (canonicalPairedAreas.has(sourceArea)) return sourceArea;
   if (exactAreaMap[sourceArea]) return exactAreaMap[sourceArea];
   const text = productName;
 
