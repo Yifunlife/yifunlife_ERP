@@ -2847,6 +2847,10 @@ export default function Home() {
       body: JSON.stringify({ email: loginUsername }),
     });
     const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setLoginError(d.error || "发送重设链接失败，请稍后重试。");
+      return;
+    }
     setLoginNotice(d.message || "如该邮箱已获批准，重设密码链接将发送至邮箱。");
   };
   const resetPassword = async (event: FormEvent) => {
