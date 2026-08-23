@@ -1,5 +1,6 @@
 "use client";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import type { CatalogProduct } from "./catalog-types";
 import { pairedAreasForMajor } from "../lib/area-pairing";
 type MajorCategory =
@@ -58,6 +59,12 @@ type PairingSuggestion = {
 type PairingRemovalPrompt = {
   device: Product;
   relatedItems: Array<{ product: Product; quantity: number }>;
+};
+type QuoteImportPreview = {
+  fileName: string;
+  matched: Array<{ product: Product; quantity: number }>;
+  unmatchedSkus: string[];
+  sourceRows: number;
 };
 type KitchenGroupSource = "main" | "addons" | "manual";
 type KitchenSelectionMode = "single" | "multiple" | "repeatable";
@@ -1087,6 +1094,14 @@ const quoteArea = (p: Product) => {
   if (/牧场|母鸡|鱼池/.test(x)) return "自然探索区域 / Nature Area";
   return `${p.category2 || p.category1} / Experience Area`;
 };
+const importedSkuCodes = (value: unknown) =>
+  String(value || "")
+    .toUpperCase()
+    .match(/Y\d+(?:-[A-Z0-9]+)?/g) || [];
+const importCellText = (value: unknown) =>
+  String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
 function Visual({ p, mini = false }: { p: Product; mini?: boolean }) {
   return p.image ? (
     <img src={p.image} alt={mini ? "" : p.name} loading="lazy" />
@@ -1282,6 +1297,11 @@ export default function Home() {
     useState<PairingSuggestion | null>(null);
   const [pairingRemovalPrompt, setPairingRemovalPrompt] =
     useState<PairingRemovalPrompt | null>(null);
+  const [quoteImportOpen, setQuoteImportOpen] = useState(false);
+  const [quoteImportPreview, setQuoteImportPreview] =
+    useState<QuoteImportPreview | null>(null);
+  const [quoteImportError, setQuoteImportError] = useState("");
+  const [quoteImporting, setQuoteImporting] = useState(false);
   const [editor, setEditor] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Product | null>(null);
   const [relatedSearch, setRelatedSearch] = useState("");
@@ -1675,6 +1695,196 @@ export default function Home() {
     });
     setPairingRemovalPrompt(null);
   };
+  const readQuoteImport = async (file: File) => {
+    setQuoteImporting(true);
+    setQuoteImportError("");
+    setQuoteImportPreview(null);
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      if (!worksheet) throw new Error("未找到可读取的工作表");
+      const rows = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: "",
+      }) as unknown[][];
+      const headerIndex = rows.findIndex((row) =>
+        row.some((cell) => /款号|item\s*number|sku|货号/i.test(importCellText(cell))),
+      );
+      if (headerIndex < 0)
+        throw new Error("未找到“款号 / Item Number / SKU”列");
+      const header = rows[headerIndex].map(importCellText);
+      const skuColumn = header.findIndex((cell) =>
+        /款号|item\s*number|sku|货号/i.test(cell),
+      );
+      const quantityColumn = header.findIndex((cell) =>
+        /数量|quantity|qty/i.test(cell),
+      );
+      const productBySku = new Map(
+        products.map((product) => [product.sku.toUpperCase(), product]),
+      );
+      const matched = new Map<string, { product: Product; quantity: number }>();
+      const unmatchedSkus = new Set<string>();
+      let sourceRows = 0;
+      rows.slice(headerIndex + 1).forEach((row) => {
+        const skus = importedSkuCodes(row[skuColumn]);
+        if (!skus.length) return;
+        sourceRows += 1;
+        const rawQuantity = Number(
+          importCellText(row[quantityColumn]).replace(/[^\d.-]/g, ""),
+        );
+        const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? rawQuantity : 1;
+        skus.forEach((sku) => {
+          const product = productBySku.get(sku);
+          if (!product) {
+            unmatchedSkus.add(sku);
+            return;
+          }
+          const current = matched.get(product.id);
+          matched.set(product.id, {
+            product,
+            quantity: (current?.quantity || 0) + quantity,
+          });
+        });
+      });
+      if (!sourceRows)
+        throw new Error("表单中没有可识别的 Y 开头款号");
+      setQuoteImportPreview({
+        fileName: file.name,
+        matched: [...matched.values()],
+        unmatchedSkus: [...unmatchedSkus],
+        sourceRows,
+      });
+    } catch (error) {
+      setQuoteImportError(
+        error instanceof Error ? error.message : "读取表单失败，请重新上传 Excel 文件",
+      );
+    } finally {
+      setQuoteImporting(false);
+    }
+  };
+  const applyQuoteImport = () => {
+    if (!quoteImportPreview?.matched.length) return;
+    setCart(
+      Object.fromEntries(
+        quoteImportPreview.matched.map(({ product, quantity }) => [
+          product.id,
+          quantity,
+        ]),
+      ),
+    );
+    setQuoteImportOpen(false);
+    setCartOpen(true);
+  };
+  const exportQuoteExcel = () => {
+    const unitPriceTitle = currency === "USD" ? "USD Unit Price" : "CNY Unit Price";
+    const amountTitle = currency === "USD" ? "USD Amount" : "CNY Amount";
+    const headers = [
+      "Area / 区域",
+      "SKU / 款号",
+      "Product / 产品名称",
+      "English Name / 英文名称",
+      "Brand / 品牌",
+      "Specification / 规格尺寸",
+      "Unit / 单位",
+      "Qty / 数量",
+      unitPriceTitle,
+      amountTitle,
+      "Colour / 颜色",
+      "Volume / 体积",
+      "Remarks / 备注",
+      "Image URL / 图片链接",
+    ];
+    const rows: Array<Array<string | number>> = [
+      ["亦玩集团产品报价清单 / Yifun Life Product Quotation"],
+      ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
+      ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
+      headers,
+    ];
+    const productRows: number[] = [];
+    quoteGroups.forEach(([area, items]) => {
+      rows.push([area]);
+      items.forEach((product) => {
+        const rowNumber = rows.length + 1;
+        productRows.push(rowNumber);
+        rows.push([
+          area,
+          product.sku,
+          product.name,
+          englishProductName(product),
+          product.brand || "YIFUN",
+          product.spec || "—",
+          unitLabel(product.unit).zh,
+          product.qty,
+          displayPrice(product) ?? "",
+          "",
+          colourLabel(product.colorTag).zh,
+          product.volume || "—",
+          product.note || "—",
+          product.image || "",
+        ]);
+      });
+    });
+    const feeRows = [
+      ["包装费 / Packaging fee", fees.packaging],
+      ["除甲醛 / Formaldehyde removal", fees.formaldehyde],
+      ["运输费 / Shipping fee", fees.shipping],
+      ["安装费 / Installation fee", fees.installation],
+    ];
+    rows.push([]);
+    feeRows.forEach(([label, amount]) => rows.push([label, "", "", "", "", "", "", "", "", amount]));
+    const subtotalRow = rows.length + 1;
+    rows.push(["小计（不含税） / Subtotal (tax excluded)"]);
+    const taxRow = rows.length + 1;
+    rows.push(["税额 13% / Tax 13%"]);
+    const designRow = rows.length + 1;
+    rows.push(["设计费抵扣 / Design fee deduction"]);
+    const totalRow = rows.length + 1;
+    rows.push(["总计（含税） / Total (tax included)"]);
+
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    productRows.forEach((rowNumber) => {
+      sheet[`J${rowNumber}`] = {
+        t: "n",
+        f: `IF(I${rowNumber}=\"\",\"\",H${rowNumber}*I${rowNumber})`,
+        z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+      };
+    });
+    const firstProductRow = productRows[0] || 5;
+    const lastProductRow = productRows.at(-1) || firstProductRow;
+    const firstFeeRow = subtotalRow - feeRows.length;
+    sheet[`J${subtotalRow}`] = {
+      t: "n",
+      f: `SUM(J${firstProductRow}:J${lastProductRow})+SUM(J${firstFeeRow}:J${subtotalRow - 1})`,
+      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+    };
+    sheet[`J${taxRow}`] = {
+      t: "n",
+      f: currency === "CNY" ? `J${subtotalRow}*13%` : "0",
+      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+    };
+    sheet[`J${designRow}`] = {
+      t: "n",
+      v: showDesignDeduction ? fees.designDeduction : 0,
+      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+    };
+    sheet[`J${totalRow}`] = {
+      t: "n",
+      f: `J${subtotalRow}+J${taxRow}-J${designRow}`,
+      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+    };
+    sheet["!merges"] = [
+      XLSX.utils.decode_range("A1:N1"),
+    ];
+    sheet["!cols"] = [
+      { wch: 26 }, { wch: 14 }, { wch: 26 }, { wch: 28 }, { wch: 20 },
+      { wch: 24 }, { wch: 13 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
+      { wch: 14 }, { wch: 13 }, { wch: 24 }, { wch: 42 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "报价清单");
+    const fileName = `${(quoteProject || "Yifun_Life_Quotation").replace(/[^\w\u4e00-\u9fff-]+/g, "_")}_${currency}.xlsx`;
+    XLSX.writeFile(workbook, fileName, { compression: true });
+  };
   const packageProducts = (group: KitchenPackageGroup) =>
     group.source === "main"
       ? kitchenMainProducts
@@ -1962,6 +2172,16 @@ export default function Home() {
             onClick={() => window.open("/product-list", "_blank", "noopener")}
           >
             产品清单管理
+          </button>
+          <button
+            className="outline"
+            onClick={() => {
+              setQuoteImportOpen(true);
+              setQuoteImportError("");
+              setQuoteImportPreview(null);
+            }}
+          >
+            导入清单
           </button>
           <button className="cartButton" onClick={() => setCartOpen(true)}>
             <span>报价清单</span>
@@ -2626,6 +2846,73 @@ export default function Home() {
           </div>
         </aside>
       )}
+      {quoteImportOpen && (
+        <div className="overlay importOverlay" role="dialog" aria-modal="true" aria-labelledby="quote-import-title">
+          <section className="importDialog">
+            <div className="drawerHead">
+              <div>
+                <span>IMPORT QUOTATION</span>
+                <h2 id="quote-import-title">自动导入清单</h2>
+              </div>
+              <button onClick={() => setQuoteImportOpen(false)} aria-label="关闭导入清单">×</button>
+            </div>
+            <div className="importBody">
+              <p>
+                上传 Excel 后，系统会读取“款号 / Item Number / SKU”和“数量 / Quantity”，按当前 {currency} 产品价格自动填入报价金额。
+              </p>
+              <label className="importDropzone">
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void readQuoteImport(file);
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <b>{quoteImporting ? "正在读取表单…" : "选择 Excel 表单"}</b>
+                <small>支持 .xlsx、.xls、.csv；未匹配款号会保留在核对清单中。</small>
+              </label>
+              {quoteImportError && <p className="importError">{quoteImportError}</p>}
+              {quoteImportPreview && (
+                <section className="importResult">
+                  <div>
+                    <b>{quoteImportPreview.fileName}</b>
+                    <span>
+                      已读取 {quoteImportPreview.sourceRows} 行 · 匹配 {quoteImportPreview.matched.length} 个 SKU
+                    </span>
+                  </div>
+                  <p>
+                    {quoteImportPreview.matched
+                      .slice(0, 5)
+                      .map(({ product, quantity }) => `${product.sku} × ${quantity}`)
+                      .join(" · ")}
+                    {quoteImportPreview.matched.length > 5 ? " …" : ""}
+                  </p>
+                  {quoteImportPreview.unmatchedSkus.length > 0 && (
+                    <div className="importUnmatched">
+                      <b>未匹配 {quoteImportPreview.unmatchedSkus.length} 个款号</b>
+                      <span>{quoteImportPreview.unmatchedSkus.join(" · ")}</span>
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
+            <footer className="importFoot">
+              <button className="outline" onClick={() => setQuoteImportOpen(false)}>
+                取消
+              </button>
+              <button
+                className="primary"
+                disabled={!quoteImportPreview?.matched.length}
+                onClick={applyQuoteImport}
+              >
+                导入并替换当前报价单
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
       {editor && draft && (
         <div className="overlay editorOverlay">
           <aside className="editorDrawer">
@@ -3250,6 +3537,9 @@ export default function Home() {
               <div>
                 <button className="outline" onClick={() => setQuoteOpen(false)}>
                   返回编辑 / Back
+                </button>
+                <button className="outline" onClick={exportQuoteExcel}>
+                  导出 Excel / Export Excel
                 </button>
                 <button className="primary" onClick={() => window.print()}>
                   导出 PDF / Export PDF

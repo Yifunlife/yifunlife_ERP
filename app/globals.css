@@ -1168,6 +1168,105 @@ img {
 .pairingRemovalPrompt {
   z-index: 70;
 }
+.overlay.importOverlay {
+  z-index: 65;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.importDialog {
+  width: min(640px, 100%);
+  max-height: min(680px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(3, 26, 45, 0.24);
+  overflow: hidden;
+}
+.importBody {
+  padding: 6px 30px 24px;
+  overflow: auto;
+}
+.importBody > p {
+  margin: 0 0 18px;
+  color: #64737c;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.importDropzone {
+  min-height: 144px;
+  display: grid;
+  place-content: center;
+  gap: 7px;
+  padding: 20px;
+  border: 1px dashed #91a491;
+  border-radius: 12px;
+  background: #f7f8f5;
+  text-align: center;
+  color: var(--navy);
+}
+.importDropzone input {
+  display: none;
+}
+.importDropzone b {
+  font-size: 15px;
+}
+.importDropzone small {
+  color: #7a8789;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.importResult,
+.importUnmatched {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #dfe6da;
+  background: #fbfcf9;
+}
+.importResult > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+}
+.importResult b,
+.importUnmatched b {
+  color: var(--navy);
+  font-size: 13px;
+}
+.importResult span,
+.importResult p,
+.importUnmatched span {
+  display: block;
+  color: #738087;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.importResult p {
+  margin: 10px 0 0;
+}
+.importUnmatched {
+  margin-top: 12px;
+  border-color: #e6d8bd;
+  background: #fffaf1;
+}
+.importError {
+  margin: 14px 0 0 !important;
+  color: #b13b36 !important;
+}
+.importFoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 18px 30px;
+  border-top: 1px solid var(--line);
+  background: #f7f8f5;
+}
+.importFoot .primary:disabled {
+  cursor: not-allowed;
+  background: #aeb9c1;
+}
 .overlay {
   position: fixed;
   inset: 0;
