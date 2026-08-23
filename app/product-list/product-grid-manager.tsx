@@ -262,7 +262,7 @@ export function ProductGridManager({
   const [batchCategory2, setBatchCategory2] = useState("");
   const [batchCategory3, setBatchCategory3] = useState("");
   const [relations, setRelations] = useState<ProductRelation[]>([]);
-  const [pairingOpen, setPairingOpen] = useState(pairingStandalone);
+  const pairingOpen = pairingStandalone;
   const [pairingCategory, setPairingCategory] = useState("");
   const [pairingSourceId, setPairingSourceId] = useState("");
   const [pairingTargetIds, setPairingTargetIds] = useState<Set<string>>(
@@ -485,23 +485,8 @@ export function ProductGridManager({
     );
   };
 
-  const openPairingManager = () => {
-    if (!pairingStandalone) {
-      window.open("/product-pairing", "_blank", "noopener,noreferrer");
-      return;
-    }
-    setPairingCategory((current) => current || simulationCategories[0] || "");
-    setPairingSourceId("");
-    setPairingTargetIds(new Set());
-    setPairingQuantities({});
-    setPairingSearch("");
-    setPairingSavedMessage("");
-    setPairingOpen(true);
-  };
-
   const closePairingManager = () => {
-    if (pairingStandalone) window.location.assign("/product-list");
-    else setPairingOpen(false);
+    window.location.assign("/product-list");
   };
 
   const selectPairingSource = (productId: string) => {
@@ -850,9 +835,9 @@ export function ProductGridManager({
           <p>{status}</p>
         </div>
         <div className="skuGridActions">
-          <button className="pairingManageButton" onClick={openPairingManager}>
+          <a className="pairingManageButton" href="/product-pairing" target="_blank" rel="noreferrer">
             管理配对
-          </button>
+          </a>
           <button
             className="outline"
             disabled={!undoStack.length}
