@@ -269,6 +269,9 @@ export function ProductGridManager({
     new Set(),
   );
   const [pairingQuantities, setPairingQuantities] = useState<Record<string, number>>({});
+  const [pairingMatrix, setPairingMatrix] = useState<
+    Record<string, Record<string, number>>
+  >({});
   const [areaPairingRules, setAreaPairingRules] = useState<StoredAreaPairingRule[]>([]);
   const [pairingSearch, setPairingSearch] = useState("");
   const [pairingSaving, setPairingSaving] = useState(false);
@@ -367,19 +370,26 @@ export function ProductGridManager({
       )].sort(),
     [pairingToyAreas, rows],
   );
-  const pairingSimulationRows = useMemo(
-    () => {
-      const query = pairingSearch.trim().toLowerCase();
-      return rows.filter((row) =>
-        row.category1 !== "小玩具" &&
-        pairingToyAreas.has(pairingAreaForRow(row)) &&
-        (query
-          ? `${row.productName} ${row.en} ${row.sku}`.toLowerCase().includes(query)
-          : pairingAreaForRow(row) === pairingCategory),
-      );
-    },
-    [pairingCategory, pairingSearch, pairingToyAreas, rows],
+  const pairingAreaSimulationRows = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          row.category1 !== "小玩具" &&
+          pairingToyAreas.has(pairingAreaForRow(row)) &&
+          pairingAreaForRow(row) === pairingCategory,
+      ),
+    [pairingCategory, pairingToyAreas, rows],
   );
+  const pairingSimulationRows = useMemo(() => {
+    const query = pairingSearch.trim().toLowerCase();
+    return query
+      ? pairingAreaSimulationRows.filter((row) =>
+          `${row.productName} ${row.en} ${row.sku}`
+            .toLowerCase()
+            .includes(query),
+        )
+      : pairingAreaSimulationRows;
+  }, [pairingAreaSimulationRows, pairingSearch]);
   const pairingToyRows = useMemo(
     () =>
       rows.filter(
@@ -413,6 +423,21 @@ export function ProductGridManager({
     if (pairingStandalone && !pairingCategory && simulationCategories.length)
       setPairingCategory(simulationCategories[0]);
   }, [pairingCategory, pairingStandalone, simulationCategories]);
+
+  useEffect(() => {
+    const sourceIds = new Set(pairingAreaSimulationRows.map((row) => row.id));
+    const toyIds = new Set(pairingToyRows.map((row) => row.id));
+    const next = Object.fromEntries(
+      pairingAreaSimulationRows.map((row) => [row.id, {}]),
+    ) as Record<string, Record<string, number>>;
+    relations.forEach((relation) => {
+      if (!sourceIds.has(relation.productId) || !toyIds.has(relation.relatedProductId))
+        return;
+      next[relation.productId][relation.relatedProductId] =
+        Math.max(1, Math.floor(Number(relation.quantity) || 1));
+    });
+    setPairingMatrix(next);
+  }, [pairingAreaSimulationRows, pairingToyRows, relations]);
 
   const saveKitchenAreaRules = async () => {
     setAreaRuleSaving(true);
@@ -598,6 +623,78 @@ export function ProductGridManager({
       else delete next[productId];
       return next;
     });
+  };
+
+  const setMatrixQuantity = (
+    sourceId: string,
+    toyId: string,
+    value: number,
+  ) => {
+    const quantity = Math.max(0, Math.floor(Number(value) || 0));
+    setPairingMatrix((current) => ({
+      ...current,
+      [sourceId]: {
+        ...(current[sourceId] || {}),
+        [toyId]: quantity,
+      },
+    }));
+  };
+
+  const savePairingMatrix = async () => {
+    setPairingSaving(true);
+    setPairingSavedMessage("");
+    const sources = pairingAreaSimulationRows;
+    const payloads = sources.map((source) => {
+      const relatedProducts = pairingToyRows
+        .map((toy) => ({
+          relatedProductId: toy.id,
+          quantity: pairingMatrix[source.id]?.[toy.id] || 0,
+        }))
+        .filter((item) => item.quantity > 0);
+      return { productId: source.id, relatedProducts };
+    });
+    const responses: Response[] = [];
+    for (let index = 0; index < payloads.length; index += 5) {
+      const batch = await Promise.all(
+        payloads.slice(index, index + 5).map((payload) =>
+          fetch("/api/catalog", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "recommendations", ...payload }),
+          }),
+        ),
+      );
+      responses.push(...batch);
+      if (batch.some((response) => !response.ok)) break;
+    }
+    setPairingSaving(false);
+    if (responses.some((response) => !response.ok) || responses.length !== sources.length) {
+      setPairingSavedMessage("配对表保存失败，请重试。");
+      return;
+    }
+    await load();
+    const total = sources.reduce(
+      (sum, source) =>
+        sum +
+        pairingToyRows.reduce(
+          (rowTotal, toy) =>
+            rowTotal + (pairingMatrix[source.id]?.[toy.id] || 0),
+          0,
+        ),
+      0,
+    );
+    setPairingSavedMessage(
+      `已保存 ${sources.length} 台模拟设备的配对表，共 ${total} 件配套玩具。`,
+    );
+  };
+
+  const clearPairingMatrix = () => {
+    setPairingMatrix(
+      Object.fromEntries(
+        pairingAreaSimulationRows.map((row) => [row.id, {}]),
+      ),
+    );
+    setPairingSavedMessage("已清空当前表格，请点击“保存配对表”后生效。");
   };
 
   const savePairing = async () => {
@@ -1073,173 +1170,72 @@ export function ProductGridManager({
                   type="search"
                 />
               </label>
-              <p>先选择左侧模拟区产品，再在右侧选择配套玩具并填写数量。</p>
+              <p>竖排为模拟区主设备，横排为同区域配套玩具；交叉格填写该玩具的绑定数量。</p>
             </div>
-            {pairingCategory === "厨房区" && (
-              <section className="areaPairingRules" aria-label="厨房区统一配对规则">
-                <div>
-                  <h3>厨房区统一配对规则</h3>
-                  <p>全部厨房模拟设备共用；仅录入表格中已明确的必配与选配规则。</p>
-                </div>
-                <div className="areaRuleList">
-                  {kitchenAreaPairingRules.map((rule) => (
-                    <article key={rule.id}>
-                      <b>{rule.name}</b>
-                      <span>
-                        {rule.selectionMode === "fixed"
-                          ? "固定必配"
-                          : rule.selectionMode === "single"
-                            ? `单选 ${rule.minSelections} 项`
-                            : `多选 ${rule.minSelections}–${rule.maxSelections} 项`}
-                      </span>
-                      <small>{rule.note}</small>
-                      <em>
-                        {rule.items.map((item) => {
-                          const product = rows.find((row) => row.sku === item.sku);
-                          return `${item.sku}${product ? ` ${product.productName}` : ""} ×${item.quantity}`;
-                        }).join(" · ")}
-                      </em>
-                    </article>
+            <div className="pairingMatrixWrap">
+              <table className="pairingMatrix">
+                <thead>
+                  <tr>
+                    <th className="pairingMatrixDeviceHead" scope="col">
+                      模拟区主设备
+                      <small>{pairingSimulationRows.length} 项</small>
+                    </th>
+                    {pairingToyRows.map((toy) => (
+                      <th key={toy.id} scope="col" title={`${toy.sku} · ${toy.productName}`}>
+                        {toy.image && <img src={toy.image} alt="" />}
+                        <b>{toy.sku}</b>
+                        <small>{toy.productName}</small>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pairingSimulationRows.map((source) => (
+                    <tr key={source.id}>
+                      <th className="pairingMatrixSource" scope="row">
+                        {source.image && <img src={source.image} alt="" />}
+                        <span>
+                          <b>{source.sku}</b>
+                          <small>{source.productName}</small>
+                        </span>
+                      </th>
+                      {pairingToyRows.map((toy) => (
+                        <td key={toy.id}>
+                          <input
+                            aria-label={`${source.sku} 配对 ${toy.sku} 的数量`}
+                            min="0"
+                            onChange={(event) =>
+                              setMatrixQuantity(source.id, toy.id, Number(event.target.value))
+                            }
+                            type="number"
+                            value={pairingMatrix[source.id]?.[toy.id] || 0}
+                          />
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </div>
-                <button
-                  className="primary"
-                  disabled={areaRuleSaving}
-                  onClick={() => void saveKitchenAreaRules()}
-                >
-                  {areaRuleSaving
-                    ? "保存中…"
-                    : savedKitchenRules
-                      ? "更新厨房规则"
-                      : "保存厨房规则"}
-                </button>
-                <button
-                  className="outline"
-                  disabled={!savedKitchenRules || areaRuleApplying}
-                  onClick={() => void applyKitchenAreaRules()}
-                >
-                  {areaRuleApplying ? "配对保存中…" : "应用给全部厨房设备"}
-                </button>
-                <button
-                  className="primary"
-                  disabled={areaRuleApplying}
-                  onClick={() => void applyAllKitchenToys()}
-                >
-                  {areaRuleApplying ? "配对保存中…" : "匹配全部厨房玩具（每个 ×1）"}
-                </button>
-                <button
-                  className="outline"
-                  disabled={areaRuleApplying}
-                  onClick={() => void clearAllKitchenPairings()}
-                >
-                  {areaRuleApplying ? "配对清空中…" : "清空全部厨房配对"}
-                </button>
-              </section>
-            )}
-            <div className="pairingColumns">
-              <section>
-                <header>
-                  <b>模拟区产品</b>
-                  <span>已选 {pairingSourceId ? 1 : 0} · {pairingSimulationRows.length} 项</span>
-                </header>
-                <div className="pairingThumbGrid pairingSimulationGrid">
-                  {pairingSimulationRows.map((product) => {
-                    const savedCount = pairingCountsBySourceId.get(product.id) || 0;
-                    return (
-                      <button
-                        className={`pairingSimulationCard ${
-                          product.id === pairingSourceId ? "selected" : ""
-                        }`}
-                        key={product.id}
-                        onClick={() => selectPairingSource(product.id)}
-                        title={`${product.productName} · ${product.sku}`}
-                        aria-label={`选择 ${product.productName}`}
-                      >
-                        {product.image && <img src={product.image} alt="" />}
-                        {savedCount > 0 && (
-                          <span className="pairingSavedBadge">已配对 {savedCount}</span>
-                        )}
-                        <span className="pairingSku">{product.sku}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-              <section>
-                <header>
-                  <b>配套玩具</b>
-                  <span>已选 {pairingTargetIds.size} SKU · 总数量 {selectedToyQuantity} · 共 {pairingToyRows.length} 项</span>
-                </header>
-                <div className="pairingThumbGrid pairingToyGrid">
-                  {pairingToyRows.map((product) => (
-                    <article
-                      className={
-                        `pairingToyCard ${pairingTargetIds.has(product.id) ? "selected" : ""}`
-                      }
-                      key={product.id}
-                    >
-                      <button
-                        className="pairingToyThumb"
-                        disabled={!pairingSourceId}
-                        onClick={() => togglePairingTarget(product.id)}
-                        title={`${product.productName} · ${product.sku}`}
-                        aria-label={`关联 ${product.productName}`}
-                      >
-                        {product.image && <img src={product.image} alt="" />}
-                        <span className="pairingSku">{product.sku}</span>
-                      </button>
-                      <div className="pairingQuantity" aria-label={`${product.sku} 的数量`}>
-                        <button
-                          aria-label={`减少 ${product.sku} 数量`}
-                          disabled={!pairingSourceId || !pairingTargetIds.has(product.id)}
-                          onClick={() => setPairingQuantity(product.id, (pairingQuantities[product.id] || 1) - 1)}
-                          type="button"
-                        >
-                          −
-                        </button>
-                        <input
-                          aria-label={`${product.sku} 数量`}
-                          disabled={!pairingSourceId}
-                          min="0"
-                          onChange={(event) => setPairingQuantity(product.id, Number(event.target.value))}
-                          type="number"
-                          value={pairingQuantities[product.id] || 0}
-                        />
-                        <button
-                          aria-label={`增加 ${product.sku} 数量`}
-                          disabled={!pairingSourceId}
-                          onClick={() => setPairingQuantity(product.id, (pairingQuantities[product.id] || 0) + 1)}
-                          type="button"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
+                </tbody>
+              </table>
             </div>
             <footer className="pairingFoot">
               <span>
                 {pairingSavedMessage ||
-                  (pairingSourceId
-                    ? `当前选择 ${pairingTargetIds.size} 个配套玩具，总数量 ${selectedToyQuantity}；保存后会保留在该模拟产品下。`
-                    : "请选择左侧模拟区产品；带“已配对”标记的产品已有保存记录。")}
+                  `竖排为 ${pairingAreaSimulationRows.length} 个模拟区主设备，横排为 ${pairingToyRows.length} 个配套玩具；填写数量后保存。`}
               </span>
               <div className="pairingFootActions">
                 <button
                   className="outline"
-                  disabled={!pairingSourceId || pairingSaving || pairingClearing}
-                  onClick={() => void clearPairing()}
+                  disabled={!pairingAreaSimulationRows.length || pairingSaving}
+                  onClick={clearPairingMatrix}
                 >
-                  {pairingClearing ? "清除中…" : "清除配对"}
+                  清空当前表格
                 </button>
                 <button
                   className="primary"
-                  disabled={!pairingSourceId || pairingSaving || pairingClearing}
-                  onClick={() => void savePairing()}
+                  disabled={!pairingAreaSimulationRows.length || pairingSaving}
+                  onClick={() => void savePairingMatrix()}
                 >
-                  {pairingSaving ? "保存中…" : "保存配对"}
+                  {pairingSaving ? "保存中…" : "保存配对表"}
                 </button>
               </div>
             </footer>

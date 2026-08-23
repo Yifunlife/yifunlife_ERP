@@ -8,7 +8,7 @@ import {
   zipSync,
 } from "../node_modules/.pnpm/fflate@0.7.5/node_modules/fflate/esm/browser.js";
 import type { CatalogProduct } from "./catalog-types";
-import { pairedAreasForMajor } from "../lib/area-pairing";
+import { pairedArea, pairedAreasForMajor } from "../lib/area-pairing";
 type MajorCategory =
   | "职业体验 / Career Experience"
   | "生活场景 / Lifestyle Scene"
@@ -63,7 +63,11 @@ type ProductRelation = {
 };
 type PairingSuggestion = {
   source: Product;
-  relatedItems: Array<{ product: Product; quantity: number }>;
+  relatedItems: Array<{
+    product: Product;
+    quantity: number;
+    isBound: boolean;
+  }>;
 };
 type PairingRemovalPrompt = {
   device: Product;
@@ -1472,8 +1476,10 @@ export default function Home() {
   const [loginNotice, setLoginNotice] = useState("");
   const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
   const [staffOpen, setStaffOpen] = useState(false);
+  const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [staffUsers, setStaffUsers] = useState<ManagedUser[]>([]);
   const [staffError, setStaffError] = useState("");
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [activeMajor, setActiveMajor] = useState<NavigationMajor>(
     navigationMajors[0],
   );
@@ -1923,16 +1929,33 @@ export default function Home() {
 
     const source = products.find((product) => product.id === id);
     if (!source || source.category1 === "小玩具") return;
-    const relatedItems = relations
+    const pairedItems = relations
       .filter((relation) => relation.productId === id)
       .flatMap((relation) => {
         const product = products.find(
           (candidate) => candidate.id === relation.relatedProductId,
         );
         return product
-          ? [{ product, quantity: Math.max(1, relation.quantity || 1) }]
+          ? [{
+              product,
+              quantity: Math.max(1, relation.quantity || 1),
+              isBound: true,
+            }]
           : [];
       });
+    const pairedIds = new Set(pairedItems.map(({ product }) => product.id));
+    const sourceArea = pairedArea(source.category2, source.name);
+    const areaOptions = sourceArea
+      ? products
+          .filter(
+            (product) =>
+              product.category1 === "小玩具" &&
+              !pairedIds.has(product.id) &&
+              pairedArea(product.category2, product.name) === sourceArea,
+          )
+          .map((product) => ({ product, quantity: 0, isBound: false }))
+      : [];
+    const relatedItems = [...pairedItems, ...areaOptions];
     if (relatedItems.length) setPairingSuggestion({ source, relatedItems });
   };
   const clearQuotation = () => {
@@ -2990,11 +3013,6 @@ export default function Home() {
           >
             玩具配对管理
           </button>
-          {authAccount?.role === "admin" && (
-            <button className="outline" onClick={openStaff}>
-              员工管理
-            </button>
-          )}
           <button
             className="outline"
             onClick={() => {
@@ -3009,9 +3027,79 @@ export default function Home() {
             <span>报价清单</span>
             <b>{cartItems.length}</b>
           </button>
-          <button className="logoutButton" onClick={logout}>退出</button>
+          <button
+            className="employeeButton"
+            onClick={() => setEmployeeMenuOpen((current) => !current)}
+            aria-label="员工账户菜单"
+            aria-expanded={employeeMenuOpen}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="8" r="3.5" />
+              <path d="M4.5 20c.7-4 3.2-6 7.5-6s6.8 2 7.5 6" />
+            </svg>
+          </button>
         </div>
       </header>
+      {employeeMenuOpen && (
+        <aside className="employeeMenu" role="menu" aria-label="员工账户菜单">
+          <div className="employeeMenuAccount">
+            <span>当前账号 / ACCOUNT</span>
+            <b>{authAccount?.name || "员工"}</b>
+            <small>{authAccount?.email}</small>
+          </div>
+          {authAccount?.role === "admin" && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setEmployeeMenuOpen(false);
+                void openStaff();
+              }}
+            >
+              员工管理
+            </button>
+          )}
+          <button
+            className="employeeLogout"
+            role="menuitem"
+            onClick={() => {
+              setEmployeeMenuOpen(false);
+              setLogoutConfirmOpen(true);
+            }}
+          >
+            退出系统
+          </button>
+        </aside>
+      )}
+      {logoutConfirmOpen && (
+        <div
+          className="logoutOverlay"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="logout-confirm-title"
+          aria-describedby="logout-confirm-description"
+        >
+          <section className="logoutConfirm">
+            <h2 id="logout-confirm-title">确认退出？</h2>
+            <p id="logout-confirm-description">
+              退出后将返回登录页面。
+            </p>
+            <div className="logoutConfirmActions">
+              <button className="outline" onClick={() => setLogoutConfirmOpen(false)}>
+                取消
+              </button>
+              <button
+                className="primary"
+                onClick={() => {
+                  setLogoutConfirmOpen(false);
+                  void logout();
+                }}
+              >
+                确认退出
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {staffOpen && (
         <div className="staffOverlay" role="dialog" aria-modal="true" aria-label="员工管理">
           <section className="staffPanel">
@@ -3715,40 +3803,90 @@ export default function Home() {
                 </div>
               </div>
               <p>
-                已加入主产品。请按需调整每个关联产品的数量，确认后将以母子结构加入报价清单。
+                主产品已加入。已绑定产品按保存数量默认加入；同区域选配玩具默认不加入，可按需加减后以母子结构加入报价清单。
               </p>
             </div>
             <div className="pairingDialogList">
-              {pairingSuggestion.relatedItems.map(({ product, quantity }) => (
-                <article className="pairingDialogItem" key={product.id}>
-                  <div className="pairingDialogImage">
-                    <Visual p={product} mini />
+              {pairingSuggestion.relatedItems.some((item) => item.isBound) && (
+                <section className="pairingDialogSection">
+                  <div className="pairingDialogSectionTitle">
+                    <b>已绑定产品</b>
+                    <small>按保存数量默认加入</small>
                   </div>
-                  <div className="pairingDialogInfo">
-                    <b>{product.name}</b>
-                    <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>
-                      {englishProductName(product)}
-                    </small>
-                    <small>{product.sku}</small>
+                  {pairingSuggestion.relatedItems
+                    .filter((item) => item.isBound)
+                    .map(({ product, quantity }) => (
+                      <article className="pairingDialogItem" key={product.id}>
+                        <div className="pairingDialogImage">
+                          <Visual p={product} mini />
+                        </div>
+                        <div className="pairingDialogInfo">
+                          <b>{product.name}</b>
+                          <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>
+                            {englishProductName(product)}
+                          </small>
+                          <small>{product.sku}</small>
+                        </div>
+                        <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
+                          <button
+                            onClick={() => changeSuggestedPairingQuantity(product.id, -1)}
+                            disabled={quantity === 0}
+                            aria-label={`减少 ${product.sku} 数量`}
+                          >
+                            −
+                          </button>
+                          <span>{quantity}</span>
+                          <button
+                            onClick={() => changeSuggestedPairingQuantity(product.id, 1)}
+                            aria-label={`增加 ${product.sku} 数量`}
+                          >
+                            ＋
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                </section>
+              )}
+              {pairingSuggestion.relatedItems.some((item) => !item.isBound) && (
+                <section className="pairingDialogSection">
+                  <div className="pairingDialogSectionTitle">
+                    <b>同区域选配玩具</b>
+                    <small>默认数量为 0，可自行加减</small>
                   </div>
-                  <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
-                    <button
-                      onClick={() => changeSuggestedPairingQuantity(product.id, -1)}
-                      disabled={quantity === 0}
-                      aria-label={`减少 ${product.sku} 数量`}
-                    >
-                      −
-                    </button>
-                    <span>{quantity}</span>
-                    <button
-                      onClick={() => changeSuggestedPairingQuantity(product.id, 1)}
-                      aria-label={`增加 ${product.sku} 数量`}
-                    >
-                      ＋
-                    </button>
-                  </div>
-                </article>
-              ))}
+                  {pairingSuggestion.relatedItems
+                    .filter((item) => !item.isBound)
+                    .map(({ product, quantity }) => (
+                      <article className="pairingDialogItem" key={product.id}>
+                        <div className="pairingDialogImage">
+                          <Visual p={product} mini />
+                        </div>
+                        <div className="pairingDialogInfo">
+                          <b>{product.name}</b>
+                          <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>
+                            {englishProductName(product)}
+                          </small>
+                          <small>{product.sku}</small>
+                        </div>
+                        <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
+                          <button
+                            onClick={() => changeSuggestedPairingQuantity(product.id, -1)}
+                            disabled={quantity === 0}
+                            aria-label={`减少 ${product.sku} 数量`}
+                          >
+                            −
+                          </button>
+                          <span>{quantity}</span>
+                          <button
+                            onClick={() => changeSuggestedPairingQuantity(product.id, 1)}
+                            aria-label={`增加 ${product.sku} 数量`}
+                          >
+                            ＋
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                </section>
+              )}
             </div>
             <div className="pairingDialogFoot">
               <span>

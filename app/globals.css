@@ -167,12 +167,116 @@ img {
   gap: 10px;
   align-items: center;
 }
-.logoutButton {
+.employeeButton {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #c8d2ca;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--navy);
+}
+.employeeButton:hover,
+.employeeButton[aria-expanded="true"] {
+  border-color: var(--navy);
+  background: #eef3ed;
+}
+.employeeButton svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+.employeeMenu {
+  position: fixed;
+  z-index: 94;
+  top: 72px;
+  right: 24px;
+  width: 238px;
+  overflow: hidden;
+  border: 1px solid #dbe3da;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(3, 27, 45, 0.18);
+}
+.employeeMenuAccount {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid #e4e9e2;
+  background: #f4f7f2;
+  padding: 16px;
+}
+.employeeMenuAccount > span {
+  color: #9da716;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+.employeeMenuAccount b { color: var(--navy); font-size: 14px; }
+.employeeMenuAccount small {
+  overflow: hidden;
+  color: #71818b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.employeeMenu > button {
+  display: block;
+  width: 100%;
   border: 0;
-  background: transparent;
-  color: #6f7b83;
+  background: #fff;
+  color: var(--ink);
+  padding: 13px 16px;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+}
+.employeeMenu > button:hover { background: #f4f7f2; }
+.employeeMenu > .employeeLogout { color: #a52f3b; }
+.logoutOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 31, 52, 0.44);
+}
+.logoutConfirm {
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid #dfe5dc;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 56px rgba(3, 26, 45, 0.22);
+}
+.logoutConfirm h2 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 22px;
+}
+.logoutConfirm p {
+  margin: 10px 0 0;
+  color: #64737c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.logoutConfirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+.logoutConfirmActions .outline,
+.logoutConfirmActions .primary {
+  min-width: 92px;
+  height: 38px;
+  padding: 0 15px;
   font-size: 12px;
-  padding: 8px 2px;
 }
 .staffOverlay {
   position: fixed;
@@ -905,6 +1009,132 @@ img {
   max-height: none;
   border-radius: 0;
   box-shadow: none;
+}
+.pairingMatrixWrap {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: #f7f9f5;
+  scrollbar-color: #58758c #dfe7df;
+  scrollbar-gutter: stable both-edges;
+}
+.pairingMatrix {
+  min-width: max-content;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.pairingMatrix th,
+.pairingMatrix td {
+  border-right: 1px solid #e0e7df;
+  border-bottom: 1px solid #e0e7df;
+}
+.pairingMatrix thead th {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  width: 112px;
+  min-width: 112px;
+  max-width: 112px;
+  background: #f0f4ed;
+  color: var(--navy);
+  padding: 9px;
+  text-align: center;
+  vertical-align: bottom;
+}
+.pairingMatrix thead th img {
+  display: block;
+  width: 72px;
+  height: 58px;
+  margin: 0 auto 6px;
+  object-fit: contain;
+}
+.pairingMatrix thead th b,
+.pairingMatrix thead th small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pairingMatrix thead th b { font-size: 11px; }
+.pairingMatrix thead th small {
+  margin-top: 3px;
+  color: #71818b;
+  font-size: 9px;
+  font-weight: 500;
+}
+.pairingMatrix .pairingMatrixDeviceHead {
+  position: sticky;
+  z-index: 5;
+  left: 0;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  padding: 14px 18px;
+  text-align: left;
+  vertical-align: middle;
+}
+.pairingMatrixDeviceHead small {
+  display: block;
+  margin-top: 4px;
+  color: #71818b;
+  font-size: 10px;
+  font-weight: 500;
+}
+.pairingMatrixSource {
+  position: sticky;
+  z-index: 2;
+  left: 0;
+  display: flex;
+  align-items: center;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  gap: 10px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 12px;
+  text-align: left;
+}
+.pairingMatrixSource img {
+  width: 68px;
+  height: 52px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+.pairingMatrixSource span { min-width: 0; }
+.pairingMatrixSource b,
+.pairingMatrixSource small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pairingMatrixSource b { color: var(--navy); font-size: 12px; }
+.pairingMatrixSource small { margin-top: 4px; color: #687983; font-size: 11px; font-weight: 500; }
+.pairingMatrix td {
+  min-width: 112px;
+  background: #fff;
+  padding: 10px;
+  text-align: center;
+}
+.pairingMatrix td:has(input:not([value="0"])) { background: #f6fae9; }
+.pairingMatrix td input {
+  box-sizing: border-box;
+  width: 48px;
+  height: 34px;
+  border: 1px solid #cfd8d1;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--navy);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+.pairingMatrix td input:focus {
+  outline: 2px solid #8cb7f8;
+  outline-offset: 1px;
 }
 .pairingColumns {
   min-height: 0;
