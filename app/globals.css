@@ -1015,6 +1015,7 @@ img {
   min-height: 0;
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   background: #f7f9f5;
   scrollbar-color: #58758c #dfe7df;
   scrollbar-gutter: stable both-edges;
@@ -1039,8 +1040,9 @@ img {
   box-shadow: 5px 0 10px rgba(34, 57, 72, 0.08);
 }
 .pairingMatrix thead th {
+  position: -webkit-sticky;
   position: sticky;
-  z-index: 3;
+  z-index: 25;
   top: 0;
   width: 112px;
   min-width: 112px;
@@ -1074,6 +1076,8 @@ img {
 }
 .pairingMatrix .pairingMatrixDeviceHead {
   z-index: 30;
+  left: 0;
+  background: #f0f4ed;
   width: 220px;
   min-width: 220px;
   max-width: 220px;
