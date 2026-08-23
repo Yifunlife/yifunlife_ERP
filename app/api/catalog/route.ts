@@ -17,6 +17,9 @@ export const dynamic = "force-dynamic";
 const imageUrl = (key: string) =>
   key ? `/api/catalog/image?key=${encodeURIComponent(key)}` : "";
 
+const normalizedSku = (value: string) =>
+  value.trim().toUpperCase().match(/Y\d+/)?.[0] || value.trim().toUpperCase();
+
 const recommendationForClient = (recommendation: {
   productId: string;
   relatedProductId: string;
@@ -219,7 +222,7 @@ export async function POST(request: Request) {
     const ruleSkus = new Set(
       (parsedRule.rules as Array<{ items?: Array<{ sku?: string }> }>)
         .flatMap((rule) => rule.items || [])
-        .map((item) => item.sku?.toUpperCase())
+        .map((item) => item.sku && normalizedSku(item.sku))
         .filter((sku): sku is string => Boolean(sku)),
     );
     const [products, overrides] = await Promise.all([
@@ -237,7 +240,7 @@ export async function POST(request: Request) {
       return family !== "小玩具" && pairedArea(category, name) === payload.area;
     });
     const targets = products.filter((product) =>
-      ruleSkus.has(product.sku.toUpperCase()),
+      ruleSkus.has(normalizedSku(product.sku)),
     );
     if (!sources.length || !targets.length)
       return Response.json(
