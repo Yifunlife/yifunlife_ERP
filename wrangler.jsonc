@@ -2,5 +2,11 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "yifunlife-erp",
   "compatibility_date": "2026-05-15",
-  "keep_vars": true
+  "keep_vars": true,
+  "send_email": [
+    {
+      "name": "AUTH_EMAIL",
+      "remote": true
+    }
+  ]
 }

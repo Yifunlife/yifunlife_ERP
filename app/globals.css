@@ -97,6 +97,29 @@ img {
   color: #b13b36;
   font-size: 12px;
 }
+.loginNotice {
+  margin-top: 15px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eef5e8;
+  color: #48633c;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.loginLinks {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+}
+.loginLinks button {
+  border: 0;
+  background: none;
+  color: var(--navy);
+  padding: 0;
+  font-size: 12px;
+  text-decoration: underline;
+}
 .loginHint {
   display: block;
   text-align: center;
@@ -144,6 +167,70 @@ img {
   gap: 10px;
   align-items: center;
 }
+.logoutButton {
+  border: 0;
+  background: transparent;
+  color: #6f7b83;
+  font-size: 12px;
+  padding: 8px 2px;
+}
+.staffOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 31, 52, 0.44);
+}
+.staffPanel {
+  width: min(720px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid #dfe5dc;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(4, 33, 59, 0.24);
+}
+.staffHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 30px 32px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.staffHead h2 { margin: 9px 0 6px; color: var(--navy); font-size: 28px; }
+.staffHead p { margin: 0; color: var(--muted); font-size: 13px; }
+.closeStaff {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: #f1f4f0;
+  color: var(--navy);
+  font-size: 28px;
+  line-height: 1;
+}
+.staffList { padding: 8px 32px 24px; }
+.staffRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.staffRow strong, .staffRow small { display: block; }
+.staffRow strong { color: var(--ink); font-size: 15px; }
+.staffRow small { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.staffActions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.staffStatus { min-width: 52px; text-align: center; font-size: 11px; font-weight: 700; }
+.staffStatus.pending { color: #9c7400; }
+.staffStatus.active { color: #416f4e; }
+.staffStatus.suspended { color: #a4514d; }
+.smallPrimary { min-height: 32px; padding: 0 14px; font-size: 12px; }
+.staffEmpty { color: var(--muted); font-size: 13px; padding: 24px 0; }
 .search {
   height: 42px;
   width: 300px;
@@ -2877,7 +2964,7 @@ img {
   word-break: break-word;
   line-height: 1.35;
 }
-.quoteTable td:nth-child(3),
+  .quoteTable td:nth-child(3),
 .quoteTable td:nth-child(6),
 .quoteTable td:nth-child(12) {
   text-align: left;

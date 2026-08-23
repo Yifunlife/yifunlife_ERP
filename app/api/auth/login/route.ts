@@ -1,20 +1,31 @@
-import { env } from "cloudflare:workers";
+import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { loginSessions } from "../../../../db/schema";
-
-const SESSION_SECONDS = 30 * 60;
-const bytesToHex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-const hash = async (value: string) => bytesToHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+import { appUsers } from "../../../../db/schema";
+import {
+  SESSION_SECONDS,
+  createLoginSession,
+  ensureAdminUser,
+  normalizeEmail,
+  passwordMatches,
+} from "../../../../lib/auth";
 
 export async function POST(request: Request) {
-  const { username, password } = await request.json() as { username?: string; password?: string };
-  const credentials = env as unknown as { APP_LOGIN_USERNAME?: string; APP_LOGIN_PASSWORD?: string };
-  const expectedUsername = credentials.APP_LOGIN_USERNAME?.trim().toLowerCase();
-  const expectedPassword = credentials.APP_LOGIN_PASSWORD;
-  if (!expectedUsername || !expectedPassword) return Response.json({ error: "登录配置未加载，请联系管理员" }, { status: 503 });
-  if (username?.trim().toLowerCase() !== expectedUsername || password !== expectedPassword) return Response.json({ error: "账户或密码不正确" }, { status: 401 });
-  const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
-  const expiresAt = new Date(Date.now() + SESSION_SECONDS * 1000).toISOString();
-  await getDb().insert(loginSessions).values({ tokenHash: await hash(token), username, expiresAt });
-  return Response.json({ ok: true, expiresAt }, { headers: { "Set-Cookie": `yifun_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}` } });
+  const { email, username, password } = await request.json() as { email?: string; username?: string; password?: string };
+  try {
+    await ensureAdminUser();
+  } catch {
+    return Response.json({ error: "登录配置未加载，请联系管理员" }, { status: 503 });
+  }
+  const user = await getDb().select().from(appUsers).where(eq(appUsers.email, normalizeEmail(email || username || ""))).get();
+  if (!user || !password || !(await passwordMatches(password, user.passwordHash, user.passwordSalt)))
+    return Response.json({ error: "账户或密码不正确" }, { status: 401 });
+  if (user.status === "pending")
+    return Response.json({ error: "账号已注册，等待管理员批准后使用。" }, { status: 403 });
+  if (user.status !== "active")
+    return Response.json({ error: "账号已停用，请联系管理员。" }, { status: 403 });
+  const { token, expiresAt } = await createLoginSession(user.email);
+  return Response.json(
+    { ok: true, email: user.email, name: user.name, role: user.role, expiresAt },
+    { headers: { "Set-Cookie": `yifun_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}` } },
+  );
 }

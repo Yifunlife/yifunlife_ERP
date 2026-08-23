@@ -77,6 +77,24 @@ export const loginSessions = sqliteTable("login_sessions", {
   expiresAt: text("expires_at").notNull(),
 });
 
+export const appUsers = sqliteTable("app_users", {
+  email: text("email").primaryKey(),
+  name: text("name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  role: text("role").notNull().default("employee"),
+  status: text("status").notNull().default("pending"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const passwordResetTokens = sqliteTable("password_reset_tokens", {
+  tokenHash: text("token_hash").primaryKey(),
+  email: text("email").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const kitchenPackages = sqliteTable("kitchen_packages", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

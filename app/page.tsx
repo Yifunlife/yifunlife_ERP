@@ -100,6 +100,20 @@ type QuoteImportTemplate = {
     sales?: { row: number; column: number };
   };
 };
+type AuthMode = "login" | "register" | "forgot" | "reset";
+type AuthAccount = {
+  email: string;
+  name: string;
+  role: string;
+  expiresAt: string;
+};
+type ManagedUser = {
+  email: string;
+  name: string;
+  role: string;
+  status: "pending" | "active" | "suspended";
+  createdAt: string;
+};
 type KitchenGroupSource = "main" | "addons" | "manual";
 type KitchenSelectionMode = "single" | "multiple" | "repeatable";
 type KitchenPackageGroup = {
@@ -1452,6 +1466,14 @@ export default function Home() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [loginName, setLoginName] = useState("");
+  const [loginPasswordConfirm, setLoginPasswordConfirm] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
+  const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
+  const [staffOpen, setStaffOpen] = useState(false);
+  const [staffUsers, setStaffUsers] = useState<ManagedUser[]>([]);
+  const [staffError, setStaffError] = useState("");
   const [activeMajor, setActiveMajor] = useState<NavigationMajor>(
     navigationMajors[0],
   );
@@ -1538,7 +1560,15 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/auth/session")
       .then((r) => r.json())
-      .then((d) => setAuth(d.authenticated ? "signedIn" : "signedOut"))
+      .then((d) => {
+        if (d.authenticated) {
+          setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt });
+          setAuth("signedIn");
+        } else {
+          setAuthMode(new URLSearchParams(window.location.search).get("reset") ? "reset" : "login");
+          setAuth("signedOut");
+        }
+      })
       .catch(() => setAuth("signedOut"));
   }, []);
   useEffect(() => {
@@ -2739,24 +2769,111 @@ export default function Home() {
   const login = async (event: FormEvent) => {
     event.preventDefault();
     setLoginError("");
+    setLoginNotice("");
     const r = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: loginUsername,
+        email: loginUsername,
         password: loginPassword,
       }),
     });
     if (r.ok) {
+      const d = await r.json();
       setLoginPassword("");
+      setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt });
       setAuth("signedIn");
     } else {
       const d = await r.json().catch(() => ({}));
       setLoginError(d.error || "登录失败，请重试");
     }
   };
+  const register = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoginError("");
+    setLoginNotice("");
+    if (loginPassword !== loginPasswordConfirm) {
+      setLoginError("两次输入的密码不一致。");
+      return;
+    }
+    const r = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: loginName, email: loginUsername, password: loginPassword }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setLoginError(d.error || "注册失败，请重试");
+      return;
+    }
+    setLoginNotice(d.message || "注册成功，等待管理员批准后即可使用。");
+    setLoginPassword("");
+    setLoginPasswordConfirm("");
+    setAuthMode("login");
+  };
+  const requestPasswordReset = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoginError("");
+    const r = await fetch("/api/auth/request-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: loginUsername }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setLoginNotice(d.message || "如该邮箱已获批准，重设密码链接将发送至邮箱。");
+  };
+  const resetPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoginError("");
+    if (loginPassword !== loginPasswordConfirm) {
+      setLoginError("两次输入的密码不一致。");
+      return;
+    }
+    const token = new URLSearchParams(window.location.search).get("reset");
+    const r = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password: loginPassword }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setLoginError(d.error || "密码重设失败，请重试");
+      return;
+    }
+    window.history.replaceState({}, "", "/");
+    setLoginPassword("");
+    setLoginPasswordConfirm("");
+    setLoginNotice(d.message || "密码已更新，请使用新密码登录。");
+    setAuthMode("login");
+  };
+  const loadStaff = async () => {
+    setStaffError("");
+    const r = await fetch("/api/admin/users");
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setStaffError(d.error || "员工列表加载失败。");
+      return;
+    }
+    setStaffUsers(d.users || []);
+  };
+  const openStaff = () => {
+    setStaffOpen(true);
+    void loadStaff();
+  };
+  const updateStaffStatus = async (email: string, action: "approve" | "suspend" | "activate") => {
+    const r = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, action }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) setStaffError(d.error || "更新员工状态失败。");
+    else void loadStaff();
+  };
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
+    setAuthAccount(null);
+    setAuthMode("login");
     setAuth("signedOut");
   };
   if (auth === "checking")
@@ -2770,45 +2887,44 @@ export default function Home() {
         </div>
       </main>
     );
-  if (auth === "signedOut")
+  if (auth === "signedOut") {
+    const isRegister = authMode === "register";
+    const isForgot = authMode === "forgot";
+    const isReset = authMode === "reset";
+    const submit = isRegister ? register : isForgot ? requestPasswordReset : isReset ? resetPassword : login;
+    const title = isRegister ? "注册员工账号" : isForgot ? "找回密码" : isReset ? "设置新密码" : "登录产品报价系统";
+    const description = isRegister
+      ? "提交后由唯一管理员批准，批准前不能登录。"
+      : isForgot
+        ? "输入已获批准的邮箱，我们会发送 30 分钟内有效的重设链接。"
+        : isReset
+          ? "请设置至少 10 位的新密码。"
+          : "请输入邮箱与密码后继续。";
     return (
       <main className="loginShell">
-        <form className="loginCard" onSubmit={login}>
+        <form className="loginCard" onSubmit={submit}>
           <a className="loginBrand" href="/" aria-label="返回主页">
             <CompanyLogo className="loginLogo" />
           </a>
           <span className="eyebrow">PRIVATE ACCESS</span>
-          <h1>登录产品报价系统</h1>
-          <p>请输入账户与密码后继续。</p>
-          <label>
-            账户 / Account
-            <input
-              value={loginUsername}
-              onChange={(e) => setLoginUsername(e.target.value)}
-              autoComplete="username"
-              required
-            />
-          </label>
-          <label>
-            密码 / Password
-            <input
-              type="password"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
+          <h1>{title}</h1>
+          <p>{description}</p>
+          {isRegister && <label>姓名 / Name<input value={loginName} onChange={(e) => setLoginName(e.target.value)} autoComplete="name" required /></label>}
+          {!isReset && <label>邮箱 / Email<input type="email" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoComplete="email" required /></label>}
+          {!isForgot && <label>密码 / Password<input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} autoComplete={isReset ? "new-password" : isRegister ? "new-password" : "current-password"} required /></label>}
+          {(isRegister || isReset) && <label>确认密码 / Confirm password<input type="password" value={loginPasswordConfirm} onChange={(e) => setLoginPasswordConfirm(e.target.value)} autoComplete="new-password" required /></label>}
           {loginError && <div className="loginError">{loginError}</div>}
-          <button className="primary" type="submit">
-            登录 / Sign in
-          </button>
-          <small className="loginHint">
-            为保护报价信息，登录 30 分钟后将自动退出。
-          </small>
+          {loginNotice && <div className="loginNotice">{loginNotice}</div>}
+          <button className="primary" type="submit">{isRegister ? "提交注册 / Register" : isForgot ? "发送重设链接 / Send link" : isReset ? "更新密码 / Update password" : "登录 / Sign in"}</button>
+          {!isReset && <div className="loginLinks">
+            {authMode !== "login" && <button type="button" onClick={() => { setAuthMode("login"); setLoginError(""); }}>返回登录</button>}
+            {authMode === "login" && <><button type="button" onClick={() => { setAuthMode("register"); setLoginError(""); }}>注册员工账号</button><button type="button" onClick={() => { setAuthMode("forgot"); setLoginError(""); }}>忘记密码？</button></>}
+          </div>}
+          <small className="loginHint">为保护报价信息，登录 30 分钟后将自动退出。</small>
         </form>
       </main>
     );
+  }
   return (
     <main>
       <header className="topbar">
@@ -2843,6 +2959,11 @@ export default function Home() {
           >
             玩具配对管理
           </button>
+          {authAccount?.role === "admin" && (
+            <button className="outline" onClick={openStaff}>
+              员工管理
+            </button>
+          )}
           <button
             className="outline"
             onClick={() => {
@@ -2857,8 +2978,42 @@ export default function Home() {
             <span>报价清单</span>
             <b>{cartItems.length}</b>
           </button>
+          <button className="logoutButton" onClick={logout}>退出</button>
         </div>
       </header>
+      {staffOpen && (
+        <div className="staffOverlay" role="dialog" aria-modal="true" aria-label="员工管理">
+          <section className="staffPanel">
+            <div className="staffHead">
+              <div>
+                <span className="eyebrow">ACCOUNT ADMINISTRATION</span>
+                <h2>员工管理</h2>
+                <p>新注册账号需批准后才能访问报价系统。</p>
+              </div>
+              <button className="closeStaff" onClick={() => setStaffOpen(false)} aria-label="关闭员工管理">×</button>
+            </div>
+            {staffError && <div className="loginError">{staffError}</div>}
+            <div className="staffList">
+              {staffUsers.map((user) => (
+                <article className="staffRow" key={user.email}>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <small>{user.email}</small>
+                    <small>{user.role === "admin" ? "管理员 / Administrator" : `注册于 ${new Date(user.createdAt).toLocaleDateString("zh-CN")}`}</small>
+                  </div>
+                  <div className="staffActions">
+                    <span className={`staffStatus ${user.status}`}>{user.status === "pending" ? "待审批" : user.status === "active" ? "已启用" : "已停用"}</span>
+                    {user.role !== "admin" && user.status === "pending" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "approve")}>批准</button>}
+                    {user.role !== "admin" && user.status === "active" && <button className="outline" onClick={() => updateStaffStatus(user.email, "suspend")}>停用</button>}
+                    {user.role !== "admin" && user.status === "suspended" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "activate")}>启用</button>}
+                  </div>
+                </article>
+              ))}
+              {!staffUsers.length && !staffError && <p className="staffEmpty">暂无员工账号。</p>}
+            </div>
+          </section>
+        </div>
+      )}
       <section className={`workspace${editor ? " editorOpen" : ""}`}>
         <aside className="sidebar">
           <div className="sideIntro">
