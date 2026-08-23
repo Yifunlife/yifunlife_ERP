@@ -1257,6 +1257,27 @@ img {
   gap: 16px;
   align-items: baseline;
 }
+.importMetadata {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid #e0e8db;
+  border-radius: 7px;
+  background: #e0e8db;
+}
+.importMetadata span {
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  color: #53676c;
+  background: #f6f8f4;
+  font-size: 10px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .importTableWrap {
   overflow: auto;
   margin-top: 12px;
@@ -1266,7 +1287,7 @@ img {
 }
 .importTable {
   width: 100%;
-  min-width: 930px;
+  min-width: 1180px;
   border-collapse: collapse;
   color: var(--navy);
   font-size: 11px;
@@ -1479,6 +1500,22 @@ img {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.cartFootActions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: 10px;
+}
+.cartFootActions .outline,
+.cartFootActions .primary {
+  width: 100%;
+  height: 48px;
+  white-space: nowrap;
+}
+.clearQuotation {
+  border-color: #c8d0cc;
+  color: #66767b;
+  background: #fff;
 }
 .primary:disabled {
   opacity: 0.35;

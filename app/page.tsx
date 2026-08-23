@@ -63,8 +63,12 @@ type PairingRemovalPrompt = {
 type QuoteImportPreview = {
   fileName: string;
   matched: Array<{ product: Product; quantity: number }>;
+  imported: Array<{ product: Product; quantity: number }>;
   unmatchedSkus: string[];
   sourceRows: number;
+  projectName: string;
+  designerName: string;
+  salesName: string;
 };
 type QuoteImportPriceMode = "factory" | "vip" | "usd";
 type KitchenGroupSource = "main" | "addons" | "manual";
@@ -1103,6 +1107,76 @@ const importCellText = (value: unknown) =>
   String(value || "")
     .replace(/\s+/g, " ")
     .trim();
+const importCellNumber = (value: unknown) => {
+  const text = importCellText(value);
+  if (!text) return null;
+  const parsed = Number(text.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const findImportColumn = (header: string[], pattern: RegExp) =>
+  header.findIndex((cell) => pattern.test(cell));
+const findImportMeta = (rows: unknown[][], headerIndex: number, pattern: RegExp) => {
+  for (let rowIndex = 0; rowIndex < headerIndex; rowIndex += 1) {
+    const row = rows[rowIndex] || [];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      const label = importCellText(row[columnIndex]);
+      if (!pattern.test(label)) continue;
+      const inline = label.split(/[：:]/).slice(1).join(":").trim();
+      if (inline) return inline;
+      const candidates = [
+        rows[rowIndex + 1]?.[columnIndex],
+        row[columnIndex + 1],
+        rows[rowIndex + 1]?.[columnIndex + 1],
+      ];
+      const value = candidates.map(importCellText).find(Boolean);
+      if (value) return value;
+    }
+  }
+  return "";
+};
+const inferImportProjectName = (rows: unknown[][], headerIndex: number) => {
+  const title = rows
+    .slice(0, headerIndex)
+    .flat()
+    .map(importCellText)
+    .find((cell) => /quotation|报价/i.test(cell));
+  if (!title) return "";
+  const withoutQuotation = title.replace(/&?\s*(quotation|报价单).*/i, "");
+  return withoutQuotation
+    .split(/[+｜|]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .at(-1) || "";
+};
+const imageMimeType = (path: string) =>
+  /\.jpe?g$/i.test(path) ? "image/jpeg" : /\.gif$/i.test(path) ? "image/gif" : "image/png";
+const extractWorkbookImages = (data: ArrayBuffer) => {
+  const images = new Map<string, string>();
+  try {
+    const archive = XLSX.CFB.read(new Uint8Array(data), { type: "array" });
+    const fileBySuffix = (suffix: string) => {
+      const index = archive.FullPaths.findIndex((path) => path.endsWith(suffix));
+      return index >= 0 ? archive.FileIndex[index]?.content : undefined;
+    };
+    const cellImages = fileBySuffix("xl/cellimages.xml");
+    const imageRelations = fileBySuffix("xl/_rels/cellimages.xml.rels");
+    if (!cellImages || !imageRelations) return images;
+    const decode = (content: unknown) =>
+      new TextDecoder().decode(content as Uint8Array);
+    const relationMap = new Map<string, string>();
+    for (const match of decode(imageRelations).matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g))
+      relationMap.set(match[1], match[2]);
+    for (const match of decode(cellImages).matchAll(/<etc:cellImage>[\s\S]*?<xdr:cNvPr[^>]*name="([^"]+)"[\s\S]*?<a:blip r:embed="([^"]+)"[\s\S]*?<\/etc:cellImage>/g)) {
+      const path = relationMap.get(match[2]);
+      if (!path) continue;
+      const image = fileBySuffix(`xl/${path.replace(/^\.\//, "")}`);
+      if (image) images.set(match[1], URL.createObjectURL(new Blob([image as BlobPart], { type: imageMimeType(path) })));
+    }
+  } catch {
+    // .xls and .csv files do not contain the .xlsx image package.
+  }
+  return images;
+};
 function Visual({ p, mini = false }: { p: Product; mini?: boolean }) {
   return p.image ? (
     <img src={p.image} alt={mini ? "" : p.name} loading="lazy" />
@@ -1303,6 +1377,7 @@ export default function Home() {
     useState<QuoteImportPreview | null>(null);
   const [quoteImportError, setQuoteImportError] = useState("");
   const [quoteImporting, setQuoteImporting] = useState(false);
+  const [importedProducts, setImportedProducts] = useState<Product[]>([]);
   const [quoteImportPriceMode, setQuoteImportPriceMode] =
     useState<QuoteImportPriceMode>("vip");
   const [editor, setEditor] = useState<Product | null>(null);
@@ -1587,7 +1662,8 @@ export default function Home() {
           : category3Filter
             ? `${category} · ${category3Filter}`
             : category;
-  const cartItems = products
+  const quoteProducts = [...products, ...importedProducts];
+  const cartItems = quoteProducts
     .filter((p) => cart[p.id])
     .map((p) => ({ ...p, qty: cart[p.id] }))
     .sort(
@@ -1655,6 +1731,12 @@ export default function Home() {
       });
     if (relatedItems.length) setPairingSuggestion({ relatedItems });
   };
+  const clearQuotation = () => {
+    setCart({});
+    setImportedProducts([]);
+    setPairingSuggestion(null);
+    setPairingRemovalPrompt(null);
+  };
   const addSuggestedPairing = () => {
     if (!pairingSuggestion) return;
     setCart((current) => {
@@ -1667,7 +1749,7 @@ export default function Home() {
     setPairingSuggestion(null);
   };
   const remove = (id: string) => {
-    const product = products.find((candidate) => candidate.id === id);
+    const product = quoteProducts.find((candidate) => candidate.id === id);
     const quantity = cart[id] || 0;
     if (!product || quantity <= 1) {
       const relatedItems = product
@@ -1716,7 +1798,8 @@ export default function Home() {
     setQuoteImportError("");
     setQuoteImportPreview(null);
     try {
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const source = await file.arrayBuffer();
+      const workbook = XLSX.read(source, { type: "array" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error("未找到可读取的工作表");
       const rows = XLSX.utils.sheet_to_json(worksheet, {
@@ -1729,30 +1812,79 @@ export default function Home() {
       if (headerIndex < 0)
         throw new Error("未找到“款号 / Item Number / SKU”列");
       const header = rows[headerIndex].map(importCellText);
-      const skuColumn = header.findIndex((cell) =>
-        /款号|item\s*number|sku|货号/i.test(cell),
+      const skuColumn = findImportColumn(header, /款号|item\s*number|sku|货号/i);
+      const nameColumn = findImportColumn(header, /产品名称|product\s*name|名称/i);
+      const imageColumn = findImportColumn(header, /图片|image/i);
+      const brandColumn = findImportColumn(header, /品牌|brand/i);
+      const specificationColumn = findImportColumn(header, /规格|尺寸|specification|dimension/i);
+      const unitColumn = findImportColumn(header, /单位|unit/i);
+      const quantityColumn = findImportColumn(header, /数量|quantity|qty/i);
+      const cnyUnitColumn = findImportColumn(
+        header,
+        /^(?!.*成本)(?!.*出厂).*单价.*(rmb|cny|人民币)|(rmb|cny|人民币).*(?!成本)(?!出厂).*单价/i,
       );
-      const quantityColumn = header.findIndex((cell) =>
-        /数量|quantity|qty/i.test(cell),
-      );
+      const cnyAmountColumn = findImportColumn(header, /合计金额.*(rmb|cny|人民币)|报价.*(rmb|cny|人民币)/i);
+      const usdUnitColumn = findImportColumn(header, /美元单价|unit\s*price.*usd|usd.*unit\s*price/i);
+      const usdAmountColumn = findImportColumn(header, /美元合计|total.*usd|usd.*total/i);
+      const colorColumn = findImportColumn(header, /颜色|colour|color/i);
+      const noteColumn = findImportColumn(header, /备注|notes?|remarks?/i);
+      const volumeColumn = findImportColumn(header, /体积|volume/i);
       const productBySku = new Map(
         products.map((product) => [product.sku.toUpperCase(), product]),
       );
       const matched = new Map<string, { product: Product; quantity: number }>();
+      const imported: Array<{ product: Product; quantity: number }> = [];
       const unmatchedSkus = new Set<string>();
+      const workbookImages = extractWorkbookImages(source);
       let sourceRows = 0;
-      rows.slice(headerIndex + 1).forEach((row) => {
+      rows.slice(headerIndex + 1).forEach((row, rowOffset) => {
         const skus = importedSkuCodes(row[skuColumn]);
-        if (!skus.length) return;
+        const rawQuantity = importCellNumber(row[quantityColumn]);
+        const sourceName = importCellText(row[nameColumn]);
+        if (!skus.length && (!sourceName || rawQuantity === null || rawQuantity <= 0)) return;
         sourceRows += 1;
-        const rawQuantity = Number(
-          importCellText(row[quantityColumn]).replace(/[^\d.-]/g, ""),
-        );
-        const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? rawQuantity : 1;
-        skus.forEach((sku) => {
+        const quantity = rawQuantity !== null && rawQuantity > 0 ? rawQuantity : 1;
+        const sourceImageId = importCellText(row[imageColumn]).match(/(ID_[A-F0-9]+)/i)?.[1];
+        const sourceUnitPrice = (unitColumn: number, amountColumn: number) => {
+          const unitPrice = unitColumn >= 0 ? importCellNumber(row[unitColumn]) : null;
+          const amount = amountColumn >= 0 ? importCellNumber(row[amountColumn]) : null;
+          return unitPrice ?? (amount !== null && rawQuantity ? amount / rawQuantity : null);
+        };
+        const cnyUnitPrice =
+          sourceUnitPrice(cnyUnitColumn, cnyAmountColumn);
+        const usdUnitPrice = sourceUnitPrice(usdUnitColumn, usdAmountColumn);
+        const createImportedProduct = (sku: string) => ({
+          id: `imported-${headerIndex + rowOffset + 1}-${sku || "no-sku"}`,
+          sku,
+          name: sourceName || sku || "未命名导入项目",
+          en: "",
+          category: "导入项目 / Imported items",
+          family: "大型设备" as const,
+          price: cnyUnitPrice,
+          priceNote: "来自导入报价表",
+          usd: usdUnitPrice,
+          unit: importCellText(row[unitColumn]),
+          spec: importCellText(row[specificationColumn]),
+          brand: importCellText(row[brandColumn]) || "YIFUN",
+          material: "",
+          note: importCellText(row[noteColumn]),
+          image: sourceImageId ? workbookImages.get(sourceImageId) || "" : "",
+          volume: importCellText(row[volumeColumn]),
+          stock: null,
+          majorCategory: "生活场景 / Lifestyle Scene" as MajorCategory,
+          category1: "导入项目",
+          category2: "导入项目",
+          category3: "未细分",
+          colorTag: importCellText(row[colorColumn]) || "待确认",
+          hasScreen: false,
+          isRecommended: false,
+          relatedIds: [],
+        });
+        (skus.length ? skus : [""]).forEach((sku) => {
           const product = productBySku.get(sku);
+          if (!product && sku) unmatchedSkus.add(sku);
           if (!product) {
-            unmatchedSkus.add(sku);
+            imported.push({ product: createImportedProduct(sku), quantity });
             return;
           }
           const current = matched.get(product.id);
@@ -1767,8 +1899,14 @@ export default function Home() {
       setQuoteImportPreview({
         fileName: file.name,
         matched: [...matched.values()],
+        imported,
         unmatchedSkus: [...unmatchedSkus],
         sourceRows,
+        projectName:
+          findImportMeta(rows, headerIndex, /项目名称|project\s*name/i) ||
+          inferImportProjectName(rows, headerIndex),
+        designerName: findImportMeta(rows, headerIndex, /设计师|designer/i),
+        salesName: findImportMeta(rows, headerIndex, /商务|业务员|sales/i),
       });
     } catch (error) {
       setQuoteImportError(
@@ -1779,14 +1917,17 @@ export default function Home() {
     }
   };
   const applyQuoteImport = () => {
-    if (!quoteImportPreview?.matched.length) return;
+    if (!quoteImportPreview || (!quoteImportPreview.matched.length && !quoteImportPreview.imported.length)) return;
     setCurrency(importCurrency);
+    setImportedProducts(quoteImportPreview.imported.map(({ product }) => product));
+    if (quoteImportPreview.projectName) setQuoteProject(quoteImportPreview.projectName);
+    if (quoteImportPreview.designerName) setDesignerName(quoteImportPreview.designerName);
+    if (quoteImportPreview.salesName) setSalesName(quoteImportPreview.salesName);
     setCart(
       Object.fromEntries(
-        quoteImportPreview.matched.map(({ product, quantity }) => [
-          product.id,
-          quantity,
-        ]),
+        [...quoteImportPreview.matched, ...quoteImportPreview.imported].map(
+          ({ product, quantity }) => [product.id, quantity],
+        ),
       ),
     );
     setQuoteImportOpen(false);
@@ -2916,8 +3057,13 @@ export default function Home() {
                   <div>
                     <b>{quoteImportPreview.fileName}</b>
                     <span>
-                      已读取 {quoteImportPreview.sourceRows} 行 · 匹配 {quoteImportPreview.matched.length} 个 SKU
+                      已读取 {quoteImportPreview.sourceRows} 行 · 匹配 {quoteImportPreview.matched.length} 个 SKU · 补入 {quoteImportPreview.imported.length} 个导入项目
                     </span>
+                  </div>
+                  <div className="importMetadata">
+                    <span>项目名称：{quoteImportPreview.projectName || "表单未提供"}</span>
+                    <span>设计师：{quoteImportPreview.designerName || "表单未提供"}</span>
+                    <span>商务：{quoteImportPreview.salesName || "表单未提供"}</span>
                   </div>
                   <p>
                     下表金额已按 {quoteImportPriceMode === "usd" ? "美金价格（USD）" : "国内 VIP 价格（CNY）"} 计算。
@@ -2927,7 +3073,9 @@ export default function Home() {
                       <thead>
                         <tr>
                           <th>款号 / SKU</th>
+                          <th>产品名称 / Product</th>
                           <th>图片 / Image</th>
+                          <th>规格尺寸 / Size</th>
                           <th>数量 / Qty</th>
                           <th>单价 / Unit price</th>
                           <th>金额 / Amount</th>
@@ -2937,11 +3085,12 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {quoteImportPreview.matched.map(({ product, quantity }) => {
+                        {[...quoteImportPreview.matched, ...quoteImportPreview.imported].map(({ product, quantity }) => {
                           const unitPrice = importUnitPrice(product);
                           return (
                             <tr key={product.id}>
                               <td><b>{product.sku}</b></td>
+                              <td>{product.name}</td>
                               <td>
                                 {product.image ? (
                                   <img src={product.image} alt={product.name} />
@@ -2949,6 +3098,7 @@ export default function Home() {
                                   "—"
                                 )}
                               </td>
+                              <td>{product.spec || "—"}</td>
                               <td>{quantity}</td>
                               <td>{formatImportPrice(unitPrice)}</td>
                               <td>{formatImportPrice(unitPrice === null ? null : unitPrice * quantity)}</td>
@@ -2963,7 +3113,7 @@ export default function Home() {
                   </div>
                   {quoteImportPreview.unmatchedSkus.length > 0 && (
                     <div className="importUnmatched">
-                      <b>未匹配 {quoteImportPreview.unmatchedSkus.length} 个款号</b>
+                      <b>产品库未收录 {quoteImportPreview.unmatchedSkus.length} 个款号，已按表单资料补入报价单</b>
                       <span>{quoteImportPreview.unmatchedSkus.join(" · ")}</span>
                     </div>
                   )}
@@ -2976,7 +3126,7 @@ export default function Home() {
               </button>
               <button
                 className="primary"
-                disabled={!quoteImportPreview?.matched.length}
+                disabled={!quoteImportPreview || (!quoteImportPreview.matched.length && !quoteImportPreview.imported.length)}
                 onClick={applyQuoteImport}
               >
                 导入并替换当前报价单
@@ -3588,15 +3738,20 @@ export default function Home() {
                 <span>共 {cartItems.length} 项</span>
                 <b>{money(subtotal, currency)}</b>
               </div>
-              <button
-                className="primary wide"
-                onClick={() => {
-                  setCartOpen(false);
-                  setQuoteOpen(true);
-                }}
-              >
-                生成报价单
-              </button>
+              <div className="cartFootActions">
+                <button className="outline clearQuotation" onClick={clearQuotation}>
+                  ⟲ 一键清除清单
+                </button>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setCartOpen(false);
+                    setQuoteOpen(true);
+                  }}
+                >
+                  生成报价单
+                </button>
+              </div>
             </div>
           </aside>
         </div>
