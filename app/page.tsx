@@ -1,6 +1,12 @@
 "use client";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import {
+  strFromU8,
+  strToU8,
+  unzipSync,
+  zipSync,
+} from "../node_modules/.pnpm/fflate@0.7.5/node_modules/fflate/esm/browser.js";
 import type { CatalogProduct } from "./catalog-types";
 import { pairedAreasForMajor } from "../lib/area-pairing";
 type MajorCategory =
@@ -2058,13 +2064,12 @@ export default function Home() {
     const template = quoteImportTemplateRef.current;
     if (!template || !importedProducts.length) return false;
     try {
-      const archive = XLSX.CFB.read(new Uint8Array(template.source), { type: "array" });
-      const worksheetIndex = archive.FullPaths.findIndex((path) =>
-        /^Root Entry\/xl\/worksheets\/sheet\d+\.xml$/.test(path),
+      const files = unzipSync(new Uint8Array(template.source));
+      const worksheetPath = Object.keys(files).find((path) =>
+        /^xl\/worksheets\/sheet\d+\.xml$/.test(path),
       );
-      const worksheet = archive.FileIndex[worksheetIndex];
-      if (!worksheet?.content) return false;
-      let xml = new TextDecoder().decode(worksheet.content as Uint8Array);
+      if (!worksheetPath || !files[worksheetPath]) return false;
+      let xml = strFromU8(files[worksheetPath]);
       const setCell = (row: number, column: number, value: string | number | null) => {
         if (column < 0 || value === null) return;
         xml = updateTemplateCell(
@@ -2102,9 +2107,9 @@ export default function Home() {
           template.metadata.sales.column,
           salesName,
         );
-      worksheet.content = new TextEncoder().encode(xml);
+      files[worksheetPath] = strToU8(xml);
       const fileName = `${template.fileName.replace(/\.(xlsx|xls|csv)$/i, "")}_报价清单.xlsx`;
-      downloadExcelFile(XLSX.CFB.write(archive, { type: "array" }) as Uint8Array, fileName);
+      downloadExcelFile(zipSync(files, { level: 6 }), fileName);
       return true;
     } catch {
       return false;
