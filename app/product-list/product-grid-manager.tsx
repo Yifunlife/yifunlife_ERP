@@ -441,18 +441,15 @@ export function ProductGridManager({
     setPairingSavedMessage("厨房区统一配对规则已保存，全部厨房模拟设备共用此逻辑。");
   };
 
-  const applyKitchenAreaRules = async () => {
+  const saveKitchenPairings = async (
+    targets: GridRow[],
+    successMessage: (sourceCount: number, targetCount: number) => string,
+  ) => {
     setAreaRuleApplying(true);
     setPairingSavedMessage("");
-    const ruleSkus = new Set(
-      kitchenAreaPairingRules.flatMap((rule) =>
-        rule.items.map((item) => normalizedSku(item.sku)),
-      ),
-    );
     const sources = rows.filter(
       (row) => row.category1 !== "小玩具" && pairingAreaForRow(row) === "厨房区",
     );
-    const targets = rows.filter((row) => ruleSkus.has(normalizedSku(row.sku)));
     if (!sources.length || !targets.length) {
       setAreaRuleApplying(false);
       setPairingSavedMessage("未找到可应用的厨房设备或玩具 SKU。");
@@ -481,8 +478,27 @@ export function ProductGridManager({
       return;
     }
     await load();
-    setPairingSavedMessage(
-      `已将 ${targets.length} 个玩具（每个 ×1）保存到 ${sources.length} 台厨房模拟设备，共 ${sources.length * targets.length} 条配对。`,
+    setPairingSavedMessage(successMessage(sources.length, targets.length));
+  };
+
+  const applyKitchenAreaRules = async () => {
+    const ruleSkus = new Set(
+      kitchenAreaPairingRules.flatMap((rule) =>
+        rule.items.map((item) => normalizedSku(item.sku)),
+      ),
+    );
+    await saveKitchenPairings(
+      rows.filter((row) => ruleSkus.has(normalizedSku(row.sku))),
+      (sourceCount, targetCount) =>
+        `已将 ${targetCount} 个明确规则玩具（每个 ×1）保存到 ${sourceCount} 台厨房模拟设备，共 ${sourceCount * targetCount} 条配对。`,
+    );
+  };
+
+  const applyAllKitchenToys = async () => {
+    await saveKitchenPairings(
+      pairingToyRows,
+      (sourceCount, targetCount) =>
+        `已将全部 ${targetCount} 个厨房玩具（每个 ×1）保存到 ${sourceCount} 台厨房模拟设备，共 ${sourceCount * targetCount} 条配对。`,
     );
   };
 
@@ -1065,6 +1081,13 @@ export function ProductGridManager({
                   onClick={() => void applyKitchenAreaRules()}
                 >
                   {areaRuleApplying ? "配对保存中…" : "应用给全部厨房设备"}
+                </button>
+                <button
+                  className="primary"
+                  disabled={areaRuleApplying}
+                  onClick={() => void applyAllKitchenToys()}
+                >
+                  {areaRuleApplying ? "配对保存中…" : "匹配全部厨房玩具（每个 ×1）"}
                 </button>
               </section>
             )}
