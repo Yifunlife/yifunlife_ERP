@@ -56,22 +56,25 @@ const randomToken = () =>
 export const passwordError = (password: string) =>
   password.length < 10 ? "密码至少需要 10 位。" : "";
 
+async function derivePasswordHash(password: string, salt: Uint8Array) {
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" },
+    await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveKey"]),
+    { name: "HMAC", hash: "SHA-256", length: 256 },
+    true,
+    ["sign"],
+  );
+  return crypto.subtle.exportKey("raw", key);
+}
+
 export async function createPasswordRecord(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" },
-    await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]),
-    256,
-  );
+  const bits = await derivePasswordHash(password, salt);
   return { passwordHash: bytesToHex(bits), passwordSalt: bytesToHex(salt.buffer) };
 }
 
 export async function passwordMatches(password: string, passwordHash: string, passwordSalt: string) {
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: hexToBytes(passwordSalt), iterations: 310000, hash: "SHA-256" },
-    await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]),
-    256,
-  );
+  const bits = await derivePasswordHash(password, hexToBytes(passwordSalt));
   return sameHash(bytesToHex(bits), passwordHash);
 }
 
