@@ -292,16 +292,17 @@ export async function POST(request: Request) {
     await db
       .delete(productRecommendations)
       .where(eq(productRecommendations.productId, payload.productId));
-    if (relatedProducts.length)
+    for (let index = 0; index < relatedProducts.length; index += 25) {
       await db
         .insert(productRecommendations)
         .values(
-          relatedProducts.map(({ relatedProductId, quantity }) => ({
+          relatedProducts.slice(index, index + 25).map(({ relatedProductId, quantity }) => ({
             productId: payload.productId!,
             relatedProductId,
             quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
           })),
         );
+    }
     const savedRecommendations = await db
       .select()
       .from(productRecommendations)
