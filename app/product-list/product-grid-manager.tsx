@@ -272,6 +272,7 @@ export function ProductGridManager({
   const [areaPairingRules, setAreaPairingRules] = useState<StoredAreaPairingRule[]>([]);
   const [pairingSearch, setPairingSearch] = useState("");
   const [pairingSaving, setPairingSaving] = useState(false);
+  const [pairingClearing, setPairingClearing] = useState(false);
   const [areaRuleSaving, setAreaRuleSaving] = useState(false);
   const [areaRuleApplying, setAreaRuleApplying] = useState(false);
   const [pairingSavedMessage, setPairingSavedMessage] = useState("");
@@ -578,6 +579,35 @@ export function ProductGridManager({
     setStatus(`已保存 ${savedRelations.length} 个配套玩具 · 总数量 ${savedQuantity}`);
     setPairingSavedMessage(
       `已保存 ${savedRelations.length} 个配套玩具，总数量 ${savedQuantity}。窗口会保持打开，方便你立即核对。`,
+    );
+  };
+
+  const clearPairing = async () => {
+    if (!pairingSourceId) return;
+    const source = rows.find((row) => row.id === pairingSourceId);
+    setPairingClearing(true);
+    const response = await fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "recommendations",
+        productId: pairingSourceId,
+        relatedProducts: [],
+      }),
+    });
+    setPairingClearing(false);
+    if (!response.ok) {
+      setPairingSavedMessage("清除配对失败，请重试。");
+      return;
+    }
+    setRelations((current) =>
+      current.filter((relation) => relation.productId !== pairingSourceId),
+    );
+    setPairingTargetIds(new Set());
+    setPairingQuantities({});
+    setStatus(`已清除 ${source?.sku || "当前设备"} 的配套玩具`);
+    setPairingSavedMessage(
+      `已清除 ${source?.sku || "当前设备"} 所配对的全部玩具。`,
     );
   };
 
@@ -1116,13 +1146,22 @@ export function ProductGridManager({
                     ? `当前选择 ${pairingTargetIds.size} 个配套玩具，总数量 ${selectedToyQuantity}；保存后会保留在该模拟产品下。`
                     : "请选择左侧模拟区产品；带“已配对”标记的产品已有保存记录。")}
               </span>
-              <button
-                className="primary"
-                disabled={!pairingSourceId || pairingSaving}
-                onClick={() => void savePairing()}
-              >
-                {pairingSaving ? "保存中…" : "保存配对"}
-              </button>
+              <div className="pairingFootActions">
+                <button
+                  className="outline"
+                  disabled={!pairingSourceId || pairingSaving || pairingClearing}
+                  onClick={() => void clearPairing()}
+                >
+                  {pairingClearing ? "清除中…" : "清除配对"}
+                </button>
+                <button
+                  className="primary"
+                  disabled={!pairingSourceId || pairingSaving || pairingClearing}
+                  onClick={() => void savePairing()}
+                >
+                  {pairingSaving ? "保存中…" : "保存配对"}
+                </button>
+              </div>
             </footer>
           </section>
         </div>
