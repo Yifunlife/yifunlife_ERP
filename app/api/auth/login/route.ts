@@ -15,11 +15,14 @@ export async function POST(request: Request) {
     await ensureAdminUser();
   } catch (error) {
     console.error("Authentication initialization failed", error);
+    const message = error instanceof Error ? error.message : "";
     return Response.json({
       error:
-        error instanceof Error && error.message === "INITIAL_ADMIN_PASSWORD_MISSING"
+        message === "INITIAL_ADMIN_PASSWORD_MISSING"
           ? "管理员初始密钥尚未生效，请联系管理员。"
-          : "账户系统初始化失败，请联系管理员",
+          : message.includes("D1 binding `DB` is unavailable")
+            ? "账户数据库连接未配置，请联系管理员。"
+            : "账户系统初始化失败，请联系管理员",
     }, { status: 503 });
   }
   const user = await getDb().select().from(appUsers).where(eq(appUsers.email, normalizeEmail(email || username || ""))).get();
