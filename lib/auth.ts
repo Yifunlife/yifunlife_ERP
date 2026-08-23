@@ -7,6 +7,7 @@ export const AUTHENTICATION_ENABLED = true;
 export const ADMIN_EMAIL = "yifunlife@hotmail.com";
 export const SESSION_SECONDS = 30 * 60;
 export const RESET_SECONDS = 30 * 60;
+const PASSWORD_ITERATIONS = 100000;
 
 type AuthBindings = {
   INITIAL_ADMIN_PASSWORD?: string;
@@ -50,7 +51,7 @@ export const passwordError = (password: string) =>
 
 async function derivePasswordHash(password: string, salt: Uint8Array) {
   return crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" },
+    { name: "PBKDF2", salt, iterations: PASSWORD_ITERATIONS, hash: "SHA-256" },
     await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]),
     256,
   );
