@@ -459,19 +459,24 @@ export function ProductGridManager({
       relatedProductId: target.id,
       quantity: 1,
     }));
-    const results = await Promise.all(
-      sources.map((source) =>
-        fetch("/api/catalog", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "recommendations",
-            productId: source.id,
-            relatedProducts,
+    const results: Response[] = [];
+    for (let index = 0; index < sources.length; index += 4) {
+      const batch = await Promise.all(
+        sources.slice(index, index + 4).map((source) =>
+          fetch("/api/catalog", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "recommendations",
+              productId: source.id,
+              relatedProducts,
+            }),
           }),
-        }),
-      ),
-    );
+        ),
+      );
+      results.push(...batch);
+      if (batch.some((response) => !response.ok)) break;
+    }
     setAreaRuleApplying(false);
     if (results.some((response) => !response.ok)) {
       setPairingSavedMessage("厨房配对应用失败，请重试。");
