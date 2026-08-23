@@ -1586,6 +1586,7 @@ export default function Home() {
         a.sku.localeCompare(b.sku),
     ),
   ] as const);
+  const quoteItemsInOrder = quoteGroups.flatMap(([, items]) => items);
   const preTax =
     subtotal +
     fees.packaging +
@@ -3351,7 +3352,7 @@ export default function Home() {
                       const unitPrice = displayPrice(p);
                       const amount =
                         unitPrice === null ? null : unitPrice * p.qty;
-                      const serial = cartItems.indexOf(p) + 1;
+                      const serial = quoteItemsInOrder.indexOf(p) + 1;
                       return (
                         <tr key={p.id}>
                           <td>{serial}</td>
