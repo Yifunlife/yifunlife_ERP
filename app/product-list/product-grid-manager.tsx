@@ -266,6 +266,7 @@ export function ProductGridManager() {
   const [pairingSearch, setPairingSearch] = useState("");
   const [pairingSaving, setPairingSaving] = useState(false);
   const [areaRuleSaving, setAreaRuleSaving] = useState(false);
+  const [areaRuleApplying, setAreaRuleApplying] = useState(false);
   const [pairingSavedMessage, setPairingSavedMessage] = useState("");
 
   const load = async () => {
@@ -425,6 +426,31 @@ export function ProductGridManager() {
       ]);
     setAreaRuleSaving(false);
     setPairingSavedMessage("厨房区统一配对规则已保存，全部厨房模拟设备共用此逻辑。");
+  };
+
+  const applyKitchenAreaRules = async () => {
+    setAreaRuleApplying(true);
+    setPairingSavedMessage("");
+    const response = await fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "applyAreaPairingRules", area: "厨房区" }),
+    });
+    const data = await response.json() as {
+      error?: string;
+      sourceCount?: number;
+      targetCount?: number;
+      relationCount?: number;
+    };
+    setAreaRuleApplying(false);
+    if (!response.ok) {
+      setPairingSavedMessage(data.error || "厨房配对应用失败，请重试。");
+      return;
+    }
+    await load();
+    setPairingSavedMessage(
+      `已将 ${data.targetCount} 个玩具（每个 ×1）保存到 ${data.sourceCount} 台厨房模拟设备，共 ${data.relationCount} 条配对。`,
+    );
   };
 
   const openPairingManager = () => {
@@ -964,6 +990,13 @@ export function ProductGridManager() {
                     : savedKitchenRules
                       ? "更新厨房规则"
                       : "保存厨房规则"}
+                </button>
+                <button
+                  className="outline"
+                  disabled={!savedKitchenRules || areaRuleApplying}
+                  onClick={() => void applyKitchenAreaRules()}
+                >
+                  {areaRuleApplying ? "配对保存中…" : "应用给全部厨房设备"}
                 </button>
               </section>
             )}

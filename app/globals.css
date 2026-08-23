@@ -749,6 +749,11 @@ img {
   min-width: 126px;
   border-radius: 7px;
 }
+.areaPairingRules .outline {
+  height: 38px;
+  min-width: 150px;
+  border-radius: 7px;
+}
 .pairingColumns {
   min-height: 0;
   flex: 1;
@@ -954,6 +959,7 @@ img {
   .pairingFilters p { margin: 0; }
   .areaPairingRules { grid-template-columns: 1fr; gap: 10px; padding: 12px 16px; }
   .areaPairingRules .primary { width: 100%; }
+  .areaPairingRules .outline { width: 100%; }
   .pairingSearch input { min-width: 0; width: 100%; }
   .pairingColumns { grid-template-columns: 3fr 4fr; }
   .pairingThumbGrid { gap: 7px; padding: 10px; }

@@ -62,6 +62,7 @@ type ProductRelation = {
   quantity?: number;
 };
 type PairingSuggestion = {
+  source: Product;
   relatedItems: Array<{ product: Product; quantity: number }>;
 };
 type PairingRemovalPrompt = {
@@ -1835,8 +1836,8 @@ export default function Home() {
     const wasInCart = Boolean(cart[id]);
     setCart((x) => ({ ...x, [id]: (x[id] || 0) + 1 }));
 
-    // Test scope: only the fixed Y10117 pairing prompts for its linked toys.
-    if (id !== "junior-Y10117" || wasInCart) return;
+    const source = products.find((product) => product.id === id);
+    if (!source || source.category1 === "小玩具" || wasInCart) return;
     const relatedItems = relations
       .filter((relation) => relation.productId === id)
       .flatMap((relation) => {
@@ -1847,7 +1848,7 @@ export default function Home() {
           ? [{ product, quantity: Math.max(1, relation.quantity || 1) }]
           : [];
       });
-    if (relatedItems.length) setPairingSuggestion({ relatedItems });
+    if (relatedItems.length) setPairingSuggestion({ source, relatedItems });
   };
   const clearQuotation = () => {
     setCart({});
@@ -3246,7 +3247,7 @@ export default function Home() {
             ×
           </button>
           <p>关联玩具 / PAIRED TOYS</p>
-          <h3>Y10117 已加入报价单</h3>
+          <h3>{pairingSuggestion.source.sku} 已加入报价单</h3>
           <span>
             已固定配对 {pairingSuggestion.relatedItems.length} 个玩具，是否一起加入？
           </span>
