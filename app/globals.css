@@ -1236,7 +1236,12 @@ img {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  gap: 8px;
   margin-top: 10px;
+}
+.priceRow > div {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .priceRow small {
   display: block;
@@ -1245,17 +1250,23 @@ img {
   margin-bottom: 3px;
 }
 .priceRow strong {
+  display: block;
   font-size: 16px;
   color: var(--navy);
 }
 .priceRow button {
+  flex: 0 0 76px;
+  width: 76px;
+  min-height: 40px;
   border: 0;
   background: var(--lime-bright);
   color: #243342;
   border-radius: 15px;
-  padding: 7px 9px;
+  padding: 7px 8px;
   font-weight: 700;
   font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
 }
 .empty {
   text-align: center;
