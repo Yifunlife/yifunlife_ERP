@@ -1566,7 +1566,12 @@ export default function Home() {
             : category;
   const cartItems = products
     .filter((p) => cart[p.id])
-    .map((p) => ({ ...p, qty: cart[p.id] }));
+    .map((p) => ({ ...p, qty: cart[p.id] }))
+    .sort(
+      (a, b) =>
+        Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
+        a.sku.localeCompare(b.sku),
+    );
   const displayPrice = (p: Product) => (currency === "CNY" ? p.price : p.usd);
   const subtotal = cartItems.reduce(
     (n, p) => n + (displayPrice(p) || 0) * p.qty,

@@ -1165,6 +1165,9 @@ img {
   padding: 0 14px;
   font-size: 11px;
 }
+.pairingRemovalPrompt {
+  z-index: 70;
+}
 .overlay {
   position: fixed;
   inset: 0;
