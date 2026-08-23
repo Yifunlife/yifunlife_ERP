@@ -33,9 +33,12 @@ const bytesToHex = (bytes: ArrayBuffer) =>
   Array.from(new Uint8Array(bytes))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
-const base64ToBytes = (value: string) =>
-  Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+const hexToBytes = (value: string) => {
+  const bytes = new Uint8Array(value.length / 2);
+  for (let index = 0; index < bytes.length; index += 1)
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  return bytes;
+};
 
 export const normalizeEmail = (value: string) => value.trim().toLowerCase();
 export const hash = async (value: string) =>
@@ -60,12 +63,12 @@ export async function createPasswordRecord(password: string) {
     await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]),
     256,
   );
-  return { passwordHash: bytesToHex(bits), passwordSalt: bytesToBase64(salt) };
+  return { passwordHash: bytesToHex(bits), passwordSalt: bytesToHex(salt.buffer) };
 }
 
 export async function passwordMatches(password: string, passwordHash: string, passwordSalt: string) {
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: base64ToBytes(passwordSalt), iterations: 310000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: hexToBytes(passwordSalt), iterations: 310000, hash: "SHA-256" },
     await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]),
     256,
   );
