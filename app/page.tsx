@@ -64,6 +64,7 @@ type PairingRemovalPrompt = {
 };
 type QuoteImportPreview = {
   fileName: string;
+  rows: Array<{ product: Product; quantity: number }>;
   matched: Array<{ product: Product; quantity: number }>;
   imported: Array<{ product: Product; quantity: number }>;
   unmatchedSkus: string[];
@@ -1750,8 +1751,10 @@ export default function Home() {
     .map((p) => ({ ...p, qty: cart[p.id] }))
     .sort(
       (a, b) =>
-        Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
-        a.sku.localeCompare(b.sku),
+        (a.importSourceRow !== undefined && b.importSourceRow !== undefined
+          ? a.importSourceRow - b.importSourceRow
+          : Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
+            a.sku.localeCompare(b.sku)),
     );
   const displayPrice = (p: Product) => (currency === "CNY" ? p.price : p.usd);
   const importCurrency = quoteImportPriceMode === "usd" ? "USD" : "CNY";
@@ -1781,7 +1784,7 @@ export default function Home() {
     area,
     [...items].sort(
       (a, b) =>
-        (a.importSourceRow && b.importSourceRow
+        (a.importSourceRow !== undefined && b.importSourceRow !== undefined
           ? a.importSourceRow - b.importSourceRow
           : Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
             a.sku.localeCompare(b.sku)),
@@ -1917,6 +1920,7 @@ export default function Home() {
       const productBySku = new Map(
         products.map((product) => [product.sku.toUpperCase(), product]),
       );
+      const importRows: Array<{ product: Product; quantity: number }> = [];
       const matched: Array<{ product: Product; quantity: number }> = [];
       const imported: Array<{ product: Product; quantity: number }> = [];
       const unmatchedSkus = new Set<string>();
@@ -1927,9 +1931,18 @@ export default function Home() {
         const skus = importedSkuCodes(row[skuColumn]);
         const rawQuantity = importCellNumber(row[quantityColumn]);
         const sourceName = importCellText(row[nameColumn]);
-        if (!skus.length && (!sourceName || rawQuantity === null || rawQuantity <= 0)) {
+        const isSummaryRow = /包装费|除甲醛|运输费|安装费|小计|税额|总计|合计金额/i.test(
+          sourceName,
+        );
+        if (isSummaryRow) return;
+        if (!skus.length && !sourceName) {
           const areaName = row.map(importCellText).find(Boolean);
-          if (areaName && !/包装费|除甲醛|运输费|安装费|小计|总计|税额|设计费/i.test(areaName))
+          if (
+            areaName &&
+            /[\u4e00-\u9fffA-Za-z]/.test(areaName) &&
+            !/^=DISPIMG\(/i.test(areaName) &&
+            !/包装费|除甲醛|运输费|安装费|小计|总计|税额|设计费/i.test(areaName)
+          )
             currentArea = areaName;
           return;
         }
@@ -1977,16 +1990,21 @@ export default function Home() {
           const product = productBySku.get(sku);
           if (!product && sku) unmatchedSkus.add(sku);
           if (!product) {
-            imported.push({ product: createImportedProduct(sku), quantity });
+            const importedItem = { product: createImportedProduct(sku), quantity };
+            imported.push(importedItem);
+            importRows.push(importedItem);
             return;
           }
-          matched.push({ product: createImportedProduct(sku, product), quantity });
+          const matchedItem = { product: createImportedProduct(sku, product), quantity };
+          matched.push(matchedItem);
+          importRows.push(matchedItem);
         });
       });
       if (!sourceRows)
-        throw new Error("表单中没有可识别的 Y 开头款号");
+        throw new Error("表单中没有可导入的产品行");
       setQuoteImportPreview({
         fileName: file.name,
+        rows: importRows,
         matched,
         imported,
         unmatchedSkus: [...unmatchedSkus],
@@ -2021,12 +2039,9 @@ export default function Home() {
     }
   };
   const applyQuoteImport = () => {
-    if (!quoteImportPreview || (!quoteImportPreview.matched.length && !quoteImportPreview.imported.length)) return;
+    if (!quoteImportPreview || !quoteImportPreview.rows.length) return;
     setCurrency(importCurrency);
-    const importedRows = [
-      ...quoteImportPreview.matched,
-      ...quoteImportPreview.imported,
-    ];
+    const importedRows = quoteImportPreview.rows;
     setImportedProducts(importedRows.map(({ product }) => product));
     if (quoteImportPreview.projectName) setQuoteProject(quoteImportPreview.projectName);
     if (quoteImportPreview.designerName) setDesignerName(quoteImportPreview.designerName);
@@ -3249,7 +3264,7 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {[...quoteImportPreview.matched, ...quoteImportPreview.imported].map(({ product, quantity }) => {
+                        {quoteImportPreview.rows.map(({ product, quantity }) => {
                           const unitPrice = importUnitPrice(product);
                           return (
                             <tr key={product.id}>
