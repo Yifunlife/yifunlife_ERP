@@ -1,5 +1,4 @@
 import { env } from "cloudflare:workers";
-import { pbkdf2Sync } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { appUsers, loginSessions, passwordResetTokens } from "../db/schema";
@@ -58,7 +57,11 @@ export const passwordError = (password: string) =>
   password.length < 10 ? "密码至少需要 10 位。" : "";
 
 async function derivePasswordHash(password: string, salt: Uint8Array) {
-  return pbkdf2Sync(password, salt, 310000, 32, "sha256");
+  return crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" },
+    await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]),
+    256,
+  );
 }
 
 export async function createPasswordRecord(password: string) {

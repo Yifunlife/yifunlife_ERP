@@ -25,7 +25,11 @@ export async function POST(request: Request) {
       .bind(normalizedEmail, normalizedName, record.passwordHash, record.passwordSalt, now, now)
       .run();
     return Response.json({ ok: true, message: "注册成功，等待管理员批准后即可使用。" });
-  } catch {
+  } catch (error) {
+    console.error("Employee registration failed", {
+      stage,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
     return Response.json({ error: `注册暂时无法完成（${stage}）。请稍后重试。` }, { status: 503 });
   }
 }
