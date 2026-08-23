@@ -13,8 +13,9 @@ export async function POST(request: Request) {
   const { email, username, password } = await request.json() as { email?: string; username?: string; password?: string };
   try {
     await ensureAdminUser();
-  } catch {
-    return Response.json({ error: "登录配置未加载，请联系管理员" }, { status: 503 });
+  } catch (error) {
+    console.error("Authentication initialization failed", error);
+    return Response.json({ error: "账户系统初始化失败，请联系管理员" }, { status: 503 });
   }
   const user = await getDb().select().from(appUsers).where(eq(appUsers.email, normalizeEmail(email || username || ""))).get();
   if (!user || !password || !(await passwordMatches(password, user.passwordHash, user.passwordSalt)))
