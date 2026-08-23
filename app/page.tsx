@@ -2544,7 +2544,9 @@ export default function Home() {
     return (
       <main className="loginShell">
         <div className="loginCard">
-          <CompanyLogo className="loginLogo" />
+          <a className="loginBrand" href="/" aria-label="返回主页">
+            <CompanyLogo className="loginLogo" />
+          </a>
           <p>正在验证访问权限…</p>
         </div>
       </main>
@@ -2553,9 +2555,9 @@ export default function Home() {
     return (
       <main className="loginShell">
         <form className="loginCard" onSubmit={login}>
-          <div className="loginBrand">
+          <a className="loginBrand" href="/" aria-label="返回主页">
             <CompanyLogo className="loginLogo" />
-          </div>
+          </a>
           <span className="eyebrow">PRIVATE ACCESS</span>
           <h1>登录产品报价系统</h1>
           <p>请输入账户与密码后继续。</p>
@@ -2591,7 +2593,7 @@ export default function Home() {
   return (
     <main>
       <header className="topbar">
-        <a className="brand" href="#">
+        <a className="brand" href="/" aria-label="返回主页">
           <CompanyLogo className="headerLogo" />
         </a>
         <div className="topActions">
@@ -2618,9 +2620,9 @@ export default function Home() {
           </button>
           <button
             className="outline"
-            onClick={() => window.open("/product-list", "_blank", "noopener")}
+            onClick={() => window.open("/product-pairing", "_blank", "noopener")}
           >
-            产品清单管理
+            管理配对
           </button>
           <button
             className="outline"
