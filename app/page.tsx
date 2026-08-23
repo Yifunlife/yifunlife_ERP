@@ -55,6 +55,10 @@ type ProductRelation = {
 type PairingSuggestion = {
   relatedItems: Array<{ product: Product; quantity: number }>;
 };
+type PairingRemovalPrompt = {
+  device: Product;
+  relatedItems: Array<{ product: Product; quantity: number }>;
+};
 type KitchenGroupSource = "main" | "addons" | "manual";
 type KitchenSelectionMode = "single" | "multiple" | "repeatable";
 type KitchenPackageGroup = {
@@ -1276,6 +1280,8 @@ export default function Home() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [pairingSuggestion, setPairingSuggestion] =
     useState<PairingSuggestion | null>(null);
+  const [pairingRemovalPrompt, setPairingRemovalPrompt] =
+    useState<PairingRemovalPrompt | null>(null);
   const [editor, setEditor] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Product | null>(null);
   const [relatedSearch, setRelatedSearch] = useState("");
@@ -1572,7 +1578,14 @@ export default function Home() {
       (a[area] ||= []).push(p);
       return a;
     }, {}),
-  );
+  ).map(([area, items]) => [
+    area,
+    [...items].sort(
+      (a, b) =>
+        Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
+        a.sku.localeCompare(b.sku),
+    ),
+  ] as const);
   const preTax =
     subtotal +
     fees.packaging +
@@ -1610,6 +1623,51 @@ export default function Home() {
       return next;
     });
     setPairingSuggestion(null);
+  };
+  const remove = (id: string) => {
+    const product = products.find((candidate) => candidate.id === id);
+    const quantity = cart[id] || 0;
+    if (!product || quantity <= 1) {
+      const relatedItems = product
+        ? relations
+            .filter(
+              (relation) =>
+                relation.productId === id &&
+                cart[relation.relatedProductId] &&
+                products.find((candidate) => candidate.id === relation.relatedProductId)
+                  ?.category1 === "小玩具",
+            )
+            .flatMap((relation) => {
+              const relatedProduct = products.find(
+                (candidate) => candidate.id === relation.relatedProductId,
+              );
+              return relatedProduct
+                ? [{ product: relatedProduct, quantity: cart[relatedProduct.id] }]
+                : [];
+            })
+        : [];
+      if (product && product.category1 !== "小玩具" && relatedItems.length) {
+        setPairingRemovalPrompt({ device: product, relatedItems });
+        return;
+      }
+    }
+    setCart((current) => ({
+      ...current,
+      [id]: Math.max(0, quantity - 1),
+    }));
+  };
+  const removePairedDevice = (removeRelatedToys: boolean) => {
+    if (!pairingRemovalPrompt) return;
+    setCart((current) => {
+      const next = { ...current, [pairingRemovalPrompt.device.id]: 0 };
+      if (removeRelatedToys) {
+        pairingRemovalPrompt.relatedItems.forEach(({ product }) => {
+          next[product.id] = 0;
+        });
+      }
+      return next;
+    });
+    setPairingRemovalPrompt(null);
   };
   const packageProducts = (group: KitchenPackageGroup) =>
     group.source === "main"
@@ -2538,6 +2596,30 @@ export default function Home() {
           </div>
         </aside>
       )}
+      {pairingRemovalPrompt && (
+        <aside className="pairingSuggestion pairingRemovalPrompt" aria-live="assertive">
+          <p>关联玩具 / PAIRED TOYS</p>
+          <h3>删除 {pairingRemovalPrompt.device.sku}？</h3>
+          <span>
+            该设备已配对 {pairingRemovalPrompt.relatedItems.length} 个、且已加入报价单的玩具。
+          </span>
+          <small>
+            {pairingRemovalPrompt.relatedItems
+              .slice(0, 3)
+              .map(({ product }) => product.sku)
+              .join(" · ")}
+            {pairingRemovalPrompt.relatedItems.length > 3 ? " …" : ""}
+          </small>
+          <div className="pairingSuggestionActions">
+            <button className="outline" onClick={() => removePairedDevice(false)}>
+              保留玩具
+            </button>
+            <button className="primary" onClick={() => removePairedDevice(true)}>
+              一并删除玩具
+            </button>
+          </div>
+        </aside>
+      )}
       {editor && draft && (
         <div className="overlay editorOverlay">
           <aside className="editorDrawer">
@@ -3126,12 +3208,7 @@ export default function Home() {
                   </div>
                   <div className="qty">
                     <button
-                      onClick={() =>
-                        setCart((x) => ({
-                          ...x,
-                          [p.id]: Math.max(0, p.qty - 1),
-                        }))
-                      }
+                      onClick={() => remove(p.id)}
                     >
                       −
                     </button>
