@@ -47,6 +47,14 @@ type Product = CatalogProduct & {
   isRecommended: boolean;
   relatedIds: string[];
 };
+type ProductRelation = {
+  productId: string;
+  relatedProductId: string;
+  quantity?: number;
+};
+type PairingSuggestion = {
+  relatedItems: Array<{ product: Product; quantity: number }>;
+};
 type KitchenGroupSource = "main" | "addons" | "manual";
 type KitchenSelectionMode = "single" | "multiple" | "repeatable";
 type KitchenPackageGroup = {
@@ -1211,12 +1219,7 @@ function autoColor(src: string): Promise<string> {
 export default function Home() {
   const [overrides, setOverrides] = useState<Override[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [relations, setRelations] = useState<
-    {
-      productId: string;
-      relatedProductId: string;
-    }[]
-  >([]);
+  const [relations, setRelations] = useState<ProductRelation[]>([]);
   const [kitchenPackageRecords, setKitchenPackageRecords] = useState<
     KitchenPackageRecord[]
   >([]);
@@ -1271,6 +1274,8 @@ export default function Home() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [currency, setCurrency] = useState<"CNY" | "USD">("CNY");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [pairingSuggestion, setPairingSuggestion] =
+    useState<PairingSuggestion | null>(null);
   const [editor, setEditor] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Product | null>(null);
   const [relatedSearch, setRelatedSearch] = useState("");
@@ -1577,8 +1582,35 @@ export default function Home() {
   const tax = currency === "CNY" ? preTax * 0.13 : 0;
   const totalWithTax =
     preTax + tax - (showDesignDeduction ? fees.designDeduction : 0);
-  const add = (id: string) =>
+  const add = (id: string) => {
+    const wasInCart = Boolean(cart[id]);
     setCart((x) => ({ ...x, [id]: (x[id] || 0) + 1 }));
+
+    // Test scope: only the fixed Y10117 pairing prompts for its linked toys.
+    if (id !== "junior-Y10117" || wasInCart) return;
+    const relatedItems = relations
+      .filter((relation) => relation.productId === id)
+      .flatMap((relation) => {
+        const product = products.find(
+          (candidate) => candidate.id === relation.relatedProductId,
+        );
+        return product
+          ? [{ product, quantity: Math.max(1, relation.quantity || 1) }]
+          : [];
+      });
+    if (relatedItems.length) setPairingSuggestion({ relatedItems });
+  };
+  const addSuggestedPairing = () => {
+    if (!pairingSuggestion) return;
+    setCart((current) => {
+      const next = { ...current };
+      pairingSuggestion.relatedItems.forEach(({ product, quantity }) => {
+        next[product.id] = (next[product.id] || 0) + quantity;
+      });
+      return next;
+    });
+    setPairingSuggestion(null);
+  };
   const packageProducts = (group: KitchenPackageGroup) =>
     group.source === "main"
       ? kitchenMainProducts
@@ -2472,6 +2504,40 @@ export default function Home() {
           )}
         </section>
       </section>
+      {pairingSuggestion && (
+        <aside className="pairingSuggestion" aria-live="polite">
+          <button
+            className="pairingSuggestionClose"
+            aria-label="关闭关联玩具提示"
+            onClick={() => setPairingSuggestion(null)}
+          >
+            ×
+          </button>
+          <p>关联玩具 / PAIRED TOYS</p>
+          <h3>Y10117 已加入报价单</h3>
+          <span>
+            已固定配对 {pairingSuggestion.relatedItems.length} 个玩具，是否一起加入？
+          </span>
+          <small>
+            {pairingSuggestion.relatedItems
+              .slice(0, 3)
+              .map(({ product }) => product.sku)
+              .join(" · ")}
+            {pairingSuggestion.relatedItems.length > 3 ? " …" : ""}
+          </small>
+          <div className="pairingSuggestionActions">
+            <button
+              className="outline"
+              onClick={() => setPairingSuggestion(null)}
+            >
+              暂不加入
+            </button>
+            <button className="primary" onClick={addSuggestedPairing}>
+              加入 {pairingSuggestion.relatedItems.length} 个玩具
+            </button>
+          </div>
+        </aside>
+      )}
       {editor && draft && (
         <div className="overlay editorOverlay">
           <aside className="editorDrawer">
