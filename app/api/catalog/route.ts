@@ -236,13 +236,9 @@ export async function POST(request: Request) {
       const name = override?.name || product.name;
       return family !== "小玩具" && pairedArea(category, name) === payload.area;
     });
-    const targets = products.filter((product) => {
-      const override = overrideByProductId.get(product.id);
-      return (
-        (override?.category1 || product.family) === "小玩具" &&
-        ruleSkus.has(product.sku.toUpperCase())
-      );
-    });
+    const targets = products.filter((product) =>
+      ruleSkus.has(product.sku.toUpperCase()),
+    );
     if (!sources.length || !targets.length)
       return Response.json(
         { error: "未找到可应用的设备或玩具 SKU" },

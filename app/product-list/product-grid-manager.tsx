@@ -118,9 +118,9 @@ const kitchenAreaPairingRules: AreaPairingRule[] = [
     selectionMode: "fixed",
     minSelections: 3,
     maxSelections: 3,
-    note: "每厨房位：厨师服 5 件、挂钩 1 套、厨具五件套 1 套。",
+    note: "每厨房位：厨师服、挂钩、厨具五件套各 1 套。",
     items: [
-      { sku: "Y30787", quantity: 5 },
+      { sku: "Y30787", quantity: 1 },
       { sku: "Y40708", quantity: 1 },
       { sku: "Y40655", quantity: 1 },
     ],
