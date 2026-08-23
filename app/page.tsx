@@ -1956,7 +1956,7 @@ export default function Home() {
           .map((product) => ({ product, quantity: 0, isBound: false }))
       : [];
     const relatedItems = [...pairedItems, ...areaOptions];
-    if (relatedItems.length) setPairingSuggestion({ source, relatedItems });
+    setPairingSuggestion({ source, relatedItems });
   };
   const clearQuotation = () => {
     setCart({});
@@ -3887,18 +3887,31 @@ export default function Home() {
                     ))}
                 </section>
               )}
+              {!pairingSuggestion.relatedItems.length && (
+                <div className="pairingDialogEmpty">
+                  <b>暂未配置配套玩具</b>
+                  <span>
+                    该主产品目前没有已保存的关联产品，也没有同区域可选玩具。确认后将仅加入主产品。
+                  </span>
+                </div>
+              )}
             </div>
             <div className="pairingDialogFoot">
               <span>
-                已选 {pairingSuggestion.relatedItems.filter(({ quantity }) => quantity > 0).length} 款，
-                共 {pairingSuggestion.relatedItems.reduce((total, item) => total + item.quantity, 0)} 件
+                {pairingSuggestion.relatedItems.length
+                  ? `已选 ${pairingSuggestion.relatedItems.filter(({ quantity }) => quantity > 0).length} 款，共 ${pairingSuggestion.relatedItems.reduce((total, item) => total + item.quantity, 0)} 件`
+                  : "仅加入主产品"}
               </span>
               <div>
-                <button className="outline" onClick={() => setPairingSuggestion(null)}>
-                  仅加入主产品
-                </button>
+                {pairingSuggestion.relatedItems.length > 0 && (
+                  <button className="outline" onClick={() => setPairingSuggestion(null)}>
+                    仅加入主产品
+                  </button>
+                )}
                 <button className="primary" onClick={addSuggestedPairing}>
-                  确认加入关联产品
+                  {pairingSuggestion.relatedItems.length > 0
+                    ? "确认加入购物车"
+                    : "加入购物车"}
                 </button>
               </div>
             </div>

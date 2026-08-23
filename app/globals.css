@@ -1799,6 +1799,15 @@ img {
   overflow: auto;
   padding: 8px 24px;
 }
+.pairingDialogEmpty {
+  display: grid;
+  gap: 6px;
+  padding: 34px 0;
+  color: #71818b;
+  text-align: center;
+}
+.pairingDialogEmpty b { color: var(--navy); font-size: 15px; }
+.pairingDialogEmpty span { font-size: 12px; line-height: 1.6; }
 .pairingDialogItem {
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr) auto;
