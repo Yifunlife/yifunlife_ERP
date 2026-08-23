@@ -92,6 +92,7 @@ type QuoteImportColumns = {
 type QuoteImportTemplate = {
   source: ArrayBuffer;
   fileName: string;
+  headerRow: number;
   columns: QuoteImportColumns;
   totalRow?: number;
   metadata: {
@@ -1922,6 +1923,9 @@ export default function Home() {
       const workbook = XLSX.read(source, { type: "array" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error("未找到可读取的工作表");
+      const worksheetStartRow = XLSX.utils.decode_range(
+        worksheet["!ref"] || "A1",
+      ).s.r;
       const rows = XLSX.utils.sheet_to_json(worksheet, {
         header: 1,
         defval: "",
@@ -1950,6 +1954,14 @@ export default function Home() {
       const colorColumn = findImportColumn(header, /颜色|colour|color/i);
       const noteColumn = findImportColumn(header, /备注|notes?|remarks?/i);
       const volumeColumn = findImportColumn(header, /体积|volume/i);
+      const selectedUnitColumn =
+        quoteImportPriceMode === "usd" ? usdUnitColumn : cnyUnitColumn;
+      const selectedAmountColumn =
+        quoteImportPriceMode === "usd" ? usdAmountColumn : cnyAmountColumn;
+      if (quantityColumn < 0 || selectedUnitColumn < 0 || selectedAmountColumn < 0)
+        throw new Error(
+          `未完整识别“数量、${quoteImportPriceMode === "usd" ? "美元单价、美元合计" : "人民币单价、人民币合计"}”列，请使用原始报价表导入。`,
+        );
       const productBySku = new Map(
         products.map((product) => [product.sku.toUpperCase(), product]),
       );
@@ -2017,7 +2029,7 @@ export default function Home() {
           isRecommended: catalog?.isRecommended || false,
           relatedIds: [],
           importArea: currentArea,
-          importSourceRow: headerIndex + rowOffset + 2,
+          importSourceRow: worksheetStartRow + headerIndex + rowOffset + 2,
         });
         (skus.length ? skus : [""]).forEach((sku) => {
           const product = productBySku.get(sku);
@@ -2035,6 +2047,11 @@ export default function Home() {
       });
       if (!sourceRows)
         throw new Error("表单中没有可导入的产品行");
+      const totalRowIndex = rows.findIndex(
+        (row, rowIndex) =>
+          rowIndex > headerIndex &&
+          /总计.*含税|total.*tax/i.test(importCellText(row[nameColumn])),
+      );
       setQuoteImportPreview({
         fileName: file.name,
         rows: importRows,
@@ -2051,6 +2068,7 @@ export default function Home() {
       quoteImportTemplateRef.current = {
         source,
         fileName: file.name,
+        headerRow: worksheetStartRow + headerIndex + 1,
         columns: {
           quantity: quantityColumn,
           cnyUnit: cnyUnitColumn,
@@ -2060,14 +2078,24 @@ export default function Home() {
           areaSubtotal: areaSubtotalColumn,
         },
         totalRow:
-          rows.findIndex(
-            (row, rowIndex) =>
-              rowIndex > headerIndex &&
-              /总计.*含税|total.*tax/i.test(importCellText(row[nameColumn])),
-          ) + 1 || undefined,
+          totalRowIndex >= 0
+            ? worksheetStartRow + totalRowIndex + 1
+            : undefined,
         metadata: {
-          designer: findImportMetaLocation(rows, headerIndex, /设计师|designer/i),
-          sales: findImportMetaLocation(rows, headerIndex, /商务|业务员|sales/i),
+          designer: (() => {
+            const location = findImportMetaLocation(rows, headerIndex, /设计师|designer/i);
+            return location && {
+              ...location,
+              row: worksheetStartRow + location.row + 1,
+            };
+          })(),
+          sales: (() => {
+            const location = findImportMetaLocation(rows, headerIndex, /商务|业务员|sales/i);
+            return location && {
+              ...location,
+              row: worksheetStartRow + location.row + 1,
+            };
+          })(),
         },
       };
     } catch (error) {
@@ -2105,7 +2133,7 @@ export default function Home() {
       if (!worksheetPath || !files[worksheetPath]) return false;
       let xml = strFromU8(files[worksheetPath]);
       const setCell = (row: number, column: number, value: string | number | null) => {
-        if (column < 0 || value === null) return;
+        if (column < 0 || value === null || value === undefined) return;
         xml = updateTemplateCell(
           xml,
           XLSX.utils.encode_cell({ r: row - 1, c: column }),
@@ -2129,7 +2157,11 @@ export default function Home() {
       const sourceLines = [
         ...new Map(
           importedProducts
-            .filter((product) => product.importSourceRow !== undefined)
+            .filter(
+              (product) =>
+                product.importSourceRow !== undefined &&
+                product.importSourceRow > template.headerRow,
+            )
             .map((product) => [product.importSourceRow!, product]),
         ).values(),
       ].sort((a, b) => a.importSourceRow! - b.importSourceRow!);
@@ -2205,13 +2237,13 @@ export default function Home() {
       }
       if (template.metadata.designer)
         setCell(
-          template.metadata.designer.row + 1,
+          template.metadata.designer.row,
           template.metadata.designer.column,
           designerName,
         );
       if (template.metadata.sales)
         setCell(
-          template.metadata.sales.row + 1,
+          template.metadata.sales.row,
           template.metadata.sales.column,
           salesName,
         );
