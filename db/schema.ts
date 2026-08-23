@@ -65,6 +65,12 @@ export const productRecommendations = sqliteTable(
   ],
 );
 
+export const areaPairingRules = sqliteTable("area_pairing_rules", {
+  area: text("area").primaryKey(),
+  configJson: text("config_json").notNull(),
+  updatedAt: text("updated_at").notNull().default(""),
+});
+
 export const loginSessions = sqliteTable("login_sessions", {
   tokenHash: text("token_hash").primaryKey(),
   username: text("username").notNull(),

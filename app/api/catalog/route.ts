@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "../../../db";
 import {
+  areaPairingRules,
   catalogProducts,
   catalogCategories,
   kitchenPackages,
@@ -26,6 +27,22 @@ const recommendationForClient = (recommendation: {
   quantity: Math.max(1, Math.floor(Number(recommendation.quantity) || 1)),
 });
 
+const areaPairingRuleForClient = (rule: {
+  area: string;
+  configJson: string;
+  updatedAt: string;
+}) => {
+  try {
+    return {
+      area: rule.area,
+      rules: JSON.parse(rule.configJson),
+      updatedAt: rule.updatedAt,
+    };
+  } catch {
+    return { area: rule.area, rules: [], updatedAt: rule.updatedAt };
+  }
+};
+
 async function ensureRecommendationQuantityColumn() {
   const columns = await env.DB
     .prepare("PRAGMA table_info(product_recommendations)")
@@ -46,6 +63,12 @@ async function ensureRecommendationQuantityColumn() {
       throw new Error("Unable to add the product recommendation quantity column");
     }
   }
+}
+
+async function ensureAreaPairingRuleTable() {
+  await env.DB.prepare(
+    "CREATE TABLE IF NOT EXISTS area_pairing_rules (area text PRIMARY KEY NOT NULL, config_json text NOT NULL, updated_at text NOT NULL DEFAULT '')",
+  ).run();
 }
 
 async function getStoredCatalogBackup() {
@@ -78,14 +101,18 @@ async function getStoredCatalogBackup() {
 export async function GET(request: Request) {
   if (!(await getLoginSession(request)))
     return Response.json({ error: "Unauthorized" }, { status: 401 });
-  await ensureRecommendationQuantityColumn();
+  await Promise.all([
+    ensureRecommendationQuantityColumn(),
+    ensureAreaPairingRuleTable(),
+  ]);
   const db = getDb();
-  const [products, overrides, categories, recommendations, packages] = await Promise.all([
+  const [products, overrides, categories, recommendations, packages, areaRules] = await Promise.all([
     db.select().from(catalogProducts),
     db.select().from(productOverrides),
     db.select().from(catalogCategories),
     db.select().from(productRecommendations),
     db.select().from(kitchenPackages),
+    db.select().from(areaPairingRules),
   ]);
   const catalog = products.length
     ? products.map((product) => ({
@@ -112,6 +139,7 @@ export async function GET(request: Request) {
     categories,
     recommendations: recommendations.map(recommendationForClient),
     packages,
+    areaPairingRules: areaRules.map(areaPairingRuleForClient),
   });
 }
 
@@ -147,11 +175,14 @@ export async function POST(request: Request) {
       | "kitchenPackage"
       | "organizeToyTiers"
       | "organizePairedAreas"
+      | "areaPairingRules"
       | "catalogImport";
     category?: typeof catalogCategories.$inferInsert;
     productId?: string;
     relatedIds?: string[];
     relatedProducts?: Array<{ relatedProductId: string; quantity: number }>;
+    area?: string;
+    rules?: unknown[];
     package?: typeof kitchenPackages.$inferInsert;
     products?: Array<typeof catalogProducts.$inferInsert>;
     supplements?: Array<{
@@ -162,6 +193,19 @@ export async function POST(request: Request) {
     }>;
   };
   const db = getDb();
+  await ensureAreaPairingRuleTable();
+  if (payload.action === "areaPairingRules" && payload.area && payload.rules) {
+    const values = {
+      area: payload.area,
+      configJson: JSON.stringify(payload.rules),
+      updatedAt: new Date().toISOString(),
+    };
+    await db
+      .insert(areaPairingRules)
+      .values(values)
+      .onConflictDoUpdate({ target: areaPairingRules.area, set: values });
+    return Response.json({ rule: areaPairingRuleForClient(values) });
+  }
   if (payload.action === "catalogImport") {
     const products = payload.products || [];
     const supplements = payload.supplements || [];

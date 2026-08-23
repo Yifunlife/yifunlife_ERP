@@ -43,6 +43,22 @@ type ProductRelation = {
   quantity?: number | string;
 };
 
+type AreaPairingRule = {
+  id: string;
+  name: string;
+  selectionMode: "fixed" | "single" | "multiple";
+  minSelections: number;
+  maxSelections: number;
+  note: string;
+  items: Array<{ sku: string; quantity: number }>;
+};
+
+type StoredAreaPairingRule = {
+  area: string;
+  rules: AreaPairingRule[];
+  updatedAt: string;
+};
+
 type GridRow = {
   id: string;
   image: string;
@@ -94,6 +110,49 @@ const colorSwatches: Record<string, string> = {
   绿: "#3f9862", 紫: "#8756b6", 不适用: "#b9c3bd",
   待重新识别: "#d7b55f", 未识别: "#d7b55f", 无主图: "#c9cfca",
 };
+
+const kitchenAreaPairingRules: AreaPairingRule[] = [
+  {
+    id: "kitchen-essentials",
+    name: "厨房基础必配",
+    selectionMode: "fixed",
+    minSelections: 3,
+    maxSelections: 3,
+    note: "每厨房位：厨师服 5 件、挂钩 1 套、厨具五件套 1 套。",
+    items: [
+      { sku: "Y30787", quantity: 5 },
+      { sku: "Y40708", quantity: 1 },
+      { sku: "Y40655", quantity: 1 },
+    ],
+  },
+  {
+    id: "kitchen-condiments",
+    name: "调料组合",
+    selectionMode: "single",
+    minSelections: 1,
+    maxSelections: 1,
+    note: "每厨房位选择 1 套。",
+    items: [
+      { sku: "Y40611", quantity: 1 },
+      { sku: "Y30786", quantity: 1 },
+    ],
+  },
+  {
+    id: "kitchen-tableware",
+    name: "餐具组合",
+    selectionMode: "multiple",
+    minSelections: 2,
+    maxSelections: 2,
+    note: "每厨房位选择 2 种餐具，每种 1 套。",
+    items: [
+      { sku: "Y30729", quantity: 1 },
+      { sku: "Y31190", quantity: 1 },
+      { sku: "Y30733", quantity: 1 },
+      { sku: "Y30734", quantity: 1 },
+      { sku: "Y30719", quantity: 1 },
+    ],
+  },
+];
 
 function ColourDot({ value }: { value: string }) {
   return (
@@ -203,8 +262,10 @@ export function ProductGridManager() {
     new Set(),
   );
   const [pairingQuantities, setPairingQuantities] = useState<Record<string, number>>({});
+  const [areaPairingRules, setAreaPairingRules] = useState<StoredAreaPairingRule[]>([]);
   const [pairingSearch, setPairingSearch] = useState("");
   const [pairingSaving, setPairingSaving] = useState(false);
+  const [areaRuleSaving, setAreaRuleSaving] = useState(false);
   const [pairingSavedMessage, setPairingSavedMessage] = useState("");
 
   const load = async () => {
@@ -217,6 +278,7 @@ export function ProductGridManager() {
     setRows(gridRows(data.products || [], data.overrides || []));
     setCategories(data.categories || []);
     setRelations((data.recommendations || []).map(normalizedRelation));
+    setAreaPairingRules(data.areaPairingRules || []);
     setStatus(`${(data.products || []).length} 个 SKU · 双击分类或颜色即可修改`);
   };
 
@@ -333,6 +395,37 @@ export function ProductGridManager() {
       ),
     [pairingQuantities, pairingTargetIds],
   );
+  const savedKitchenRules = useMemo(
+    () => areaPairingRules.find((rule) => rule.area === "厨房区"),
+    [areaPairingRules],
+  );
+
+  const saveKitchenAreaRules = async () => {
+    setAreaRuleSaving(true);
+    setPairingSavedMessage("");
+    const response = await fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "areaPairingRules",
+        area: "厨房区",
+        rules: kitchenAreaPairingRules,
+      }),
+    });
+    if (!response.ok) {
+      setAreaRuleSaving(false);
+      setPairingSavedMessage("厨房统一规则保存失败，请重试。");
+      return;
+    }
+    const data = (await response.json()) as { rule?: StoredAreaPairingRule };
+    if (data.rule)
+      setAreaPairingRules((current) => [
+        ...current.filter((rule) => rule.area !== data.rule!.area),
+        data.rule!,
+      ]);
+    setAreaRuleSaving(false);
+    setPairingSavedMessage("厨房区统一配对规则已保存，全部厨房模拟设备共用此逻辑。");
+  };
 
   const openPairingManager = () => {
     setPairingCategory((current) => current || simulationCategories[0] || "");
@@ -834,6 +927,46 @@ export function ProductGridManager() {
               </label>
               <p>先选择左侧模拟区产品，再在右侧选择配套玩具并填写数量。</p>
             </div>
+            {pairingCategory === "厨房区" && (
+              <section className="areaPairingRules" aria-label="厨房区统一配对规则">
+                <div>
+                  <h3>厨房区统一配对规则</h3>
+                  <p>全部厨房模拟设备共用；仅录入表格中已明确的必配与选配规则。</p>
+                </div>
+                <div className="areaRuleList">
+                  {kitchenAreaPairingRules.map((rule) => (
+                    <article key={rule.id}>
+                      <b>{rule.name}</b>
+                      <span>
+                        {rule.selectionMode === "fixed"
+                          ? "固定必配"
+                          : rule.selectionMode === "single"
+                            ? `单选 ${rule.minSelections} 项`
+                            : `多选 ${rule.minSelections}–${rule.maxSelections} 项`}
+                      </span>
+                      <small>{rule.note}</small>
+                      <em>
+                        {rule.items.map((item) => {
+                          const product = rows.find((row) => row.sku === item.sku);
+                          return `${item.sku}${product ? ` ${product.productName}` : ""} ×${item.quantity}`;
+                        }).join(" · ")}
+                      </em>
+                    </article>
+                  ))}
+                </div>
+                <button
+                  className="primary"
+                  disabled={areaRuleSaving}
+                  onClick={() => void saveKitchenAreaRules()}
+                >
+                  {areaRuleSaving
+                    ? "保存中…"
+                    : savedKitchenRules
+                      ? "更新厨房规则"
+                      : "保存厨房规则"}
+                </button>
+              </section>
+            )}
             <div className="pairingColumns">
               <section>
                 <header>

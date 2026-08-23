@@ -683,6 +683,72 @@ img {
   color: #7a8991;
   font-size: 12px;
 }
+.areaPairingRules {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.72fr) minmax(0, 2.4fr) auto;
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid #d9e1da;
+  background: #fff;
+  padding: 14px 28px;
+}
+.areaPairingRules h3 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 16px;
+}
+.areaPairingRules p {
+  margin: 5px 0 0;
+  color: #71808b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.areaRuleList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.areaRuleList article {
+  min-width: 180px;
+  flex: 1 1 210px;
+  border: 1px solid #dbe3da;
+  border-radius: 8px;
+  background: #f7f9f5;
+  color: var(--ink);
+  padding: 8px 10px;
+}
+.areaRuleList b,
+.areaRuleList span,
+.areaRuleList small,
+.areaRuleList em {
+  display: block;
+}
+.areaRuleList b {
+  color: var(--navy);
+  font-size: 12px;
+}
+.areaRuleList span {
+  margin-top: 3px;
+  color: #4d6c50;
+  font-size: 11px;
+  font-weight: 800;
+}
+.areaRuleList small,
+.areaRuleList em {
+  margin-top: 4px;
+  color: #65747d;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.4;
+}
+.areaRuleList em {
+  color: #405967;
+}
+.areaPairingRules .primary {
+  height: 38px;
+  min-width: 126px;
+  border-radius: 7px;
+}
 .pairingColumns {
   min-height: 0;
   flex: 1;
@@ -886,6 +952,8 @@ img {
   .pairingFilters { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 16px; }
   .pairingFilters select { min-width: 0; width: 100%; }
   .pairingFilters p { margin: 0; }
+  .areaPairingRules { grid-template-columns: 1fr; gap: 10px; padding: 12px 16px; }
+  .areaPairingRules .primary { width: 100%; }
   .pairingSearch input { min-width: 0; width: 100%; }
   .pairingColumns { grid-template-columns: 3fr 4fr; }
   .pairingThumbGrid { gap: 7px; padding: 10px; }
