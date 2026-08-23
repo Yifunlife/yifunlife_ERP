@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { pbkdf2Sync } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { appUsers, loginSessions, passwordResetTokens } from "../db/schema";
@@ -29,7 +30,7 @@ const readCookie = (request: Request) =>
     .map((part) => part.trim())
     .find((part) => part.startsWith("yifun_session="))
     ?.slice("yifun_session=".length) || "";
-const bytesToHex = (bytes: ArrayBuffer) =>
+const bytesToHex = (bytes: ArrayBuffer | Uint8Array) =>
   Array.from(new Uint8Array(bytes))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
@@ -57,14 +58,7 @@ export const passwordError = (password: string) =>
   password.length < 10 ? "密码至少需要 10 位。" : "";
 
 async function derivePasswordHash(password: string, salt: Uint8Array) {
-  const key = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" },
-    await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveKey"]),
-    { name: "HMAC", hash: "SHA-256", length: 256 },
-    true,
-    ["sign"],
-  );
-  return crypto.subtle.exportKey("raw", key);
+  return pbkdf2Sync(password, salt, 310000, 32, "sha256");
 }
 
 export async function createPasswordRecord(password: string) {
