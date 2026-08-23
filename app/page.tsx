@@ -3194,7 +3194,7 @@ export default function Home() {
             </div>
             <div className="importBody">
               <p>
-                上传 Excel 后，表单中的区域、图片、规格、数量、颜色、备注和体积会作为本次报价依据；同款 SKU 也会优先使用本表图片。确认后按所选价格口径回填金额。
+                上传 Excel 后，表单中的区域、图片、规格、数量、颜色、备注和体积会作为本次报价依据；同款 SKU 也会优先使用本表图片。导入预览、报价清单与 Excel 均严格保持原表行序和区域。
               </p>
               <label className="importPriceMode">
                 <span>导入价格口径 / Price basis</span>
