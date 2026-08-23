@@ -86,11 +86,13 @@ type QuoteImportColumns = {
   cnyAmount: number;
   usdUnit: number;
   usdAmount: number;
+  areaSubtotal: number;
 };
 type QuoteImportTemplate = {
   source: ArrayBuffer;
   fileName: string;
   columns: QuoteImportColumns;
+  totalRow?: number;
   metadata: {
     designer?: { row: number; column: number };
     sales?: { row: number; column: number };
@@ -1253,6 +1255,29 @@ const updateTemplateCell = (
     return `${rowStart}${rowContent}${nextCell(` r="${cellRef}"`)}${rowEnd}`;
   });
 };
+const updateTemplateFormula = (
+  xml: string,
+  cellRef: string,
+  formula: string,
+  value: number,
+) => {
+  const rowNumber = XLSX.utils.decode_cell(cellRef).r + 1;
+  const rowPattern = new RegExp(`(<row\\b[^>]*\\br="${rowNumber}"[^>]*>)([\\s\\S]*?)(</row>)`);
+  return xml.replace(rowPattern, (_row, rowStart, rowContent, rowEnd) => {
+    const cellPattern = new RegExp(
+      `<c\\b([^>]*\\br="${cellRef}"[^>]*)(?:\\/>|>[\\s\\S]*?<\\/c>)`,
+    );
+    const nextCell = (attributes: string) => {
+      const cleanAttributes = attributes
+        .replace(/\s+t="[^"]*"/g, "")
+        .replace(/\/\s*$/, "");
+      return `<c${cleanAttributes}><f>${xmlText(formula.replace(/^=/, ""))}</f><v>${value}</v></c>`;
+    };
+    if (cellPattern.test(rowContent))
+      return `${rowStart}${rowContent.replace(cellPattern, (_cell: string, attributes: string) => nextCell(attributes))}${rowEnd}`;
+    return `${rowStart}${rowContent}${nextCell(` r="${cellRef}"`)}${rowEnd}`;
+  });
+};
 const downloadExcelFile = (data: Uint8Array | ArrayBuffer, fileName: string) => {
   const url = URL.createObjectURL(
     new Blob([data], {
@@ -1920,6 +1945,7 @@ export default function Home() {
       const cnyAmountColumn = findImportColumn(header, /合计金额.*(rmb|cny|人民币)|报价.*(rmb|cny|人民币)/i);
       const usdUnitColumn = findImportColumn(header, /美元单价|unit\s*price.*usd|usd.*unit\s*price/i);
       const usdAmountColumn = findImportColumn(header, /美元合计|total.*usd|usd.*total/i);
+      const areaSubtotalColumn = findImportColumn(header, /区域小计|subtotal/i);
       const colorColumn = findImportColumn(header, /颜色|colour|color/i);
       const noteColumn = findImportColumn(header, /备注|notes?|remarks?/i);
       const volumeColumn = findImportColumn(header, /体积|volume/i);
@@ -2030,7 +2056,14 @@ export default function Home() {
           cnyAmount: cnyAmountColumn,
           usdUnit: usdUnitColumn,
           usdAmount: usdAmountColumn,
+          areaSubtotal: areaSubtotalColumn,
         },
+        totalRow:
+          rows.findIndex(
+            (row, rowIndex) =>
+              rowIndex > headerIndex &&
+              /总计.*含税|total.*tax/i.test(importCellText(row[nameColumn])),
+          ) + 1 || undefined,
         metadata: {
           designer: findImportMetaLocation(rows, headerIndex, /设计师|designer/i),
           sales: findImportMetaLocation(rows, headerIndex, /商务|业务员|sales/i),
@@ -2078,23 +2111,97 @@ export default function Home() {
           value,
         );
       };
-      importedProducts.forEach((product) => {
-        if (!product.importSourceRow) return;
-        const quantity = cart[product.id] || 0;
-        setCell(product.importSourceRow, template.columns.quantity, quantity);
-        setCell(product.importSourceRow, template.columns.cnyUnit, product.price);
-        setCell(
-          product.importSourceRow,
-          template.columns.cnyAmount,
-          product.price === null ? null : product.price * quantity,
+      const setFormula = (
+        row: number,
+        column: number,
+        formula: string,
+        value: number,
+      ) => {
+        if (column < 0) return;
+        xml = updateTemplateFormula(
+          xml,
+          XLSX.utils.encode_cell({ r: row - 1, c: column }),
+          formula,
+          value,
         );
-        setCell(product.importSourceRow, template.columns.usdUnit, product.usd);
-        setCell(
-          product.importSourceRow,
-          template.columns.usdAmount,
-          product.usd === null ? null : product.usd * quantity,
+      };
+      const sourceLines = [
+        ...new Map(
+          importedProducts
+            .filter((product) => product.importSourceRow !== undefined)
+            .map((product) => [product.importSourceRow!, product]),
+        ).values(),
+      ].sort((a, b) => a.importSourceRow! - b.importSourceRow!);
+      const columnName = (column: number) => XLSX.utils.encode_col(column);
+      sourceLines.forEach((product) => {
+        const row = product.importSourceRow!;
+        const quantity = cart[product.id] || 0;
+        setCell(row, template.columns.quantity, quantity);
+        setCell(row, template.columns.cnyUnit, product.price);
+        setCell(row, template.columns.usdUnit, product.usd);
+        if (template.columns.cnyUnit >= 0 && template.columns.cnyAmount >= 0)
+          setFormula(
+            row,
+            template.columns.cnyAmount,
+            `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.cnyUnit)}${row}`,
+            (product.price || 0) * quantity,
+          );
+        if (template.columns.usdUnit >= 0 && template.columns.usdAmount >= 0)
+          setFormula(
+            row,
+            template.columns.usdAmount,
+            `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.usdUnit)}${row}`,
+            (product.usd || 0) * quantity,
+          );
+      });
+      const amountColumn =
+        template.columns.usdAmount >= 0
+          ? template.columns.usdAmount
+          : template.columns.cnyAmount;
+      const amountValue = (product: Product) =>
+        (amountColumn === template.columns.usdAmount ? product.usd : product.price) || 0;
+      Object.values(
+        sourceLines.reduce<Record<string, Product[]>>((groups, product) => {
+          (groups[product.importArea || "导入项目"] ||= []).push(product);
+          return groups;
+        }, {}),
+      ).forEach((areaLines) => {
+        const firstRow = areaLines[0].importSourceRow!;
+        const lastRow = areaLines.at(-1)!.importSourceRow!;
+        setFormula(
+          firstRow,
+          template.columns.areaSubtotal,
+          `=SUM(${columnName(amountColumn)}${firstRow}:${columnName(amountColumn)}${lastRow})`,
+          areaLines.reduce(
+            (total, product) => total + amountValue(product) * (cart[product.id] || 0),
+            0,
+          ),
         );
       });
+      if (template.totalRow && sourceLines.length) {
+        const firstRow = sourceLines[0].importSourceRow!;
+        const lastRow = sourceLines.at(-1)!.importSourceRow!;
+        const cnyTotal = sourceLines.reduce(
+          (total, product) => total + (product.price || 0) * (cart[product.id] || 0),
+          0,
+        );
+        const usdTotal = sourceLines.reduce(
+          (total, product) => total + (product.usd || 0) * (cart[product.id] || 0),
+          0,
+        );
+        setFormula(
+          template.totalRow,
+          template.columns.cnyAmount,
+          `=SUM(${columnName(template.columns.cnyAmount)}${firstRow}:${columnName(template.columns.cnyAmount)}${lastRow})*(1+13%)`,
+          cnyTotal * 1.13,
+        );
+        setFormula(
+          template.totalRow,
+          template.columns.usdAmount,
+          `=SUM(${columnName(template.columns.usdAmount)}${firstRow}:${columnName(template.columns.usdAmount)}${lastRow})`,
+          usdTotal,
+        );
+      }
       if (template.metadata.designer)
         setCell(
           template.metadata.designer.row + 1,
