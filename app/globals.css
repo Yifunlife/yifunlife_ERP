@@ -1194,6 +1194,33 @@ img {
   font-size: 13px;
   line-height: 1.7;
 }
+.importPriceMode {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0 0 16px;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 700;
+}
+.importPriceMode select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #b9c8bb;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--navy);
+  font: inherit;
+}
+.importPriceMode small {
+  grid-column: 2;
+  color: #77858a;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
 .importDropzone {
   min-height: 144px;
   display: grid;
@@ -1229,6 +1256,53 @@ img {
   justify-content: space-between;
   gap: 16px;
   align-items: baseline;
+}
+.importTableWrap {
+  overflow: auto;
+  margin-top: 12px;
+  border: 1px solid #dfe6da;
+  border-radius: 8px;
+  background: #fff;
+}
+.importTable {
+  width: 100%;
+  min-width: 930px;
+  border-collapse: collapse;
+  color: var(--navy);
+  font-size: 11px;
+}
+.importTable th,
+.importTable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #e7ece5;
+  text-align: left;
+  vertical-align: middle;
+}
+.importTable th {
+  position: sticky;
+  top: 0;
+  background: #eff4eb;
+  color: #4c6267;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.importTable td {
+  max-width: 150px;
+  line-height: 1.45;
+}
+.importTable td:nth-child(6),
+.importTable td:nth-child(7),
+.importTable td:nth-child(8) {
+  color: #68777c;
+}
+.importTable img {
+  display: block;
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  border: 1px solid #e1e7dd;
+  border-radius: 5px;
+  background: #f7f8f5;
 }
 .importResult b,
 .importUnmatched b {

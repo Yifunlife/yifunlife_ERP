@@ -66,6 +66,7 @@ type QuoteImportPreview = {
   unmatchedSkus: string[];
   sourceRows: number;
 };
+type QuoteImportPriceMode = "factory" | "vip" | "usd";
 type KitchenGroupSource = "main" | "addons" | "manual";
 type KitchenSelectionMode = "single" | "multiple" | "repeatable";
 type KitchenPackageGroup = {
@@ -1302,6 +1303,8 @@ export default function Home() {
     useState<QuoteImportPreview | null>(null);
   const [quoteImportError, setQuoteImportError] = useState("");
   const [quoteImporting, setQuoteImporting] = useState(false);
+  const [quoteImportPriceMode, setQuoteImportPriceMode] =
+    useState<QuoteImportPriceMode>("vip");
   const [editor, setEditor] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Product | null>(null);
   const [relatedSearch, setRelatedSearch] = useState("");
@@ -1593,6 +1596,15 @@ export default function Home() {
         a.sku.localeCompare(b.sku),
     );
   const displayPrice = (p: Product) => (currency === "CNY" ? p.price : p.usd);
+  const importCurrency = quoteImportPriceMode === "usd" ? "USD" : "CNY";
+  const importUnitPrice = (product: Product) =>
+    quoteImportPriceMode === "usd" ? product.usd : product.price;
+  const formatImportPrice = (price: number | null) => {
+    if (price === null || price === undefined) return "待维护";
+    return importCurrency === "USD"
+      ? `USD $${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : `CNY ¥${price.toLocaleString("zh-CN")}`;
+  };
   const subtotal = cartItems.reduce(
     (n, p) => n + (displayPrice(p) || 0) * p.qty,
     0,
@@ -1764,6 +1776,7 @@ export default function Home() {
   };
   const applyQuoteImport = () => {
     if (!quoteImportPreview?.matched.length) return;
+    setCurrency(importCurrency);
     setCart(
       Object.fromEntries(
         quoteImportPreview.matched.map(({ product, quantity }) => [
@@ -2858,8 +2871,28 @@ export default function Home() {
             </div>
             <div className="importBody">
               <p>
-                上传 Excel 后，系统会读取“款号 / Item Number / SKU”和“数量 / Quantity”，按当前 {currency} 产品价格自动填入报价金额。
+                上传 Excel 后，系统会读取款号与数量，并将系统中的图片、单价、金额、颜色、备注和体积完整列出；确认导入后，报价单会按所选价格口径填入。
               </p>
+              <label className="importPriceMode">
+                <span>导入价格口径 / Price basis</span>
+                <select
+                  value={quoteImportPriceMode}
+                  onChange={(event) =>
+                    setQuoteImportPriceMode(
+                      event.target.value as QuoteImportPriceMode,
+                    )
+                  }
+                >
+                  <option value="factory" disabled>
+                    出厂价（CNY）— 暂未维护
+                  </option>
+                  <option value="vip">国内 VIP 价格（CNY）</option>
+                  <option value="usd">美金价格（USD）</option>
+                </select>
+                <small>
+                  当前默认使用国内 VIP 价格；出厂价资料补齐后可在此启用。
+                </small>
+              </label>
               <label className="importDropzone">
                 <input
                   type="file"
@@ -2883,12 +2916,47 @@ export default function Home() {
                     </span>
                   </div>
                   <p>
-                    {quoteImportPreview.matched
-                      .slice(0, 5)
-                      .map(({ product, quantity }) => `${product.sku} × ${quantity}`)
-                      .join(" · ")}
-                    {quoteImportPreview.matched.length > 5 ? " …" : ""}
+                    下表金额已按 {quoteImportPriceMode === "usd" ? "美金价格（USD）" : "国内 VIP 价格（CNY）"} 计算。
                   </p>
+                  <div className="importTableWrap">
+                    <table className="importTable">
+                      <thead>
+                        <tr>
+                          <th>款号 / SKU</th>
+                          <th>图片 / Image</th>
+                          <th>数量 / Qty</th>
+                          <th>单价 / Unit price</th>
+                          <th>金额 / Amount</th>
+                          <th>颜色 / Colour</th>
+                          <th>备注 / Remarks</th>
+                          <th>体积 / Volume</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quoteImportPreview.matched.map(({ product, quantity }) => {
+                          const unitPrice = importUnitPrice(product);
+                          return (
+                            <tr key={product.id}>
+                              <td><b>{product.sku}</b></td>
+                              <td>
+                                {product.image ? (
+                                  <img src={product.image} alt={product.name} />
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td>{quantity}</td>
+                              <td>{formatImportPrice(unitPrice)}</td>
+                              <td>{formatImportPrice(unitPrice === null ? null : unitPrice * quantity)}</td>
+                              <td>{colourLabel(product.colorTag).zh}</td>
+                              <td>{product.note || "—"}</td>
+                              <td>{product.volume || "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                   {quoteImportPreview.unmatchedSkus.length > 0 && (
                     <div className="importUnmatched">
                       <b>未匹配 {quoteImportPreview.unmatchedSkus.length} 个款号</b>
