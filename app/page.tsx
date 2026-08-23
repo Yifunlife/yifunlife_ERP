@@ -1483,6 +1483,9 @@ export default function Home() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [currency, setCurrency] = useState<"CNY" | "USD">("CNY");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [cartPairings, setCartPairings] = useState<
+    Record<string, Record<string, number>>
+  >({});
   const [pairingSuggestion, setPairingSuggestion] =
     useState<PairingSuggestion | null>(null);
   const [pairingRemovalPrompt, setPairingRemovalPrompt] =
@@ -1807,21 +1810,73 @@ export default function Home() {
     (n, p) => n + (displayPrice(p) || 0) * p.qty,
     0,
   );
+  const cartHierarchyItems: Array<{
+    product: (typeof cartItems)[number];
+    quantity: number;
+    area: string;
+    parentId?: string;
+  }> = [];
+  const cartItemById = new Map(cartItems.map((item) => [item.id, item]));
+  const allocatedChildQuantities = new Map<string, number>();
+  const pairedParentIds = new Set(
+    Object.entries(cartPairings)
+      .filter(
+        ([parentId, children]) =>
+          cartItemById.has(parentId) &&
+          Object.values(children).some((quantity) => quantity > 0),
+      )
+      .map(([parentId]) => parentId),
+  );
+  cartItems
+    .filter((item) => pairedParentIds.has(item.id))
+    .forEach((parent) => {
+      cartHierarchyItems.push({
+        product: parent,
+        quantity: parent.qty,
+        area: quoteArea(parent),
+      });
+      Object.entries(cartPairings[parent.id] || {}).forEach(
+        ([childId, configuredQuantity]) => {
+          const child = cartItemById.get(childId);
+          if (!child) return;
+          const allocated = allocatedChildQuantities.get(childId) || 0;
+          const quantity = Math.min(
+            Math.max(0, configuredQuantity),
+            Math.max(0, child.qty - allocated),
+          );
+          if (!quantity) return;
+          allocatedChildQuantities.set(childId, allocated + quantity);
+          cartHierarchyItems.push({
+            product: child,
+            quantity,
+            area: quoteArea(parent),
+            parentId: parent.id,
+          });
+        },
+      );
+    });
+  cartItems
+    .filter((item) => !pairedParentIds.has(item.id))
+    .forEach((item) => {
+      const quantity = item.qty - (allocatedChildQuantities.get(item.id) || 0);
+      if (!quantity) return;
+      cartHierarchyItems.push({
+        product: item,
+        quantity,
+        area: quoteArea(item),
+      });
+    });
   const quoteGroups = Object.entries(
-    cartItems.reduce<Record<string, typeof cartItems>>((a, p) => {
-      const area = quoteArea(p);
-      (a[area] ||= []).push(p);
-      return a;
-    }, {}),
+    cartHierarchyItems.reduce<Record<string, typeof cartHierarchyItems>>(
+      (a, item) => {
+        (a[item.area] ||= []).push(item);
+        return a;
+      },
+      {},
+    ),
   ).map(([area, items]) => [
     area,
-    [...items].sort(
-      (a, b) =>
-        (a.importSourceRow !== undefined && b.importSourceRow !== undefined
-          ? a.importSourceRow - b.importSourceRow
-          : Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
-            a.sku.localeCompare(b.sku)),
-    ),
+    items,
   ] as const);
   const quoteItemsInOrder = quoteGroups.flatMap(([, items]) => items);
   const preTax =
@@ -1834,11 +1889,10 @@ export default function Home() {
   const totalWithTax =
     preTax + tax - (showDesignDeduction ? fees.designDeduction : 0);
   const add = (id: string) => {
-    const wasInCart = Boolean(cart[id]);
     setCart((x) => ({ ...x, [id]: (x[id] || 0) + 1 }));
 
     const source = products.find((product) => product.id === id);
-    if (!source || source.category1 === "小玩具" || wasInCart) return;
+    if (!source || source.category1 === "小玩具") return;
     const relatedItems = relations
       .filter((relation) => relation.productId === id)
       .flatMap((relation) => {
@@ -1853,6 +1907,7 @@ export default function Home() {
   };
   const clearQuotation = () => {
     setCart({});
+    setCartPairings({});
     setImportedProducts([]);
     quoteImportTemplateRef.current = null;
     setPairingSuggestion(null);
@@ -1860,39 +1915,100 @@ export default function Home() {
   };
   const addSuggestedPairing = () => {
     if (!pairingSuggestion) return;
+    const selectedItems = pairingSuggestion.relatedItems.filter(
+      ({ quantity }) => quantity > 0,
+    );
     setCart((current) => {
       const next = { ...current };
-      pairingSuggestion.relatedItems.forEach(({ product, quantity }) => {
+      selectedItems.forEach(({ product, quantity }) => {
         next[product.id] = (next[product.id] || 0) + quantity;
       });
       return next;
     });
+    if (selectedItems.length) {
+      setCartPairings((current) => {
+        const next = { ...current };
+        const children = { ...(next[pairingSuggestion.source.id] || {}) };
+        selectedItems.forEach(({ product, quantity }) => {
+          children[product.id] = (children[product.id] || 0) + quantity;
+        });
+        next[pairingSuggestion.source.id] = children;
+        return next;
+      });
+    }
     setPairingSuggestion(null);
+  };
+  const changeSuggestedPairingQuantity = (id: string, change: number) => {
+    setPairingSuggestion((current) =>
+      current
+        ? {
+            ...current,
+            relatedItems: current.relatedItems.map((item) =>
+              item.product.id === id
+                ? { ...item, quantity: Math.max(0, item.quantity + change) }
+                : item,
+            ),
+          }
+        : null,
+    );
+  };
+  const changePairedCartQuantity = (
+    parentId: string,
+    childId: string,
+    change: number,
+  ) => {
+    const quantity = cartPairings[parentId]?.[childId] || 0;
+    if (change < 0 && quantity <= 0) return;
+    setCartPairings((current) => {
+      const children = { ...(current[parentId] || {}) };
+      const nextQuantity = Math.max(0, (children[childId] || 0) + change);
+      if (nextQuantity) children[childId] = nextQuantity;
+      else delete children[childId];
+      const next = { ...current };
+      if (Object.keys(children).length) next[parentId] = children;
+      else delete next[parentId];
+      return next;
+    });
+    setCart((current) => ({
+      ...current,
+      [childId]: Math.max(0, (current[childId] || 0) + change),
+    }));
   };
   const remove = (id: string) => {
     const product = quoteProducts.find((candidate) => candidate.id === id);
     const quantity = cart[id] || 0;
     if (!product || quantity <= 1) {
       const relatedItems = product
-        ? relations
-            .filter(
-              (relation) =>
-                relation.productId === id &&
-                cart[relation.relatedProductId] &&
-                products.find((candidate) => candidate.id === relation.relatedProductId)
-                  ?.category1 === "小玩具",
-            )
-            .flatMap((relation) => {
+        ? Object.entries(cartPairings[id] || {}).flatMap(
+            ([relatedProductId, pairedQuantity]) => {
               const relatedProduct = products.find(
-                (candidate) => candidate.id === relation.relatedProductId,
+                (candidate) => candidate.id === relatedProductId,
               );
-              return relatedProduct
-                ? [{ product: relatedProduct, quantity: cart[relatedProduct.id] }]
+              const quantity = Math.min(
+                pairedQuantity,
+                cart[relatedProductId] || 0,
+              );
+              return relatedProduct && quantity
+                ? [{ product: relatedProduct, quantity }]
                 : [];
-            })
+            },
+          )
         : [];
       if (product && product.category1 !== "小玩具" && relatedItems.length) {
         setPairingRemovalPrompt({ device: product, relatedItems });
+        return;
+      }
+    }
+    if (product?.category1 === "小玩具") {
+      const pairedQuantity = Object.values(cartPairings).reduce(
+        (total, children) => total + (children[id] || 0),
+        0,
+      );
+      if (pairedQuantity >= quantity) {
+        const parentId = Object.keys(cartPairings).find(
+          (candidate) => (cartPairings[candidate]?.[id] || 0) > 0,
+        );
+        if (parentId) changePairedCartQuantity(parentId, id, -1);
         return;
       }
     }
@@ -1906,10 +2022,15 @@ export default function Home() {
     setCart((current) => {
       const next = { ...current, [pairingRemovalPrompt.device.id]: 0 };
       if (removeRelatedToys) {
-        pairingRemovalPrompt.relatedItems.forEach(({ product }) => {
-          next[product.id] = 0;
+        pairingRemovalPrompt.relatedItems.forEach(({ product, quantity }) => {
+          next[product.id] = Math.max(0, (next[product.id] || 0) - quantity);
         });
       }
+      return next;
+    });
+    setCartPairings((current) => {
+      const next = { ...current };
+      delete next[pairingRemovalPrompt.device.id];
       return next;
     });
     setPairingRemovalPrompt(null);
@@ -2114,6 +2235,7 @@ export default function Home() {
     if (quoteImportPreview.projectName) setQuoteProject(quoteImportPreview.projectName);
     if (quoteImportPreview.designerName) setDesignerName(quoteImportPreview.designerName);
     if (quoteImportPreview.salesName) setSalesName(quoteImportPreview.salesName);
+    setCartPairings({});
     setCart(
       Object.fromEntries(
         importedRows.map(({ product, quantity }) => [product.id, quantity]),
@@ -2256,113 +2378,178 @@ export default function Home() {
     }
   };
   const exportQuoteExcel = () => {
-    if (exportImportedQuoteTemplate()) return;
     const unitPriceTitle = currency === "USD" ? "USD Unit Price" : "CNY Unit Price";
     const amountTitle = currency === "USD" ? "USD Amount" : "CNY Amount";
     const headers = [
-      "Area / 区域",
-      "SKU / 款号",
-      "Product / 产品名称",
-      "English Name / 英文名称",
-      "Brand / 品牌",
-      "Specification / 规格尺寸",
-      "Unit / 单位",
-      "Qty / 数量",
+      "序号 / No.",
+      "款号 / Item Number",
+      "产品名称 / Product Name",
+      "图片链接 / Image URL",
+      "玩具品牌 / Toy Brand",
+      "规格/尺寸 / Specifications",
+      "单位 / Unit",
+      "数量 / Quantity",
       unitPriceTitle,
       amountTitle,
-      "Colour / 颜色",
-      "Volume / 体积",
-      "Remarks / 备注",
-      "Image URL / 图片链接",
+      "颜色 / Colour",
+      "体积 / Volume",
+      "备注 / Notes",
     ];
-    const rows: Array<Array<string | number>> = [
-      ["亦玩集团产品报价清单 / Yifun Life Product Quotation"],
-      ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
-      ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
-      headers,
-    ];
-    const productRows: number[] = [];
-    quoteGroups.forEach(([area, items]) => {
-      rows.push([area]);
-      items.forEach((product) => {
+    const workbook = XLSX.utils.book_new();
+    const currencyFormat = currency === "USD" ? "$#,##0.00" : "¥#,##0";
+    const usedSheetNames = new Set<string>();
+    const sheetNameFor = (area: string, index: number) => {
+      const base = area.replace(/[\\/:?*\[\]]/g, " ").trim() || `Area ${index + 1}`;
+      let name = base.slice(0, 31);
+      let suffix = 2;
+      while (usedSheetNames.has(name)) {
+        name = `${base.slice(0, 28)} ${suffix}`;
+        suffix += 1;
+      }
+      usedSheetNames.add(name);
+      return name;
+    };
+    const areaSheets = quoteGroups.map(([area, items], index) => {
+      const sheetName = sheetNameFor(area, index);
+      const rows: Array<Array<string | number>> = [
+        ["亦玩集团产品报价清单 / Yifun Life Product Quotation"],
+        [area],
+        ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
+        ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
+        headers,
+      ];
+      const productRows: number[] = [];
+      items.forEach(({ product, quantity, parentId }) => {
         const rowNumber = rows.length + 1;
         productRows.push(rowNumber);
         rows.push([
-          area,
+          "",
           product.sku,
-          product.name,
-          englishProductName(product),
+          `${parentId ? "↳ " : ""}${product.name}`,
+          product.image || "",
           product.brand || "YIFUN",
           product.spec || "—",
           unitLabel(product.unit).zh,
-          product.qty,
+          quantity,
           displayPrice(product) ?? "",
           "",
           colourLabel(product.colorTag).zh,
           product.volume || "—",
-          product.note || "—",
-          product.image || "",
+          parentId ? `关联产品 / Paired with ${cartItemById.get(parentId)?.sku || "主产品"}` : product.note || "—",
         ]);
       });
+      const subtotalRow = rows.length + 1;
+      rows.push(["", "", "区域小计 / Area Subtotal"]);
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      productRows.forEach((rowNumber, index) => {
+        sheet[`A${rowNumber}`] = { t: "n", f: `ROW()-5`, v: index + 1 };
+        sheet[`J${rowNumber}`] = {
+          t: "n",
+          f: `IF(OR(H${rowNumber}=\"\",I${rowNumber}=\"\"),\"\",H${rowNumber}*I${rowNumber})`,
+          v: (items[index].quantity || 0) * (displayPrice(items[index].product) || 0),
+          z: currencyFormat,
+        };
+      });
+      const firstProductRow = productRows[0] || 6;
+      const lastProductRow = productRows.at(-1) || firstProductRow;
+      sheet[`J${subtotalRow}`] = {
+        t: "n",
+        f: `SUM(J${firstProductRow}:J${lastProductRow})`,
+        v: items.reduce(
+          (total, item) =>
+            total + item.quantity * (displayPrice(item.product) || 0),
+          0,
+        ),
+        z: currencyFormat,
+      };
+      sheet["!merges"] = [
+        XLSX.utils.decode_range("A1:M1"),
+        XLSX.utils.decode_range("A2:M2"),
+      ];
+      sheet["!cols"] = [
+        { wch: 9 }, { wch: 14 }, { wch: 30 }, { wch: 42 }, { wch: 18 },
+        { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
+        { wch: 12 }, { wch: 13 }, { wch: 34 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+      return { area, items, sheetName, subtotalRow };
     });
+    const summaryRows: Array<Array<string | number>> = [
+      ["亦玩集团产品报价清单 / Yifun Life Product Quotation"],
+      ["报价汇总 / Summary"],
+      ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
+      ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
+      [],
+      ["区域 / Area", "产品行数 / Product Lines", "区域小计 / Area Subtotal"],
+    ];
+    const summaryAreaRows = areaSheets.map((areaSheet, index) => {
+      const rowNumber = summaryRows.length + 1;
+      summaryRows.push([areaSheet.area, "", ""]);
+      return { ...areaSheet, rowNumber, index };
+    });
+    summaryRows.push([]);
     const feeRows = [
       ["包装费 / Packaging fee", fees.packaging],
       ["除甲醛 / Formaldehyde removal", fees.formaldehyde],
       ["运输费 / Shipping fee", fees.shipping],
       ["安装费 / Installation fee", fees.installation],
     ];
-    rows.push([]);
-    feeRows.forEach(([label, amount]) => rows.push([label, "", "", "", "", "", "", "", "", amount]));
-    const subtotalRow = rows.length + 1;
-    rows.push(["小计（不含税） / Subtotal (tax excluded)"]);
-    const taxRow = rows.length + 1;
-    rows.push(["税额 13% / Tax 13%"]);
-    const designRow = rows.length + 1;
-    rows.push(["设计费抵扣 / Design fee deduction"]);
-    const totalRow = rows.length + 1;
-    rows.push(["总计（含税） / Total (tax included)"]);
-
-    const sheet = XLSX.utils.aoa_to_sheet(rows);
-    productRows.forEach((rowNumber) => {
-      sheet[`J${rowNumber}`] = {
+    const firstFeeRow = summaryRows.length + 1;
+    feeRows.forEach(([label, value]) => summaryRows.push([label, value]));
+    const subtotalRow = summaryRows.length + 1;
+    summaryRows.push(["小计（不含税） / Subtotal (tax excluded)"]);
+    const taxRow = summaryRows.length + 1;
+    summaryRows.push(["税额 13% / Tax 13%"]);
+    const designRow = summaryRows.length + 1;
+    summaryRows.push(["设计费抵扣 / Design fee deduction", showDesignDeduction ? fees.designDeduction : 0]);
+    const totalRow = summaryRows.length + 1;
+    summaryRows.push(["总计（含税） / Total (tax included)"]);
+    const summary = XLSX.utils.aoa_to_sheet(summaryRows);
+    summaryAreaRows.forEach(({ sheetName, subtotalRow: areaSubtotalRow, rowNumber, items }) => {
+      summary[`B${rowNumber}`] = {
         t: "n",
-        f: `IF(I${rowNumber}=\"\",\"\",H${rowNumber}*I${rowNumber})`,
-        z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+        f: `COUNTA('${sheetName}'!B6:B${areaSubtotalRow - 1})`,
+        v: items.length,
+      };
+      summary[`C${rowNumber}`] = {
+        t: "n",
+        f: `'${sheetName}'!J${areaSubtotalRow}`,
+        v: items.reduce(
+          (total, item) => total + item.quantity * (displayPrice(item.product) || 0),
+          0,
+        ),
+        z: currencyFormat,
       };
     });
-    const firstProductRow = productRows[0] || 5;
-    const lastProductRow = productRows.at(-1) || firstProductRow;
-    const firstFeeRow = subtotalRow - feeRows.length;
-    sheet[`J${subtotalRow}`] = {
+    summary[`C${subtotalRow}`] = {
       t: "n",
-      f: `SUM(J${firstProductRow}:J${lastProductRow})+SUM(J${firstFeeRow}:J${subtotalRow - 1})`,
-      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+      f: `SUM(C7:C${firstFeeRow - 2})+SUM(B${firstFeeRow}:B${firstFeeRow + feeRows.length - 1})`,
+      v: subtotal + fees.packaging + fees.formaldehyde + fees.shipping + fees.installation,
+      z: currencyFormat,
     };
-    sheet[`J${taxRow}`] = {
+    summary[`C${taxRow}`] = {
       t: "n",
-      f: currency === "CNY" ? `J${subtotalRow}*13%` : "0",
-      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+      f: currency === "CNY" ? `C${subtotalRow}*13%` : "0",
+      v: tax,
+      z: currencyFormat,
     };
-    sheet[`J${designRow}`] = {
+    summary[`C${totalRow}`] = {
       t: "n",
-      v: showDesignDeduction ? fees.designDeduction : 0,
-      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
+      f: `C${subtotalRow}+C${taxRow}-B${designRow}`,
+      v: totalWithTax,
+      z: currencyFormat,
     };
-    sheet[`J${totalRow}`] = {
-      t: "n",
-      f: `J${subtotalRow}+J${taxRow}-J${designRow}`,
-      z: currency === "USD" ? "$#,##0.00" : "¥#,##0",
-    };
-    sheet["!merges"] = [
-      XLSX.utils.decode_range("A1:N1"),
+    summary["!merges"] = [
+      XLSX.utils.decode_range("A1:F1"),
+      XLSX.utils.decode_range("A2:F2"),
     ];
-    sheet["!cols"] = [
-      { wch: 26 }, { wch: 14 }, { wch: 26 }, { wch: 28 }, { wch: 20 },
-      { wch: 24 }, { wch: 13 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
-      { wch: 14 }, { wch: 13 }, { wch: 24 }, { wch: 42 },
-    ];
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, "报价清单");
+    summary["!cols"] = [{ wch: 38 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(workbook, summary, "Summary");
+    workbook.SheetNames.unshift(workbook.SheetNames.pop()!);
+    const reorderedSheets = Object.fromEntries(
+      workbook.SheetNames.map((name) => [name, workbook.Sheets[name]]),
+    );
+    workbook.Sheets = reorderedSheets;
     const fileName = `${(quoteProject || "Yifun_Life_Quotation").replace(/[^\w\u4e00-\u9fff-]+/g, "_")}_${currency}.xlsx`;
     XLSX.writeFile(workbook, fileName, { compression: true });
   };
@@ -3314,38 +3501,85 @@ export default function Home() {
         </section>
       </section>
       {pairingSuggestion && (
-        <aside className="pairingSuggestion" aria-live="polite">
-          <button
-            className="pairingSuggestionClose"
-            aria-label="关闭关联玩具提示"
-            onClick={() => setPairingSuggestion(null)}
-          >
-            ×
-          </button>
-          <p>关联玩具 / PAIRED TOYS</p>
-          <h3>{pairingSuggestion.source.sku} 已加入报价单</h3>
-          <span>
-            已固定配对 {pairingSuggestion.relatedItems.length} 个玩具，是否一起加入？
-          </span>
-          <small>
-            {pairingSuggestion.relatedItems
-              .slice(0, 3)
-              .map(({ product }) => product.sku)
-              .join(" · ")}
-            {pairingSuggestion.relatedItems.length > 3 ? " …" : ""}
-          </small>
-          <div className="pairingSuggestionActions">
-            <button
-              className="outline"
-              onClick={() => setPairingSuggestion(null)}
-            >
-              暂不加入
-            </button>
-            <button className="primary" onClick={addSuggestedPairing}>
-              加入 {pairingSuggestion.relatedItems.length} 个玩具
-            </button>
-          </div>
-        </aside>
+        <div
+          className="overlay pairingOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pairing-selection-title"
+        >
+          <section className="pairingDialog">
+            <div className="pairingDialogHead">
+              <div>
+                <span>PAIRED TOYS</span>
+                <h2 id="pairing-selection-title">选择关联产品</h2>
+              </div>
+              <button
+                onClick={() => setPairingSuggestion(null)}
+                aria-label="关闭关联产品选择"
+              >
+                ×
+              </button>
+            </div>
+            <div className="pairingDialogLead">
+              <div className="pairingDialogSource">
+                <Visual p={pairingSuggestion.source} mini />
+                <div>
+                  <b>{pairingSuggestion.source.name}</b>
+                  <small>{pairingSuggestion.source.sku}</small>
+                </div>
+              </div>
+              <p>
+                已加入主产品。请按需调整每个关联产品的数量，确认后将以母子结构加入报价清单。
+              </p>
+            </div>
+            <div className="pairingDialogList">
+              {pairingSuggestion.relatedItems.map(({ product, quantity }) => (
+                <article className="pairingDialogItem" key={product.id}>
+                  <div className="pairingDialogImage">
+                    <Visual p={product} mini />
+                  </div>
+                  <div className="pairingDialogInfo">
+                    <b>{product.name}</b>
+                    <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>
+                      {englishProductName(product)}
+                    </small>
+                    <small>{product.sku}</small>
+                  </div>
+                  <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
+                    <button
+                      onClick={() => changeSuggestedPairingQuantity(product.id, -1)}
+                      disabled={quantity === 0}
+                      aria-label={`减少 ${product.sku} 数量`}
+                    >
+                      −
+                    </button>
+                    <span>{quantity}</span>
+                    <button
+                      onClick={() => changeSuggestedPairingQuantity(product.id, 1)}
+                      aria-label={`增加 ${product.sku} 数量`}
+                    >
+                      ＋
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="pairingDialogFoot">
+              <span>
+                已选 {pairingSuggestion.relatedItems.filter(({ quantity }) => quantity > 0).length} 款，
+                共 {pairingSuggestion.relatedItems.reduce((total, item) => total + item.quantity, 0)} 件
+              </span>
+              <div>
+                <button className="outline" onClick={() => setPairingSuggestion(null)}>
+                  仅加入主产品
+                </button>
+                <button className="primary" onClick={addSuggestedPairing}>
+                  确认加入关联产品
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
       )}
       {pairingRemovalPrompt && (
         <aside className="pairingSuggestion pairingRemovalPrompt" aria-live="assertive">
@@ -4070,12 +4304,16 @@ export default function Home() {
               <button onClick={() => setCartOpen(false)}>×</button>
             </div>
             <div className="drawerContent">
-              {cartItems.map((p) => (
-                <div className="cartItem" key={p.id}>
+              {cartHierarchyItems.map(({ product: p, quantity, parentId }) => (
+                <div
+                  className={`cartItem${parentId ? " cartChildItem" : ""}`}
+                  key={`${parentId || "root"}-${p.id}`}
+                >
                   <div className="cartImage">
                     <Visual p={p} mini />
                   </div>
                   <div className="cartInfo">
+                    {parentId && <span className="cartRelationLabel">关联产品 / Paired item</span>}
                     <b>{p.name}</b>
                     <small className={needsEnglishTranslation(p) ? "missingEnglish" : ""}>
                       {englishProductName(p)}
@@ -4085,19 +4323,31 @@ export default function Home() {
                       {money(
                         displayPrice(p) === null
                           ? null
-                          : displayPrice(p)! * p.qty,
+                          : displayPrice(p)! * quantity,
                         currency,
                       )}
                     </strong>
                   </div>
                   <div className="qty">
                     <button
-                      onClick={() => remove(p.id)}
+                      onClick={() =>
+                        parentId
+                          ? changePairedCartQuantity(parentId, p.id, -1)
+                          : remove(p.id)
+                      }
                     >
                       −
                     </button>
-                    <span>{p.qty}</span>
-                    <button onClick={() => add(p.id)}>＋</button>
+                    <span>{quantity}</span>
+                    <button
+                      onClick={() =>
+                        parentId
+                          ? changePairedCartQuantity(parentId, p.id, 1)
+                          : add(p.id)
+                      }
+                    >
+                      ＋
+                    </button>
                   </div>
                 </div>
               ))}
@@ -4239,16 +4489,21 @@ export default function Home() {
                     <tr className="areaRow" key={`${area}-area`}>
                       <td colSpan={13}>{area}</td>
                     </tr>,
-                    ...items.map((p) => {
+                    ...items.map((item) => {
+                      const { product: p, quantity, parentId } = item;
                       const unitPrice = displayPrice(p);
                       const amount =
-                        unitPrice === null ? null : unitPrice * p.qty;
-                      const serial = quoteItemsInOrder.indexOf(p) + 1;
+                        unitPrice === null ? null : unitPrice * quantity;
+                      const serial = quoteItemsInOrder.indexOf(item) + 1;
                       return (
-                        <tr key={p.id}>
+                        <tr
+                          className={parentId ? "quoteChildRow" : "quoteParentRow"}
+                          key={`${parentId || "root"}-${p.id}`}
+                        >
                           <td>{serial}</td>
                           <td className="quoteSku">{p.sku || "—"}</td>
                           <td>
+                            {parentId && <span className="quoteRelationLabel">关联产品 / Paired item</span>}
                             <b>{p.name}</b>
                             <small className={needsEnglishTranslation(p) ? "missingEnglish" : ""}>
                               {englishProductName(p)}
@@ -4264,7 +4519,7 @@ export default function Home() {
                           <td>
                             <QuoteBilingual {...unitLabel(p.unit)} />
                           </td>
-                          <td>{p.qty}</td>
+                          <td>{quantity}</td>
                           <td>{money(unitPrice, currency)}</td>
                           <td>{money(amount, currency)}</td>
                           <td>
