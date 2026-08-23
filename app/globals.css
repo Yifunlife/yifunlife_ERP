@@ -1229,7 +1229,7 @@ img {
 }
 .priceRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-end;
   gap: 8px;
   margin-top: 10px;
@@ -1249,7 +1249,7 @@ img {
   color: var(--navy);
   overflow-wrap: anywhere;
 }
-.priceRow button {
+.productAddButton {
   box-sizing: border-box;
   width: 64px;
   min-height: 34px;
@@ -1262,6 +1262,54 @@ img {
   font-size: 10px;
   line-height: 1;
   white-space: nowrap;
+}
+.productQuantityControl {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 24px 36px 24px;
+  align-items: stretch;
+  width: 88px;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid #cbd4cc;
+  border-radius: 17px;
+  background: #fff;
+}
+.productQuantityControl button {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--navy);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+}
+.productQuantityControl button:hover {
+  background: #edf2ea;
+}
+.productQuantityControl input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid #e2e7df;
+  border-left: 1px solid #e2e7df;
+  background: #fff;
+  color: var(--navy);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+  outline: none;
+  appearance: textfield;
+}
+.productQuantityControl input::-webkit-inner-spin-button,
+.productQuantityControl input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.productQuantityControl input:focus {
+  background: #f5f8f2;
 }
 .empty {
   text-align: center;

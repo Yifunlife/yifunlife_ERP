@@ -3247,14 +3247,56 @@ export default function Home() {
                             <small>参考单价 / {p.unit}</small>
                             <strong>{money(displayPrice(p), currency)}</strong>
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              add(p.id);
-                            }}
-                          >
-                            {cart[p.id] ? `已选 ${cart[p.id]}` : "＋ 添加"}
-                          </button>
+                          {cart[p.id] ? (
+                            <div
+                              className="productQuantityControl"
+                              aria-label={`${p.name} 数量`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                aria-label={`减少 ${p.name} 数量`}
+                                onClick={() => remove(p.id)}
+                              >
+                                −
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                inputMode="numeric"
+                                aria-label={`${p.name} 数量`}
+                                value={cart[p.id]}
+                                onChange={(e) => {
+                                  const quantity = Math.max(
+                                    1,
+                                    Math.floor(Number(e.target.value) || 1),
+                                  );
+                                  setCart((current) => ({
+                                    ...current,
+                                    [p.id]: quantity,
+                                  }));
+                                }}
+                              />
+                              <button
+                                type="button"
+                                aria-label={`增加 ${p.name} 数量`}
+                                onClick={() => add(p.id)}
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="productAddButton"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                add(p.id);
+                              }}
+                            >
+                              ＋ 添加
+                            </button>
+                          )}
                         </div>
                       </div>
                     </article>
