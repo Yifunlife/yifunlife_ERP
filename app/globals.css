@@ -1011,6 +1011,7 @@ img {
   box-shadow: none;
 }
 .pairingMatrixWrap {
+  position: relative;
   min-height: 0;
   flex: 1;
   overflow: auto;
@@ -1030,8 +1031,11 @@ img {
   border-bottom: 1px solid #e0e7df;
 }
 .pairingMatrix tr > :first-child {
+  position: -webkit-sticky;
   position: sticky;
   left: 0;
+  z-index: 20;
+  background-clip: padding-box;
   box-shadow: 5px 0 10px rgba(34, 57, 72, 0.08);
 }
 .pairingMatrix thead th {
@@ -1069,7 +1073,7 @@ img {
   font-weight: 500;
 }
 .pairingMatrix .pairingMatrixDeviceHead {
-  z-index: 6;
+  z-index: 30;
   width: 220px;
   min-width: 220px;
   max-width: 220px;
@@ -1085,8 +1089,9 @@ img {
   font-weight: 500;
 }
 .pairingMatrixSource {
+  position: -webkit-sticky;
   position: sticky;
-  z-index: 4;
+  z-index: 20;
   left: 0;
   display: flex;
   align-items: center;
@@ -1810,6 +1815,28 @@ img {
 }
 .pairingDialogEmpty b { color: var(--navy); font-size: 15px; }
 .pairingDialogEmpty span { font-size: 12px; line-height: 1.6; }
+.pairingDialogSection + .pairingDialogSection {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e9e2;
+}
+.pairingDialogSectionTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--navy);
+}
+.pairingDialogSectionTitle b { font-size: 14px; }
+.pairingDialogSectionTitle small { color: #72828d; font-size: 11px; }
+.pairingDialogSectionEmpty {
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f6f8f3;
+  color: #71818b;
+  font-size: 12px;
+}
 .pairingDialogItem {
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr) auto;

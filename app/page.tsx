@@ -1145,7 +1145,9 @@ const quoteArea = (p: Product) => {
   if (/消防|警察/.test(x)) return "城市职业区域 / City Careers Area";
   if (/公主|化妆|花店/.test(x)) return "生活体验区域 / Lifestyle Area";
   if (/牧场|母鸡|鱼池/.test(x)) return "自然探索区域 / Nature Area";
-  return `${p.category2 || p.category1} / Experience Area`;
+  if (!p.category2 || /^(未细分|未分类|自定义产品)$/.test(p.category2))
+    return "其他产品 / Other Products";
+  return `${p.category2} / Experience Area`;
 };
 const importedSkuCodes = (value: unknown) =>
   String(value || "")
@@ -1910,10 +1912,12 @@ export default function Home() {
       },
       {},
     ),
-  ).map(([area, items]) => [
-    area,
-    items,
-  ] as const);
+  )
+    .map(([area, items]) => [area, items] as const)
+    .sort(([left], [right]) => {
+      const otherArea = "其他产品 / Other Products";
+      return Number(left === otherArea) - Number(right === otherArea);
+    });
   const quoteItemsInOrder = quoteGroups.flatMap(([, items]) => items);
   const preTax =
     subtotal +
@@ -1925,10 +1929,12 @@ export default function Home() {
   const totalWithTax =
     preTax + tax - (showDesignDeduction ? fees.designDeduction : 0);
   const add = (id: string) => {
-    setCart((x) => ({ ...x, [id]: (x[id] || 0) + 1 }));
-
     const source = products.find((product) => product.id === id);
-    if (!source || source.category1 === "小玩具") return;
+    if (!source) return;
+    if (source.category1 === "小玩具") {
+      setCart((x) => ({ ...x, [id]: (x[id] || 0) + 1 }));
+      return;
+    }
     const pairedItems = relations
       .filter((relation) => relation.productId === id)
       .flatMap((relation) => {
@@ -1972,7 +1978,10 @@ export default function Home() {
       ({ quantity }) => quantity > 0,
     );
     setCart((current) => {
-      const next = { ...current };
+      const next = {
+        ...current,
+        [pairingSuggestion.source.id]: (current[pairingSuggestion.source.id] || 0) + 1,
+      };
       selectedItems.forEach(({ product, quantity }) => {
         next[product.id] = (next[product.id] || 0) + quantity;
       });
@@ -1989,6 +1998,15 @@ export default function Home() {
         return next;
       });
     }
+    setPairingSuggestion(null);
+  };
+  const addSourceOnly = () => {
+    if (!pairingSuggestion) return;
+    const sourceId = pairingSuggestion.source.id;
+    setCart((current) => ({
+      ...current,
+      [sourceId]: (current[sourceId] || 0) + 1,
+    }));
     setPairingSuggestion(null);
   };
   const changeSuggestedPairingQuantity = (id: string, change: number) => {
@@ -2492,10 +2510,12 @@ export default function Home() {
     const areaSheets = quoteGroups.map(([area, items], index) => {
       const sheetName = sheetNameFor(area, index);
       const rows: Array<Array<string | number>> = [
-        ["亦玩集团产品报价清单 / Yifun Life Product Quotation"],
+        ["YIFUN LIFE / 亦玩集团", "", "", "", "", "", "", "", "", "区域效果图片 / Area Effect Visual"],
+        ["亦玩集团产品报价清单 / Yifun Life Product Quotation", "", "", "", "", "", "", "", "", "请在此插入该区域的效果图 / Insert area visual here"],
         [area],
         ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
         ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
+        [],
         headers,
       ];
       const productRows: number[] = [];
@@ -2522,7 +2542,7 @@ export default function Home() {
       rows.push(["", "", "区域小计 / Area Subtotal"]);
       const sheet = XLSX.utils.aoa_to_sheet(rows);
       productRows.forEach((rowNumber, index) => {
-        sheet[`A${rowNumber}`] = { t: "n", f: `ROW()-5`, v: index + 1 };
+        sheet[`A${rowNumber}`] = { t: "n", f: `ROW()-7`, v: index + 1 };
         sheet[`J${rowNumber}`] = {
           t: "n",
           f: `IF(OR(H${rowNumber}=\"\",I${rowNumber}=\"\"),\"\",H${rowNumber}*I${rowNumber})`,
@@ -2530,7 +2550,7 @@ export default function Home() {
           z: currencyFormat,
         };
       });
-      const firstProductRow = productRows[0] || 6;
+      const firstProductRow = productRows[0] || 8;
       const lastProductRow = productRows.at(-1) || firstProductRow;
       sheet[`J${subtotalRow}`] = {
         t: "n",
@@ -2543,8 +2563,11 @@ export default function Home() {
         z: currencyFormat,
       };
       sheet["!merges"] = [
-        XLSX.utils.decode_range("A1:M1"),
-        XLSX.utils.decode_range("A2:M2"),
+        XLSX.utils.decode_range("A1:I1"),
+        XLSX.utils.decode_range("J1:M1"),
+        XLSX.utils.decode_range("A2:I2"),
+        XLSX.utils.decode_range("J2:M2"),
+        XLSX.utils.decode_range("A3:M3"),
       ];
       sheet["!cols"] = [
         { wch: 9 }, { wch: 14 }, { wch: 30 }, { wch: 42 }, { wch: 18 },
@@ -2555,12 +2578,13 @@ export default function Home() {
       return { area, items, sheetName, subtotalRow };
     });
     const summaryRows: Array<Array<string | number>> = [
-      ["亦玩集团产品报价清单 / Yifun Life Product Quotation"],
-      ["报价汇总 / Summary"],
+      ["YIFUN LIFE / 亦玩集团", "", "", "", "", "LOGO"],
+      ["产品报价清单 / Product Quotation", "", "", "", "", ""],
       ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
       ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
       [],
-      ["区域 / Area", "产品行数 / Product Lines", "区域小计 / Area Subtotal"],
+      ["区域小计 / Area Subtotals"],
+      ["区域 / Area", "项目数 / Items", "区域总价 / Area Total"],
     ];
     const summaryAreaRows = areaSheets.map((areaSheet, index) => {
       const rowNumber = summaryRows.length + 1;
@@ -2588,7 +2612,7 @@ export default function Home() {
     summaryAreaRows.forEach(({ sheetName, subtotalRow: areaSubtotalRow, rowNumber, items }) => {
       summary[`B${rowNumber}`] = {
         t: "n",
-        f: `COUNTA('${sheetName}'!B6:B${areaSubtotalRow - 1})`,
+        f: `COUNTA('${sheetName}'!B8:B${areaSubtotalRow - 1})`,
         v: items.length,
       };
       summary[`C${rowNumber}`] = {
@@ -2603,7 +2627,7 @@ export default function Home() {
     });
     summary[`C${subtotalRow}`] = {
       t: "n",
-      f: `SUM(C7:C${firstFeeRow - 2})+SUM(B${firstFeeRow}:B${firstFeeRow + feeRows.length - 1})`,
+      f: `SUM(C8:C${firstFeeRow - 2})+SUM(B${firstFeeRow}:B${firstFeeRow + feeRows.length - 1})`,
       v: subtotal + fees.packaging + fees.formaldehyde + fees.shipping + fees.installation,
       z: currencyFormat,
     };
@@ -2622,6 +2646,7 @@ export default function Home() {
     summary["!merges"] = [
       XLSX.utils.decode_range("A1:F1"),
       XLSX.utils.decode_range("A2:F2"),
+      XLSX.utils.decode_range("A6:F6"),
     ];
     summary["!cols"] = [{ wch: 38 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(workbook, summary, "Summary");
@@ -3803,98 +3828,62 @@ export default function Home() {
                 </div>
               </div>
               <p>
-                主产品已加入。已绑定产品按保存数量默认加入；同区域选配玩具默认不加入，可按需加减后以母子结构加入报价清单。
+                请确认本次要加入的主产品与玩具。必配玩具按保存数量预填；同区域选配玩具默认不加入，可按需加减后以母子结构加入报价清单。
               </p>
             </div>
             <div className="pairingDialogList">
-              {pairingSuggestion.relatedItems.some((item) => item.isBound) && (
-                <section className="pairingDialogSection">
-                  <div className="pairingDialogSectionTitle">
-                    <b>已绑定产品</b>
-                    <small>按保存数量默认加入</small>
-                  </div>
-                  {pairingSuggestion.relatedItems
-                    .filter((item) => item.isBound)
-                    .map(({ product, quantity }) => (
-                      <article className="pairingDialogItem" key={product.id}>
-                        <div className="pairingDialogImage">
-                          <Visual p={product} mini />
-                        </div>
-                        <div className="pairingDialogInfo">
-                          <b>{product.name}</b>
-                          <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>
-                            {englishProductName(product)}
-                          </small>
-                          <small>{product.sku}</small>
-                        </div>
-                        <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
-                          <button
-                            onClick={() => changeSuggestedPairingQuantity(product.id, -1)}
-                            disabled={quantity === 0}
-                            aria-label={`减少 ${product.sku} 数量`}
-                          >
-                            −
-                          </button>
-                          <span>{quantity}</span>
-                          <button
-                            onClick={() => changeSuggestedPairingQuantity(product.id, 1)}
-                            aria-label={`增加 ${product.sku} 数量`}
-                          >
-                            ＋
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                </section>
-              )}
-              {pairingSuggestion.relatedItems.some((item) => !item.isBound) && (
-                <section className="pairingDialogSection">
-                  <div className="pairingDialogSectionTitle">
-                    <b>同区域选配玩具</b>
-                    <small>默认数量为 0，可自行加减</small>
-                  </div>
-                  {pairingSuggestion.relatedItems
-                    .filter((item) => !item.isBound)
-                    .map(({ product, quantity }) => (
-                      <article className="pairingDialogItem" key={product.id}>
-                        <div className="pairingDialogImage">
-                          <Visual p={product} mini />
-                        </div>
-                        <div className="pairingDialogInfo">
-                          <b>{product.name}</b>
-                          <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>
-                            {englishProductName(product)}
-                          </small>
-                          <small>{product.sku}</small>
-                        </div>
-                        <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
-                          <button
-                            onClick={() => changeSuggestedPairingQuantity(product.id, -1)}
-                            disabled={quantity === 0}
-                            aria-label={`减少 ${product.sku} 数量`}
-                          >
-                            −
-                          </button>
-                          <span>{quantity}</span>
-                          <button
-                            onClick={() => changeSuggestedPairingQuantity(product.id, 1)}
-                            aria-label={`增加 ${product.sku} 数量`}
-                          >
-                            ＋
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                </section>
-              )}
-              {!pairingSuggestion.relatedItems.length && (
-                <div className="pairingDialogEmpty">
-                  <b>暂未配置配套玩具</b>
-                  <span>
-                    该主产品目前没有已保存的关联产品，也没有同区域可选玩具。确认后将仅加入主产品。
-                  </span>
+              <section className="pairingDialogSection">
+                <div className="pairingDialogSectionTitle">
+                  <b>必须匹配的玩具</b>
+                  <small>按已保存的绑定数量默认加入，可调整数量</small>
                 </div>
-              )}
+                {pairingSuggestion.relatedItems
+                  .filter((item) => item.isBound)
+                  .map(({ product, quantity }) => (
+                    <article className="pairingDialogItem" key={product.id}>
+                      <div className="pairingDialogImage"><Visual p={product} mini /></div>
+                      <div className="pairingDialogInfo">
+                        <b>{product.name}</b>
+                        <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
+                        <small>SKU: {product.sku}</small>
+                      </div>
+                      <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
+                        <button onClick={() => changeSuggestedPairingQuantity(product.id, -1)} disabled={quantity === 0} aria-label={`减少 ${product.sku} 数量`}>−</button>
+                        <span>{quantity}</span>
+                        <button onClick={() => changeSuggestedPairingQuantity(product.id, 1)} aria-label={`增加 ${product.sku} 数量`}>＋</button>
+                      </div>
+                    </article>
+                  ))}
+                {!pairingSuggestion.relatedItems.some((item) => item.isBound) && (
+                  <p className="pairingDialogSectionEmpty">暂无必须匹配的玩具。</p>
+                )}
+              </section>
+              <section className="pairingDialogSection">
+                <div className="pairingDialogSectionTitle">
+                  <b>同一个模拟区里的玩具选配</b>
+                  <small>默认不加入，可按需加减</small>
+                </div>
+                {pairingSuggestion.relatedItems
+                  .filter((item) => !item.isBound)
+                  .map(({ product, quantity }) => (
+                    <article className="pairingDialogItem" key={product.id}>
+                      <div className="pairingDialogImage"><Visual p={product} mini /></div>
+                      <div className="pairingDialogInfo">
+                        <b>{product.name}</b>
+                        <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
+                        <small>SKU: {product.sku}</small>
+                      </div>
+                      <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
+                        <button onClick={() => changeSuggestedPairingQuantity(product.id, -1)} disabled={quantity === 0} aria-label={`减少 ${product.sku} 数量`}>−</button>
+                        <span>{quantity}</span>
+                        <button onClick={() => changeSuggestedPairingQuantity(product.id, 1)} aria-label={`增加 ${product.sku} 数量`}>＋</button>
+                      </div>
+                    </article>
+                  ))}
+                {!pairingSuggestion.relatedItems.some((item) => !item.isBound) && (
+                  <p className="pairingDialogSectionEmpty">该模拟区暂无可选配的玩具。</p>
+                )}
+              </section>
             </div>
             <div className="pairingDialogFoot">
               <span>
@@ -3904,7 +3893,7 @@ export default function Home() {
               </span>
               <div>
                 {pairingSuggestion.relatedItems.length > 0 && (
-                  <button className="outline" onClick={() => setPairingSuggestion(null)}>
+                  <button className="outline" onClick={addSourceOnly}>
                     仅加入主产品
                   </button>
                 )}
