@@ -207,6 +207,9 @@ const normalizedRelation = (relation: ProductRelation): ProductRelation => ({
   quantity: Math.max(1, Math.floor(Number(relation.quantity) || 1)),
 });
 
+const normalizedSku = (value: string) =>
+  value.trim().toUpperCase().match(/Y\d+/)?.[0] || value.trim().toUpperCase();
+
 const relationQuantityTotal = (relations: ProductRelation[]) =>
   relations.reduce(
     (total, relation) => total + Math.max(1, Math.floor(Number(relation.quantity) || 1)),
@@ -431,25 +434,45 @@ export function ProductGridManager() {
   const applyKitchenAreaRules = async () => {
     setAreaRuleApplying(true);
     setPairingSavedMessage("");
-    const response = await fetch("/api/catalog", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "applyAreaPairingRules", area: "厨房区" }),
-    });
-    const data = await response.json() as {
-      error?: string;
-      sourceCount?: number;
-      targetCount?: number;
-      relationCount?: number;
-    };
+    const ruleSkus = new Set(
+      kitchenAreaPairingRules.flatMap((rule) =>
+        rule.items.map((item) => normalizedSku(item.sku)),
+      ),
+    );
+    const sources = rows.filter(
+      (row) => row.category1 !== "小玩具" && pairingAreaForRow(row) === "厨房区",
+    );
+    const targets = rows.filter((row) => ruleSkus.has(normalizedSku(row.sku)));
+    if (!sources.length || !targets.length) {
+      setAreaRuleApplying(false);
+      setPairingSavedMessage("未找到可应用的厨房设备或玩具 SKU。");
+      return;
+    }
+    const relatedProducts = targets.map((target) => ({
+      relatedProductId: target.id,
+      quantity: 1,
+    }));
+    const results = await Promise.all(
+      sources.map((source) =>
+        fetch("/api/catalog", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "recommendations",
+            productId: source.id,
+            relatedProducts,
+          }),
+        }),
+      ),
+    );
     setAreaRuleApplying(false);
-    if (!response.ok) {
-      setPairingSavedMessage(data.error || "厨房配对应用失败，请重试。");
+    if (results.some((response) => !response.ok)) {
+      setPairingSavedMessage("厨房配对应用失败，请重试。");
       return;
     }
     await load();
     setPairingSavedMessage(
-      `已将 ${data.targetCount} 个玩具（每个 ×1）保存到 ${data.sourceCount} 台厨房模拟设备，共 ${data.relationCount} 条配对。`,
+      `已将 ${targets.length} 个玩具（每个 ×1）保存到 ${sources.length} 台厨房模拟设备，共 ${sources.length * targets.length} 条配对。`,
     );
   };
 

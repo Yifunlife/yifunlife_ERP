@@ -17,9 +17,6 @@ export const dynamic = "force-dynamic";
 const imageUrl = (key: string) =>
   key ? `/api/catalog/image?key=${encodeURIComponent(key)}` : "";
 
-const normalizedSku = (value: string) =>
-  value.trim().toUpperCase().match(/Y\d+/)?.[0] || value.trim().toUpperCase();
-
 const recommendationForClient = (recommendation: {
   productId: string;
   relatedProductId: string;
@@ -179,7 +176,6 @@ export async function POST(request: Request) {
       | "organizeToyTiers"
       | "organizePairedAreas"
       | "areaPairingRules"
-      | "applyAreaPairingRules"
       | "catalogImport";
     category?: typeof catalogCategories.$inferInsert;
     productId?: string;
@@ -209,62 +205,6 @@ export async function POST(request: Request) {
       .values(values)
       .onConflictDoUpdate({ target: areaPairingRules.area, set: values });
     return Response.json({ rule: areaPairingRuleForClient(values) });
-  }
-  if (payload.action === "applyAreaPairingRules" && payload.area) {
-    const storedRule = await db
-      .select()
-      .from(areaPairingRules)
-      .where(eq(areaPairingRules.area, payload.area))
-      .then((rules) => rules[0]);
-    if (!storedRule)
-      return Response.json({ error: "请先保存区域配对规则" }, { status: 400 });
-    const parsedRule = areaPairingRuleForClient(storedRule);
-    const ruleSkus = new Set(
-      (parsedRule.rules as Array<{ items?: Array<{ sku?: string }> }>)
-        .flatMap((rule) => rule.items || [])
-        .map((item) => item.sku && normalizedSku(item.sku))
-        .filter((sku): sku is string => Boolean(sku)),
-    );
-    const [products, overrides] = await Promise.all([
-      db.select().from(catalogProducts),
-      db.select().from(productOverrides),
-    ]);
-    const overrideByProductId = new Map(
-      overrides.map((override) => [override.productId, override]),
-    );
-    const sources = products.filter((product) => {
-      const override = overrideByProductId.get(product.id);
-      const family = override?.category1 || product.family;
-      const category = override?.category2 || product.category;
-      const name = override?.name || product.name;
-      return family !== "小玩具" && pairedArea(category, name) === payload.area;
-    });
-    const targets = products.filter((product) =>
-      ruleSkus.has(normalizedSku(product.sku)),
-    );
-    if (!sources.length || !targets.length)
-      return Response.json(
-        { error: "未找到可应用的设备或玩具 SKU" },
-        { status: 400 },
-      );
-    const statements = sources.flatMap((source) => [
-      env.DB.prepare("DELETE FROM product_recommendations WHERE product_id = ?").bind(source.id),
-      ...targets.map((target) =>
-        env.DB
-          .prepare(
-            "INSERT INTO product_recommendations (product_id, related_product_id, quantity) VALUES (?, ?, ?)",
-          )
-          .bind(source.id, target.id, 1),
-      ),
-    ]);
-    for (let index = 0; index < statements.length; index += 80)
-      await env.DB.batch(statements.slice(index, index + 80));
-    return Response.json({
-      ok: true,
-      sourceCount: sources.length,
-      targetCount: targets.length,
-      relationCount: sources.length * targets.length,
-    });
   }
   if (payload.action === "catalogImport") {
     const products = payload.products || [];
