@@ -15,7 +15,12 @@ export async function POST(request: Request) {
     await ensureAdminUser();
   } catch (error) {
     console.error("Authentication initialization failed", error);
-    return Response.json({ error: "账户系统初始化失败，请联系管理员" }, { status: 503 });
+    return Response.json({
+      error:
+        error instanceof Error && error.message === "INITIAL_ADMIN_PASSWORD_MISSING"
+          ? "管理员初始密钥尚未生效，请联系管理员。"
+          : "账户系统初始化失败，请联系管理员",
+    }, { status: 503 });
   }
   const user = await getDb().select().from(appUsers).where(eq(appUsers.email, normalizeEmail(email || username || ""))).get();
   if (!user || !password || !(await passwordMatches(password, user.passwordHash, user.passwordSalt)))

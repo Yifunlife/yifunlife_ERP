@@ -77,7 +77,7 @@ export async function ensureAdminUser() {
   const existing = await db.select().from(appUsers).where(eq(appUsers.email, ADMIN_EMAIL)).get();
   if (existing) return existing;
   const password = (env as unknown as AuthBindings).INITIAL_ADMIN_PASSWORD;
-  if (!password) throw new Error("管理员登录密钥尚未配置");
+  if (!password) throw new Error("INITIAL_ADMIN_PASSWORD_MISSING");
   const record = await createPasswordRecord(password);
   const now = new Date().toISOString();
   await db.insert(appUsers).values({
