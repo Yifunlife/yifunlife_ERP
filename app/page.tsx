@@ -2622,7 +2622,7 @@ export default function Home() {
             className="outline"
             onClick={() => window.open("/product-pairing", "_blank", "noopener")}
           >
-            管理配对
+            玩具配对管理
           </button>
           <button
             className="outline"

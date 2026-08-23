@@ -859,13 +859,15 @@ export function ProductGridManager({
   return (
     <main className={`skuGridPage ${pairingStandalone ? "pairingStandalone" : ""}`}>
       <header className="skuGridHeader">
-        <a className="workspaceBrand" href="/" aria-label="返回主页">
-          <img src="/brand/yifun-life-logo.png" alt="亦玩集团 Yifun Life" />
-        </a>
-        <div className="skuGridTitle">
-          <span>PRODUCT LIST MANAGEMENT</span>
-          <h1>产品清单管理</h1>
-          <p>{status}</p>
+        <div className="skuGridIdentity">
+          <a className="workspaceBrand" href="/" aria-label="返回主页">
+            <img src="/brand/yifun-life-logo.png" alt="亦玩集团 Yifun Life" />
+          </a>
+          <div className="skuGridTitle">
+            <span>PRODUCT LIST MANAGEMENT</span>
+            <h1>产品清单管理</h1>
+            <p>{status}</p>
+          </div>
         </div>
         <div className="skuGridActions">
           <button
@@ -972,12 +974,14 @@ export function ProductGridManager({
         <div className="pairingOverlay">
           <section className="pairingManager" aria-label="管理产品配对">
             <header className="pairingHead">
-              <a className="pairingBrand" href="/" aria-label="返回主页">
-                <img src="/brand/yifun-life-logo.png" alt="亦玩集团 Yifun Life" />
-              </a>
-              <div>
-                <span>PRODUCT PAIRING</span>
-                <h2>管理配对</h2>
+              <div className="pairingIdentity">
+                <a className="pairingBrand" href="/" aria-label="返回主页">
+                  <img src="/brand/yifun-life-logo.png" alt="亦玩集团 Yifun Life" />
+                </a>
+                <div>
+                  <span>PRODUCT PAIRING</span>
+                  <h2>玩具配对管理</h2>
+                </div>
               </div>
               <div className="pairingHeadActions">
                 <a className="outline" href="/product-list" target="_blank" rel="noreferrer">

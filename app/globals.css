@@ -384,10 +384,16 @@ img {
   margin: 0 auto 24px;
   display: flex;
   justify-content: space-between;
-  align-items: end;
+  align-items: center;
   gap: 24px;
   border-bottom: 4px solid var(--navy);
   padding-bottom: 18px;
+}
+.skuGridIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 2.4vw, 36px);
 }
 .workspaceBrand {
   display: block;
@@ -396,12 +402,12 @@ img {
 }
 .workspaceBrand img {
   display: block;
-  width: 154px;
-  max-height: 42px;
+  width: 172px;
+  max-height: 48px;
   object-fit: contain;
 }
 .skuGridTitle {
-  margin-right: auto;
+  min-width: 0;
 }
 .skuGridHeader span {
   color: var(--lime);
@@ -626,6 +632,12 @@ img {
   background: #fff;
   padding: 22px 28px;
 }
+.pairingIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
 .pairingBrand {
   display: block;
   flex: 0 0 auto;
@@ -633,11 +645,11 @@ img {
 }
 .pairingBrand img {
   display: block;
-  width: 146px;
-  max-height: 38px;
+  width: 166px;
+  max-height: 46px;
   object-fit: contain;
 }
-.pairingHead > div:not(.pairingHeadActions) {
+.pairingIdentity {
   margin-right: auto;
 }
 .pairingHeadActions {
@@ -1013,7 +1025,9 @@ img {
 @media (max-width: 720px) {
   .skuGridPage { padding: 22px 16px; }
   .skuGridHeader, .skuGridToolbar { align-items: start; flex-direction: column; }
-  .skuGridTitle { margin-right: 0; }
+  .skuGridIdentity { gap: 16px; }
+  .workspaceBrand img { width: 132px; max-height: 38px; }
+  .skuGridTitle { min-width: 0; }
   .skuGridActions { justify-content: flex-start; }
   .skuBatchBar { align-items: stretch; flex-direction: column; gap: 10px; }
   .skuBatchBar select { min-width: 0; }
@@ -1022,7 +1036,8 @@ img {
   .pairingOverlay { padding: 9px; }
   .pairingManager { width: 100%; height: 96dvh; }
   .pairingHead { gap: 10px; padding: 16px; }
-  .pairingBrand img { width: 120px; max-height: 32px; }
+  .pairingIdentity { gap: 14px; }
+  .pairingBrand img { width: 110px; max-height: 32px; }
   .pairingHeadActions .outline { font-size: 11px; padding: 0 10px; }
   .pairingFilters { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 16px; }
   .pairingFilters select { min-width: 0; width: 100%; }
