@@ -47,6 +47,8 @@ type Product = CatalogProduct & {
   hasScreen: boolean;
   isRecommended: boolean;
   relatedIds: string[];
+  importArea?: string;
+  importSourceRow?: number;
 };
 type ProductRelation = {
   productId: string;
@@ -71,6 +73,22 @@ type QuoteImportPreview = {
   salesName: string;
 };
 type QuoteImportPriceMode = "factory" | "vip" | "usd";
+type QuoteImportColumns = {
+  quantity: number;
+  cnyUnit: number;
+  cnyAmount: number;
+  usdUnit: number;
+  usdAmount: number;
+};
+type QuoteImportTemplate = {
+  source: ArrayBuffer;
+  fileName: string;
+  columns: QuoteImportColumns;
+  metadata: {
+    designer?: { row: number; column: number };
+    sales?: { row: number; column: number };
+  };
+};
 type KitchenGroupSource = "main" | "addons" | "manual";
 type KitchenSelectionMode = "single" | "multiple" | "repeatable";
 type KitchenPackageGroup = {
@@ -1087,6 +1105,7 @@ const englishProductName = (p: Pick<Product, "id" | "en">) => {
 const needsEnglishTranslation = (p: Pick<Product, "id" | "en">) =>
   !englishNameByProductId[p.id] && (!p.en.trim() || /[\u4e00-\u9fff]/.test(p.en));
 const quoteArea = (p: Product) => {
+  if (p.importArea) return p.importArea;
   const x = `${p.category2} ${p.name}`;
   if (/厨房|烘焙|奶茶|火锅|烧烤|烤鸭|面馆|甜品|熟食/.test(x))
     return "厨房区域 / Kitchen Area";
@@ -1134,6 +1153,29 @@ const findImportMeta = (rows: unknown[][], headerIndex: number, pattern: RegExp)
   }
   return "";
 };
+const findImportMetaLocation = (
+  rows: unknown[][],
+  headerIndex: number,
+  pattern: RegExp,
+) => {
+  for (let rowIndex = 0; rowIndex < headerIndex; rowIndex += 1) {
+    const row = rows[rowIndex] || [];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      if (!pattern.test(importCellText(row[columnIndex]))) continue;
+      const candidates = [
+        [rowIndex + 1, columnIndex],
+        [rowIndex, columnIndex + 1],
+        [rowIndex + 1, columnIndex + 1],
+      ] as const;
+      const location = candidates.find(([candidateRow, candidateColumn]) =>
+        Boolean(importCellText(rows[candidateRow]?.[candidateColumn])),
+      );
+      if (location)
+        return { row: location[0], column: location[1] };
+    }
+  }
+  return undefined;
+};
 const inferImportProjectName = (rows: unknown[][], headerIndex: number) => {
   const title = rows
     .slice(0, headerIndex)
@@ -1176,6 +1218,45 @@ const extractWorkbookImages = (data: ArrayBuffer) => {
     // .xls and .csv files do not contain the .xlsx image package.
   }
   return images;
+};
+const xmlText = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const updateTemplateCell = (
+  xml: string,
+  cellRef: string,
+  value: string | number,
+) => {
+  const rowNumber = XLSX.utils.decode_cell(cellRef).r + 1;
+  const rowPattern = new RegExp(`(<row\\b[^>]*\\br="${rowNumber}"[^>]*>)([\\s\\S]*?)(</row>)`);
+  return xml.replace(rowPattern, (_row, rowStart, rowContent, rowEnd) => {
+    const cellPattern = new RegExp(
+      `<c\\b([^>]*\\br="${cellRef}"[^>]*)(?:\\/>|>[\\s\\S]*?<\\/c>)`,
+    );
+    const nextCell = (attributes: string, existing = "") => {
+      const cleanAttributes = attributes
+        .replace(/\s+t="[^"]*"/g, "")
+        .replace(/\/\s*$/, "");
+      if (typeof value === "string")
+        return `<c${cleanAttributes} t="inlineStr"><is><t>${xmlText(value)}</t></is></c>`;
+      const formula = existing.match(/<f[^>]*>[\s\S]*?<\/f>/)?.[0] || "";
+      return `<c${cleanAttributes}>${formula}<v>${value}</v></c>`;
+    };
+    if (cellPattern.test(rowContent))
+      return `${rowStart}${rowContent.replace(cellPattern, (cell: string, attributes: string) => nextCell(attributes, cell))}${rowEnd}`;
+    return `${rowStart}${rowContent}${nextCell(` r="${cellRef}"`)}${rowEnd}`;
+  });
+};
+const downloadExcelFile = (data: Uint8Array | ArrayBuffer, fileName: string) => {
+  const url = URL.createObjectURL(
+    new Blob([data], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 };
 function Visual({ p, mini = false }: { p: Product; mini?: boolean }) {
   return p.image ? (
@@ -1378,6 +1459,7 @@ export default function Home() {
   const [quoteImportError, setQuoteImportError] = useState("");
   const [quoteImporting, setQuoteImporting] = useState(false);
   const [importedProducts, setImportedProducts] = useState<Product[]>([]);
+  const quoteImportTemplateRef = useRef<QuoteImportTemplate | null>(null);
   const [quoteImportPriceMode, setQuoteImportPriceMode] =
     useState<QuoteImportPriceMode>("vip");
   const [editor, setEditor] = useState<Product | null>(null);
@@ -1699,8 +1781,10 @@ export default function Home() {
     area,
     [...items].sort(
       (a, b) =>
-        Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
-        a.sku.localeCompare(b.sku),
+        (a.importSourceRow && b.importSourceRow
+          ? a.importSourceRow - b.importSourceRow
+          : Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
+            a.sku.localeCompare(b.sku)),
     ),
   ] as const);
   const quoteItemsInOrder = quoteGroups.flatMap(([, items]) => items);
@@ -1734,6 +1818,7 @@ export default function Home() {
   const clearQuotation = () => {
     setCart({});
     setImportedProducts([]);
+    quoteImportTemplateRef.current = null;
     setPairingSuggestion(null);
     setPairingRemovalPrompt(null);
   };
@@ -1832,16 +1917,22 @@ export default function Home() {
       const productBySku = new Map(
         products.map((product) => [product.sku.toUpperCase(), product]),
       );
-      const matched = new Map<string, { product: Product; quantity: number }>();
+      const matched: Array<{ product: Product; quantity: number }> = [];
       const imported: Array<{ product: Product; quantity: number }> = [];
       const unmatchedSkus = new Set<string>();
       const workbookImages = extractWorkbookImages(source);
       let sourceRows = 0;
+      let currentArea = "导入项目 / Imported items";
       rows.slice(headerIndex + 1).forEach((row, rowOffset) => {
         const skus = importedSkuCodes(row[skuColumn]);
         const rawQuantity = importCellNumber(row[quantityColumn]);
         const sourceName = importCellText(row[nameColumn]);
-        if (!skus.length && (!sourceName || rawQuantity === null || rawQuantity <= 0)) return;
+        if (!skus.length && (!sourceName || rawQuantity === null || rawQuantity <= 0)) {
+          const areaName = row.map(importCellText).find(Boolean);
+          if (areaName && !/包装费|除甲醛|运输费|安装费|小计|总计|税额|设计费/i.test(areaName))
+            currentArea = areaName;
+          return;
+        }
         sourceRows += 1;
         const quantity = rawQuantity !== null && rawQuantity > 0 ? rawQuantity : 1;
         const sourceImageId = importCellText(row[imageColumn]).match(/(ID_[A-F0-9]+)/i)?.[1];
@@ -1853,32 +1944,34 @@ export default function Home() {
         const cnyUnitPrice =
           sourceUnitPrice(cnyUnitColumn, cnyAmountColumn);
         const usdUnitPrice = sourceUnitPrice(usdUnitColumn, usdAmountColumn);
-        const createImportedProduct = (sku: string) => ({
+        const createImportedProduct = (sku: string, catalog?: Product): Product => ({
           id: `imported-${headerIndex + rowOffset + 1}-${sku || "no-sku"}`,
           sku,
-          name: sourceName || sku || "未命名导入项目",
-          en: "",
-          category: "导入项目 / Imported items",
-          family: "大型设备" as const,
-          price: cnyUnitPrice,
+          name: sourceName || catalog?.name || sku || "未命名导入项目",
+          en: catalog?.en || "",
+          category: currentArea,
+          family: catalog?.family || ("大型设备" as const),
+          price: catalog?.price ?? cnyUnitPrice,
           priceNote: "来自导入报价表",
-          usd: usdUnitPrice,
-          unit: importCellText(row[unitColumn]),
-          spec: importCellText(row[specificationColumn]),
-          brand: importCellText(row[brandColumn]) || "YIFUN",
-          material: "",
-          note: importCellText(row[noteColumn]),
-          image: sourceImageId ? workbookImages.get(sourceImageId) || "" : "",
-          volume: importCellText(row[volumeColumn]),
-          stock: null,
-          majorCategory: "生活场景 / Lifestyle Scene" as MajorCategory,
-          category1: "导入项目",
-          category2: "导入项目",
-          category3: "未细分",
-          colorTag: importCellText(row[colorColumn]) || "待确认",
-          hasScreen: false,
-          isRecommended: false,
+          usd: catalog?.usd ?? usdUnitPrice,
+          unit: importCellText(row[unitColumn]) || catalog?.unit || "",
+          spec: importCellText(row[specificationColumn]) || catalog?.spec || "",
+          brand: importCellText(row[brandColumn]) || catalog?.brand || "YIFUN",
+          material: catalog?.material || "",
+          note: importCellText(row[noteColumn]) || catalog?.note || "",
+          image: (sourceImageId ? workbookImages.get(sourceImageId) : "") || catalog?.image || "",
+          volume: importCellText(row[volumeColumn]) || catalog?.volume || "",
+          stock: catalog?.stock ?? null,
+          majorCategory: catalog?.majorCategory || ("生活场景 / Lifestyle Scene" as MajorCategory),
+          category1: catalog?.category1 || "导入项目",
+          category2: catalog?.category2 || currentArea,
+          category3: catalog?.category3 || "未细分",
+          colorTag: importCellText(row[colorColumn]) || catalog?.colorTag || "待确认",
+          hasScreen: catalog?.hasScreen || false,
+          isRecommended: catalog?.isRecommended || false,
           relatedIds: [],
+          importArea: currentArea,
+          importSourceRow: headerIndex + rowOffset + 2,
         });
         (skus.length ? skus : [""]).forEach((sku) => {
           const product = productBySku.get(sku);
@@ -1887,18 +1980,14 @@ export default function Home() {
             imported.push({ product: createImportedProduct(sku), quantity });
             return;
           }
-          const current = matched.get(product.id);
-          matched.set(product.id, {
-            product,
-            quantity: (current?.quantity || 0) + quantity,
-          });
+          matched.push({ product: createImportedProduct(sku, product), quantity });
         });
       });
       if (!sourceRows)
         throw new Error("表单中没有可识别的 Y 开头款号");
       setQuoteImportPreview({
         fileName: file.name,
-        matched: [...matched.values()],
+        matched,
         imported,
         unmatchedSkus: [...unmatchedSkus],
         sourceRows,
@@ -1908,6 +1997,21 @@ export default function Home() {
         designerName: findImportMeta(rows, headerIndex, /设计师|designer/i),
         salesName: findImportMeta(rows, headerIndex, /商务|业务员|sales/i),
       });
+      quoteImportTemplateRef.current = {
+        source,
+        fileName: file.name,
+        columns: {
+          quantity: quantityColumn,
+          cnyUnit: cnyUnitColumn,
+          cnyAmount: cnyAmountColumn,
+          usdUnit: usdUnitColumn,
+          usdAmount: usdAmountColumn,
+        },
+        metadata: {
+          designer: findImportMetaLocation(rows, headerIndex, /设计师|designer/i),
+          sales: findImportMetaLocation(rows, headerIndex, /商务|业务员|sales/i),
+        },
+      };
     } catch (error) {
       setQuoteImportError(
         error instanceof Error ? error.message : "读取表单失败，请重新上传 Excel 文件",
@@ -1919,21 +2023,80 @@ export default function Home() {
   const applyQuoteImport = () => {
     if (!quoteImportPreview || (!quoteImportPreview.matched.length && !quoteImportPreview.imported.length)) return;
     setCurrency(importCurrency);
-    setImportedProducts(quoteImportPreview.imported.map(({ product }) => product));
+    const importedRows = [
+      ...quoteImportPreview.matched,
+      ...quoteImportPreview.imported,
+    ];
+    setImportedProducts(importedRows.map(({ product }) => product));
     if (quoteImportPreview.projectName) setQuoteProject(quoteImportPreview.projectName);
     if (quoteImportPreview.designerName) setDesignerName(quoteImportPreview.designerName);
     if (quoteImportPreview.salesName) setSalesName(quoteImportPreview.salesName);
     setCart(
       Object.fromEntries(
-        [...quoteImportPreview.matched, ...quoteImportPreview.imported].map(
-          ({ product, quantity }) => [product.id, quantity],
-        ),
+        importedRows.map(({ product, quantity }) => [product.id, quantity]),
       ),
     );
     setQuoteImportOpen(false);
     setCartOpen(true);
   };
+  const exportImportedQuoteTemplate = () => {
+    const template = quoteImportTemplateRef.current;
+    if (!template || !importedProducts.length) return false;
+    try {
+      const archive = XLSX.CFB.read(new Uint8Array(template.source), { type: "array" });
+      const worksheetIndex = archive.FullPaths.findIndex((path) =>
+        /^Root Entry\/xl\/worksheets\/sheet\d+\.xml$/.test(path),
+      );
+      const worksheet = archive.FileIndex[worksheetIndex];
+      if (!worksheet?.content) return false;
+      let xml = new TextDecoder().decode(worksheet.content as Uint8Array);
+      const setCell = (row: number, column: number, value: string | number | null) => {
+        if (column < 0 || value === null) return;
+        xml = updateTemplateCell(
+          xml,
+          XLSX.utils.encode_cell({ r: row - 1, c: column }),
+          value,
+        );
+      };
+      importedProducts.forEach((product) => {
+        if (!product.importSourceRow) return;
+        const quantity = cart[product.id] || 0;
+        setCell(product.importSourceRow, template.columns.quantity, quantity);
+        setCell(product.importSourceRow, template.columns.cnyUnit, product.price);
+        setCell(
+          product.importSourceRow,
+          template.columns.cnyAmount,
+          product.price === null ? null : product.price * quantity,
+        );
+        setCell(product.importSourceRow, template.columns.usdUnit, product.usd);
+        setCell(
+          product.importSourceRow,
+          template.columns.usdAmount,
+          product.usd === null ? null : product.usd * quantity,
+        );
+      });
+      if (template.metadata.designer)
+        setCell(
+          template.metadata.designer.row + 1,
+          template.metadata.designer.column,
+          designerName,
+        );
+      if (template.metadata.sales)
+        setCell(
+          template.metadata.sales.row + 1,
+          template.metadata.sales.column,
+          salesName,
+        );
+      worksheet.content = new TextEncoder().encode(xml);
+      const fileName = `${template.fileName.replace(/\.(xlsx|xls|csv)$/i, "")}_报价清单.xlsx`;
+      downloadExcelFile(XLSX.CFB.write(archive, { type: "array" }) as Uint8Array, fileName);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const exportQuoteExcel = () => {
+    if (exportImportedQuoteTemplate()) return;
     const unitPriceTitle = currency === "USD" ? "USD Unit Price" : "CNY Unit Price";
     const amountTitle = currency === "USD" ? "USD Amount" : "CNY Amount";
     const headers = [
@@ -3016,7 +3179,7 @@ export default function Home() {
             </div>
             <div className="importBody">
               <p>
-                上传 Excel 后，系统会读取款号与数量，并将系统中的图片、单价、金额、颜色、备注和体积完整列出；确认导入后，报价单会按所选价格口径填入。
+                上传 Excel 后，表单中的区域、图片、规格、数量、颜色、备注和体积会作为本次报价依据；同款 SKU 也会优先使用本表图片。确认后按所选价格口径回填金额。
               </p>
               <label className="importPriceMode">
                 <span>导入价格口径 / Price basis</span>
@@ -3073,6 +3236,7 @@ export default function Home() {
                       <thead>
                         <tr>
                           <th>款号 / SKU</th>
+                          <th>区域 / Area</th>
                           <th>产品名称 / Product</th>
                           <th>图片 / Image</th>
                           <th>规格尺寸 / Size</th>
@@ -3090,6 +3254,7 @@ export default function Home() {
                           return (
                             <tr key={product.id}>
                               <td><b>{product.sku}</b></td>
+                              <td>{product.importArea || "—"}</td>
                               <td>{product.name}</td>
                               <td>
                                 {product.image ? (
