@@ -2172,9 +2172,9 @@ export default function Home() {
           volume: importCellText(row[volumeColumn]) || catalog?.volume || "",
           stock: catalog?.stock ?? null,
           majorCategory: catalog?.majorCategory || ("生活场景 / Lifestyle Scene" as MajorCategory),
-          category1: catalog?.category1 || "导入项目",
+          category1: catalog?.category1 || "自定义产品",
           category2: catalog?.category2 || currentArea,
-          category3: catalog?.category3 || "未细分",
+          category3: catalog?.category3 || "自定义产品",
           colorTag: importCellText(row[colorColumn]) || catalog?.colorTag || "待确认",
           hasScreen: catalog?.hasScreen || false,
           isRecommended: catalog?.isRecommended || false,
@@ -2261,16 +2261,43 @@ export default function Home() {
     if (!quoteImportPreview || !quoteImportPreview.rows.length) return;
     setCurrency(importCurrency);
     const importedRows = quoteImportPreview.rows;
+    const catalogProductBySku = new Map(
+      products.map((product) => [product.sku.toUpperCase(), product]),
+    );
+    const importedToyBySku = new Map(
+      importedRows
+        .filter(({ product }) => product.category1 === "小玩具")
+        .map(({ product }) => [product.sku.toUpperCase(), product]),
+    );
+    const nextCart = Object.fromEntries(
+      importedRows.map(({ product, quantity }) => [product.id, quantity]),
+    ) as Record<string, number>;
+    const nextPairings: Record<string, Record<string, number>> = {};
+    importedRows.forEach(({ product, quantity }) => {
+      const catalogProduct = catalogProductBySku.get(product.sku.toUpperCase());
+      if (!catalogProduct || catalogProduct.category1 === "小玩具") return;
+      relations
+        .filter((relation) => relation.productId === catalogProduct.id)
+        .forEach((relation) => {
+          const relatedProduct = products.find(
+            (candidate) => candidate.id === relation.relatedProductId,
+          );
+          if (!relatedProduct) return;
+          const importedToy = importedToyBySku.get(relatedProduct.sku.toUpperCase());
+          const pairedProduct = importedToy || relatedProduct;
+          const pairedQuantity = Math.max(1, relation.quantity || 1) * quantity;
+          nextCart[pairedProduct.id] =
+            (nextCart[pairedProduct.id] || 0) + pairedQuantity;
+          (nextPairings[product.id] ||= {})[pairedProduct.id] =
+            (nextPairings[product.id]?.[pairedProduct.id] || 0) + pairedQuantity;
+        });
+    });
     setImportedProducts(importedRows.map(({ product }) => product));
     if (quoteImportPreview.projectName) setQuoteProject(quoteImportPreview.projectName);
     if (quoteImportPreview.designerName) setDesignerName(quoteImportPreview.designerName);
     if (quoteImportPreview.salesName) setSalesName(quoteImportPreview.salesName);
-    setCartPairings({});
-    setCart(
-      Object.fromEntries(
-        importedRows.map(({ product, quantity }) => [product.id, quantity]),
-      ),
-    );
+    setCartPairings(nextPairings);
+    setCart(nextCart);
     setQuoteImportOpen(false);
     setCartOpen(true);
   };
@@ -3813,7 +3840,7 @@ export default function Home() {
                   <div>
                     <b>{quoteImportPreview.fileName}</b>
                     <span>
-                      已读取 {quoteImportPreview.sourceRows} 行 · 匹配 {quoteImportPreview.matched.length} 个 SKU · 补入 {quoteImportPreview.imported.length} 个导入项目
+                      已读取 {quoteImportPreview.sourceRows} 行 · 匹配 {quoteImportPreview.matched.length} 个 SKU · 补入 {quoteImportPreview.imported.length} 个自定义产品
                     </span>
                   </div>
                   <div className="importMetadata">
@@ -3871,7 +3898,7 @@ export default function Home() {
                   </div>
                   {quoteImportPreview.unmatchedSkus.length > 0 && (
                     <div className="importUnmatched">
-                      <b>产品库未收录 {quoteImportPreview.unmatchedSkus.length} 个款号，已按表单资料补入报价单</b>
+                      <b>产品库未收录 {quoteImportPreview.unmatchedSkus.length} 个款号，已按表单资料作为自定义产品补入报价单</b>
                       <span>{quoteImportPreview.unmatchedSkus.join(" · ")}</span>
                     </div>
                   )}
