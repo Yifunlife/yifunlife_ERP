@@ -1598,7 +1598,11 @@ export default function Home() {
   const displayPrice = (p: Product) => (currency === "CNY" ? p.price : p.usd);
   const importCurrency = quoteImportPriceMode === "usd" ? "USD" : "CNY";
   const importUnitPrice = (product: Product) =>
-    quoteImportPriceMode === "usd" ? product.usd : product.price;
+    quoteImportPriceMode === "vip"
+      ? product.price
+      : quoteImportPriceMode === "usd"
+        ? product.usd
+        : null;
   const formatImportPrice = (price: number | null) => {
     if (price === null || price === undefined) return "待维护";
     return importCurrency === "USD"
