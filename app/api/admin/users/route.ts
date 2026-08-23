@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { appUsers } from "../../../../db/schema";
-import { ADMIN_EMAIL, ensureAuthSchema, getLoginSession } from "../../../../lib/auth";
+import { ADMIN_EMAIL, getLoginSession } from "../../../../lib/auth";
 
 async function requireAdmin(request: Request) {
   const session = await getLoginSession(request);
@@ -9,14 +9,12 @@ async function requireAdmin(request: Request) {
 }
 
 export async function GET(request: Request) {
-  await ensureAuthSchema();
   if (!(await requireAdmin(request))) return Response.json({ error: "无权限" }, { status: 403 });
   const users = await getDb().select({ email: appUsers.email, name: appUsers.name, role: appUsers.role, status: appUsers.status, createdAt: appUsers.createdAt }).from(appUsers).orderBy(desc(appUsers.createdAt));
   return Response.json({ users });
 }
 
 export async function PATCH(request: Request) {
-  await ensureAuthSchema();
   if (!(await requireAdmin(request))) return Response.json({ error: "无权限" }, { status: 403 });
   const { email, action } = await request.json() as { email?: string; action?: "approve" | "suspend" | "activate" };
   if (!email || !action) return Response.json({ error: "请求无效" }, { status: 400 });

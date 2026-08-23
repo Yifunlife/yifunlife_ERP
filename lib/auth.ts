@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { appUsers, loginSessions, passwordResetTokens } from "../db/schema";
 
@@ -50,22 +50,6 @@ const sameHash = (left: string, right: string) => {
 const randomToken = () =>
   crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
 
-let schemaReady: Promise<void> | null = null;
-export function ensureAuthSchema() {
-  if (!schemaReady) {
-    const db = getDb();
-    schemaReady = Promise.all([
-      db.run(sql`CREATE TABLE IF NOT EXISTS app_users (email text PRIMARY KEY NOT NULL, name text NOT NULL, password_hash text NOT NULL, password_salt text NOT NULL, role text DEFAULT 'employee' NOT NULL, status text DEFAULT 'pending' NOT NULL, created_at text NOT NULL, updated_at text NOT NULL)`),
-      db.run(sql`CREATE TABLE IF NOT EXISTS password_reset_tokens (token_hash text PRIMARY KEY NOT NULL, email text NOT NULL, expires_at text NOT NULL, created_at text NOT NULL)`),
-      db.run(sql`CREATE INDEX IF NOT EXISTS password_reset_tokens_email_idx ON password_reset_tokens (email)`),
-    ]).then(() => undefined).catch((error) => {
-      schemaReady = null;
-      throw error;
-    });
-  }
-  return schemaReady;
-}
-
 export const passwordError = (password: string) =>
   password.length < 10 ? "密码至少需要 10 位。" : "";
 
@@ -89,7 +73,6 @@ export async function passwordMatches(password: string, passwordHash: string, pa
 }
 
 export async function ensureAdminUser() {
-  await ensureAuthSchema();
   const db = getDb();
   const existing = await db.select().from(appUsers).where(eq(appUsers.email, ADMIN_EMAIL)).get();
   if (existing) return existing;

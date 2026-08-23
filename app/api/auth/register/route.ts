@@ -1,10 +1,9 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { appUsers } from "../../../../db/schema";
-import { ADMIN_EMAIL, createPasswordRecord, ensureAuthSchema, normalizeEmail, passwordError } from "../../../../lib/auth";
+import { ADMIN_EMAIL, createPasswordRecord, normalizeEmail, passwordError } from "../../../../lib/auth";
 
 export async function POST(request: Request) {
-  await ensureAuthSchema();
   const { name, email, password } = await request.json() as { name?: string; email?: string; password?: string };
   const normalizedEmail = normalizeEmail(email || "");
   const normalizedName = name?.trim() || "";

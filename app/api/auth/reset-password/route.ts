@@ -1,10 +1,9 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { appUsers, loginSessions, passwordResetTokens } from "../../../../db/schema";
-import { createPasswordRecord, ensureAuthSchema, hash, passwordError } from "../../../../lib/auth";
+import { createPasswordRecord, hash, passwordError } from "../../../../lib/auth";
 
 export async function POST(request: Request) {
-  await ensureAuthSchema();
   const { token, password } = await request.json() as { token?: string; password?: string };
   const invalidPassword = passwordError(password || "");
   if (invalidPassword) return Response.json({ error: invalidPassword }, { status: 400 });
