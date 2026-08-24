@@ -1153,6 +1153,11 @@ const hospitalToyNavigationGroups = {
   "常规医院": ["医院区", "医院区（英文版）"],
   "未来医院": ["未来医院区", "未来医院区（英文版）"],
 } as const;
+const hospitalPairingGroups = {
+  regular: ["医院区"],
+  english: ["医院区（英文版）"],
+  future: ["未来医院区", "未来医院区（英文版）"],
+} as const;
 const hospitalToySourceCategories = new Set(
   Object.values(hospitalToyNavigationGroups).flat(),
 );
@@ -1974,16 +1979,21 @@ export default function Home() {
               isBound: true,
             }]
           : [];
-      });
+    });
     const pairedIds = new Set(pairedItems.map(({ product }) => product.id));
     const sourceArea = pairedArea(source.category2, source.name);
+    const isHospitalSource = sourceArea === "医院区";
     const areaOptions = sourceArea
       ? products
           .filter(
             (product) =>
               product.category1 === "小玩具" &&
               !pairedIds.has(product.id) &&
-              pairedArea(product.category2, product.name) === sourceArea,
+              (isHospitalSource
+                ? Object.values(hospitalPairingGroups)
+                    .flat()
+                    .includes(product.category2 as never)
+                : pairedArea(product.category2, product.name) === sourceArea),
           )
           .map((product) => ({ product, quantity: 0, isBound: false }))
       : [];
@@ -3030,6 +3040,30 @@ export default function Home() {
       </main>
     );
   }
+  const hospitalPairingSource = pairingSuggestion?.source.category2 === "医院区";
+  const pairingDialogItems = (
+    items: PairingSuggestion["relatedItems"],
+    emptyText: string,
+  ) =>
+    items.length ? (
+      items.map(({ product, quantity }) => (
+        <article className="pairingDialogItem" key={product.id}>
+          <div className="pairingDialogImage"><Visual p={product} mini /></div>
+          <div className="pairingDialogInfo">
+            <b>{product.name}</b>
+            <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
+            <small>SKU: {product.sku}</small>
+          </div>
+          <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
+            <button onClick={() => changeSuggestedPairingQuantity(product.id, -1)} disabled={quantity === 0} aria-label={`减少 ${product.sku} 数量`}>−</button>
+            <span>{quantity}</span>
+            <button onClick={() => changeSuggestedPairingQuantity(product.id, 1)} aria-label={`增加 ${product.sku} 数量`}>＋</button>
+          </div>
+        </article>
+      ))
+    ) : (
+      <p className="pairingDialogSectionEmpty">{emptyText}</p>
+    );
   return (
     <main>
       <header className="topbar">
@@ -3287,6 +3321,18 @@ export default function Home() {
                         );
                         const pairedCategories =
                           section.key === "toys" ? pairedAreasForMajor(major) : [];
+                        const simulationCategoryOrder = [
+                          ...new Set(
+                            products
+                              .filter(
+                                (p) =>
+                                  navigationMajorMembers(major).includes(
+                                    p.majorCategory,
+                                  ) && p.category1 !== "小玩具",
+                              )
+                              .map((p) => p.category2),
+                          ),
+                        ];
                         const sectionCategories = [...new Set([
                           ...pairedCategories,
                           ...sectionProducts
@@ -3301,7 +3347,15 @@ export default function Home() {
                             major !== "职业体验 / Career Experience" ||
                             categoryName === "医院区" ||
                             !hospitalToySourceCategories.has(categoryName),
-                        );
+                        ).sort((left, right) => {
+                          if (section.key !== "toys") return 0;
+                          const leftIndex = simulationCategoryOrder.indexOf(left);
+                          const rightIndex = simulationCategoryOrder.indexOf(right);
+                          if (leftIndex < 0 && rightIndex < 0) return 0;
+                          if (leftIndex < 0) return 1;
+                          if (rightIndex < 0) return -1;
+                          return leftIndex - rightIndex;
+                        });
                         if (!sectionProducts.length) return null;
                         const sectionKey = `${major}:${section.key}`;
                         const sectionExpanded = expandedProductGroups.has(sectionKey);
@@ -3884,53 +3938,68 @@ export default function Home() {
                   <b>必须匹配的玩具</b>
                   <small>按已保存的绑定数量默认加入，可调整数量</small>
                 </div>
-                {pairingSuggestion.relatedItems
-                  .filter((item) => item.isBound)
-                  .map(({ product, quantity }) => (
-                    <article className="pairingDialogItem" key={product.id}>
-                      <div className="pairingDialogImage"><Visual p={product} mini /></div>
-                      <div className="pairingDialogInfo">
-                        <b>{product.name}</b>
-                        <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
-                        <small>SKU: {product.sku}</small>
-                      </div>
-                      <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
-                        <button onClick={() => changeSuggestedPairingQuantity(product.id, -1)} disabled={quantity === 0} aria-label={`减少 ${product.sku} 数量`}>−</button>
-                        <span>{quantity}</span>
-                        <button onClick={() => changeSuggestedPairingQuantity(product.id, 1)} aria-label={`增加 ${product.sku} 数量`}>＋</button>
-                      </div>
-                    </article>
-                  ))}
-                {!pairingSuggestion.relatedItems.some((item) => item.isBound) && (
-                  <p className="pairingDialogSectionEmpty">暂无必须匹配的玩具。</p>
+                {pairingDialogItems(
+                  pairingSuggestion.relatedItems.filter((item) => item.isBound),
+                  "暂无必须匹配的玩具。",
                 )}
               </section>
-              <section className="pairingDialogSection">
-                <div className="pairingDialogSectionTitle">
-                  <b>同一个模拟区里的玩具选配</b>
-                  <small>默认不加入，可按需加减</small>
-                </div>
-                {pairingSuggestion.relatedItems
-                  .filter((item) => !item.isBound)
-                  .map(({ product, quantity }) => (
-                    <article className="pairingDialogItem" key={product.id}>
-                      <div className="pairingDialogImage"><Visual p={product} mini /></div>
-                      <div className="pairingDialogInfo">
-                        <b>{product.name}</b>
-                        <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
-                        <small>SKU: {product.sku}</small>
-                      </div>
-                      <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
-                        <button onClick={() => changeSuggestedPairingQuantity(product.id, -1)} disabled={quantity === 0} aria-label={`减少 ${product.sku} 数量`}>−</button>
-                        <span>{quantity}</span>
-                        <button onClick={() => changeSuggestedPairingQuantity(product.id, 1)} aria-label={`增加 ${product.sku} 数量`}>＋</button>
-                      </div>
-                    </article>
-                  ))}
-                {!pairingSuggestion.relatedItems.some((item) => !item.isBound) && (
-                  <p className="pairingDialogSectionEmpty">该模拟区暂无可选配的玩具。</p>
-                )}
-              </section>
+              {hospitalPairingSource ? (
+                <>
+                  <section className="pairingDialogSection">
+                    <div className="pairingDialogSectionTitle">
+                      <b>常规医院玩具</b>
+                      <small>默认不加入，可按需加减</small>
+                    </div>
+                    {pairingDialogItems(
+                      pairingSuggestion.relatedItems.filter(
+                        (item) =>
+                          !item.isBound &&
+                          hospitalPairingGroups.regular.includes(item.product.category2 as never),
+                      ),
+                      "暂无常规医院玩具。",
+                    )}
+                  </section>
+                  <section className="pairingDialogSection">
+                    <div className="pairingDialogSectionTitle">
+                      <b>英文版医院玩具</b>
+                      <small>默认不加入，可按需加减</small>
+                    </div>
+                    {pairingDialogItems(
+                      pairingSuggestion.relatedItems.filter(
+                        (item) =>
+                          !item.isBound &&
+                          hospitalPairingGroups.english.includes(item.product.category2 as never),
+                      ),
+                      "暂无英文版医院玩具。",
+                    )}
+                  </section>
+                  <section className="pairingDialogSection">
+                    <div className="pairingDialogSectionTitle">
+                      <b>未来医院玩具</b>
+                      <small>默认不加入，可按需加减</small>
+                    </div>
+                    {pairingDialogItems(
+                      pairingSuggestion.relatedItems.filter(
+                        (item) =>
+                          !item.isBound &&
+                          hospitalPairingGroups.future.includes(item.product.category2 as never),
+                      ),
+                      "暂无未来医院玩具。",
+                    )}
+                  </section>
+                </>
+              ) : (
+                <section className="pairingDialogSection">
+                  <div className="pairingDialogSectionTitle">
+                    <b>同一个模拟区里的玩具选配</b>
+                    <small>默认不加入，可按需加减</small>
+                  </div>
+                  {pairingDialogItems(
+                    pairingSuggestion.relatedItems.filter((item) => !item.isBound),
+                    "该模拟区暂无可选配的玩具。",
+                  )}
+                </section>
+              )}
             </div>
             <div className="pairingDialogFoot">
               <span>
