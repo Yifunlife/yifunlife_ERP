@@ -1912,6 +1912,8 @@ export default function Home() {
           : Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
             a.sku.localeCompare(b.sku)),
     );
+  // Keep zero-quantity items visible in the cart, but never put them on a quotation.
+  const quoteCartItems = cartItems.filter((item) => item.qty > 0);
   const displayPrice = (p: Product) => (currency === "CNY" ? p.price : p.usd);
   const importCurrency = quoteImportPriceMode === "usd" ? "USD" : "CNY";
   const importUnitPrice = (product: Product) =>
@@ -1926,7 +1928,7 @@ export default function Home() {
       ? `USD $${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : `CNY ¥${price.toLocaleString("zh-CN")}`;
   };
-  const subtotal = cartItems.reduce(
+  const subtotal = quoteCartItems.reduce(
     (n, p) => n + (displayPrice(p) || 0) * p.qty,
     0,
   );
@@ -1936,7 +1938,7 @@ export default function Home() {
     area: string;
     parentId?: string;
   }> = [];
-  const cartItemById = new Map(cartItems.map((item) => [item.id, item]));
+  const cartItemById = new Map(quoteCartItems.map((item) => [item.id, item]));
   const allocatedChildQuantities = new Map<string, number>();
   const pairedChildIds = new Set<string>();
   const pairedParentIds = new Set(
@@ -1948,7 +1950,7 @@ export default function Home() {
       )
       .map(([parentId]) => parentId),
   );
-  cartItems
+  quoteCartItems
     .filter((item) => pairedParentIds.has(item.id))
     .forEach((parent) => {
       cartHierarchyItems.push({
@@ -1976,7 +1978,7 @@ export default function Home() {
         },
       );
     });
-  cartItems
+  quoteCartItems
     .filter((item) => !pairedParentIds.has(item.id))
     .forEach((item) => {
       const quantity = item.qty - (allocatedChildQuantities.get(item.id) || 0);
@@ -5060,7 +5062,7 @@ export default function Home() {
                 </div>
                 <div>
                   <label>报价产品 / Items</label>
-                  <b>{cartItems.length} 项 / Items</b>
+                  <b>{quoteCartItems.length} 项 / Items</b>
                 </div>
                 <div className="addressInput">
                   <label>公司地址（页尾） / Company address (footer)</label>
@@ -5411,7 +5413,7 @@ export default function Home() {
                 </div>
                 <div>
                   <PrintBilingual zh="报价产品" en="Items" />
-                  <b>{cartItems.length}</b>
+                  <b>{quoteCartItems.length}</b>
                 </div>
               </section>
               {quoteGroups.map(([area, items]) => {
