@@ -221,7 +221,8 @@ const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] 
   return products.map((product) => {
     const override = overrideById.get(product.id);
     const category1 = override?.category1 || product.family;
-    const category2 = override?.category2 || product.category;
+    const rawCategory2 = override?.category2 || product.category;
+    const category2 = pairedArea(rawCategory2, product.name) || rawCategory2;
     const category3 = override?.category3 || "未细分";
     return {
       id: product.id,

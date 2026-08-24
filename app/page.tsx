@@ -1664,8 +1664,9 @@ export default function Home() {
         const o = overrides.find((x) => x.productId === p.id);
         const image = o?.imageUrl || p.image;
         const category1 = o?.category1 || p.family;
-        const category2 = o?.category2 || p.category;
         const name = o?.name || p.name;
+        const rawCategory2 = o?.category2 || p.category;
+        const category2 = pairedArea(rawCategory2, name) || rawCategory2;
         return {
           ...p,
           name,
