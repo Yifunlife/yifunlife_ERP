@@ -2233,26 +2233,26 @@ export default function Home() {
         const createImportedProduct = (sku: string, catalog?: Product): Product => ({
           id: `imported-${headerIndex + rowOffset + 1}-${sku || "no-sku"}`,
           sku,
-          name: sourceName || catalog?.name || sku || "未命名导入项目",
+          name: catalog?.name || sourceName || sku || "未命名导入项目",
           en: catalog?.en || "",
           category: currentArea,
           family: catalog?.family || ("大型设备" as const),
           price: catalog?.price ?? cnyUnitPrice,
           priceNote: "来自导入报价表",
           usd: catalog?.usd ?? usdUnitPrice,
-          unit: importCellText(row[unitColumn]) || catalog?.unit || "",
-          spec: importCellText(row[specificationColumn]) || catalog?.spec || "",
-          brand: importCellText(row[brandColumn]) || catalog?.brand || "YIFUN",
+          unit: catalog?.unit || importCellText(row[unitColumn]),
+          spec: catalog?.spec || importCellText(row[specificationColumn]),
+          brand: catalog?.brand || importCellText(row[brandColumn]) || "YIFUN",
           material: catalog?.material || "",
-          note: importCellText(row[noteColumn]) || catalog?.note || "",
-          image: (sourceImageId ? workbookImages.get(sourceImageId) : "") || catalog?.image || "",
-          volume: importCellText(row[volumeColumn]) || catalog?.volume || "",
+          note: catalog?.note || importCellText(row[noteColumn]),
+          image: catalog?.image || (sourceImageId ? workbookImages.get(sourceImageId) : "") || "",
+          volume: catalog?.volume || importCellText(row[volumeColumn]),
           stock: catalog?.stock ?? null,
           majorCategory: catalog?.majorCategory || ("生活场景 / Lifestyle Scene" as MajorCategory),
           category1: catalog?.category1 || "自定义产品",
           category2: catalog?.category2 || currentArea,
           category3: catalog?.category3 || "自定义产品",
-          colorTag: importCellText(row[colorColumn]) || catalog?.colorTag || "待确认",
+          colorTag: catalog?.colorTag || importCellText(row[colorColumn]) || "待确认",
           hasScreen: catalog?.hasScreen || false,
           isRecommended: catalog?.isRecommended || false,
           relatedIds: [],
@@ -2352,7 +2352,7 @@ export default function Home() {
     const nextPairings: Record<string, Record<string, number>> = {};
     importedRows.forEach(({ product, quantity }) => {
       const catalogProduct = catalogProductBySku.get(product.sku.toUpperCase());
-      if (!catalogProduct || catalogProduct.category1 === "小玩具") return;
+      if (!catalogProduct || catalogProduct.category1 !== "模拟设备") return;
       relations
         .filter((relation) => relation.productId === catalogProduct.id)
         .forEach((relation) => {
