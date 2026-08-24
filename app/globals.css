@@ -3645,6 +3645,44 @@ img {
   text-align: center !important;
   font-size: 12px;
 }
+.quoteTable tfoot .feeLabel,
+.quoteTable tfoot .feeAmount,
+.quoteTable tfoot .feeNote {
+  box-sizing: border-box;
+  color: #263945;
+  font-size: 10px;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+.quoteTable tfoot .feeLabel {
+  padding: 8px 12px;
+  text-align: center !important;
+  font-weight: 700;
+}
+.quoteTable tfoot .feeAmount {
+  min-width: 0;
+  padding: 8px 12px;
+  text-align: right !important;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  white-space: nowrap;
+  word-break: normal;
+}
+.quoteTable tfoot .feeNote {
+  padding: 8px 12px;
+  text-align: left !important;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.quoteTable .feeSummaryRow td {
+  background: #eef1ea;
+  border-top: 2px solid var(--navy);
+}
+.quoteTable .costRow .feeAmount input {
+  width: 100%;
+  max-width: none;
+}
 .quoteTable .costRow input {
   width: min(100%, 160px);
   border: 1px solid #bdcbc1;
@@ -3676,9 +3714,20 @@ img {
 .quoteTable .grandTotal td:first-child {
   text-align: center !important;
 }
-.quoteTable .grandTotal td:nth-child(2) {
-  font-size: 12px !important;
-  letter-spacing: -0.2px;
+.quoteTable .grandTotal .feeLabel,
+.quoteTable .grandTotal .feeAmount,
+.quoteTable .grandTotal .feeNote {
+  color: #fff !important;
+}
+.quoteTable .grandTotal .feeLabel {
+  font-size: 14px;
+}
+.quoteTable .grandTotal .feeAmount {
+  font-size: 16px;
+}
+.quoteTable .grandTotal .feeNote {
+  font-size: 10px;
+  letter-spacing: 0;
 }
 .quotePaperWide .quoteMeta {
   grid-template-columns: repeat(6, minmax(0, 1fr));

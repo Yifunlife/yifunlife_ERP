@@ -5281,11 +5281,11 @@ export default function Home() {
                 </tbody>
                 <tfoot>
                   <tr className="costRow">
-                    <td colSpan={10}>
+                    <td className="feeLabel" colSpan={8}>
                       包装费（含部分产品特定包装箱） / Packaging fee (including
                       special packing cases)
                     </td>
-                    <td colSpan={3}>
+                    <td className="feeAmount" colSpan={3}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5298,10 +5298,11 @@ export default function Home() {
                         }
                       />
                     </td>
+                    <td className="feeNote" colSpan={2}>&nbsp;</td>
                   </tr>
                   <tr className="costRow">
-                    <td colSpan={10}>除甲醛 / Formaldehyde removal</td>
-                    <td colSpan={3}>
+                    <td className="feeLabel" colSpan={8}>除甲醛 / Formaldehyde removal</td>
+                    <td className="feeAmount" colSpan={3}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5314,13 +5315,14 @@ export default function Home() {
                         }
                       />
                     </td>
+                    <td className="feeNote" colSpan={2}>&nbsp;</td>
                   </tr>
                   <tr className="costRow">
-                    <td colSpan={10}>
+                    <td className="feeLabel" colSpan={8}>
                       运输费（含装货不含卸货） / Shipping fee (loading included,
                       unloading excluded)
                     </td>
-                    <td colSpan={3}>
+                    <td className="feeAmount" colSpan={3}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5333,9 +5335,10 @@ export default function Home() {
                         }
                       />
                     </td>
+                    <td className="feeNote" colSpan={2}>&nbsp;</td>
                   </tr>
                   <tr className="costRow">
-                    <td colSpan={10}>
+                    <td className="feeLabel" colSpan={8}>
                       安装费 / Installation fee{" "}
                       <select
                         value={
@@ -5355,7 +5358,7 @@ export default function Home() {
                         </option>
                       </select>
                     </td>
-                    <td colSpan={3}>
+                    <td className="feeAmount" colSpan={3}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5368,9 +5371,10 @@ export default function Home() {
                         }
                       />
                     </td>
+                    <td className="feeNote" colSpan={2}>&nbsp;</td>
                   </tr>
-                  <tr>
-                    <td colSpan={10}>
+                  <tr className="feeSummaryRow">
+                    <td className="feeLabel" colSpan={8}>
                       小计（不含税） / Subtotal (tax excluded){" "}
                       {currency === "CNY" && (
                         <select
@@ -5385,25 +5389,25 @@ export default function Home() {
                         </select>
                       )}
                     </td>
-                    <td>{money(preTax, currency)}</td>
-                    <td colSpan={2}>
+                    <td className="feeAmount" colSpan={3}>{money(preTax, currency)}</td>
+                    <td className="feeNote" colSpan={2}>
                       产品与附加费用合计 / Products and additional fees
                     </td>
                   </tr>
                   {currency === "CNY" && includeTax && (
                     <tr className="costRow">
-                      <td colSpan={10}>
+                      <td className="feeLabel" colSpan={8}>
                         税额 13%（可抵税） / Tax 13% (deductible)
                       </td>
-                      <td>{money(tax, currency)}</td>
-                      <td colSpan={2}>
+                      <td className="feeAmount" colSpan={3}>{money(tax, currency)}</td>
+                      <td className="feeNote" colSpan={2}>
                         按不含税小计计算 / Calculated on pre-tax subtotal
                       </td>
                     </tr>
                   )}
                   {showDesignDeduction ? (
                     <tr className="costRow">
-                      <td colSpan={10}>
+                      <td className="feeLabel" colSpan={8}>
                         设计费抵扣 / Design fee deduction{" "}
                         <button
                           className="hideDeduction"
@@ -5412,7 +5416,7 @@ export default function Home() {
                           隐藏 / Hide
                         </button>
                       </td>
-                      <td colSpan={3}>
+                      <td className="feeAmount" colSpan={3}>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -5425,6 +5429,7 @@ export default function Home() {
                           }
                         />
                       </td>
+                      <td className="feeNote" colSpan={2}>&nbsp;</td>
                     </tr>
                   ) : (
                     <tr className="showDeduction">
@@ -5436,13 +5441,13 @@ export default function Home() {
                     </tr>
                   )}
                   <tr className="grandTotal">
-                    <td colSpan={10}>
+                    <td className="feeLabel" colSpan={8}>
                       {currency === "CNY" && includeTax
                         ? "总计（含税） / Total (tax included)"
                         : "总计（不含税） / Total (tax excluded)"}
                     </td>
-                    <td>{money(totalWithTax, currency)}</td>
-                    <td colSpan={2}>
+                    <td className="feeAmount" colSpan={3}>{money(totalWithTax, currency)}</td>
+                    <td className="feeNote" colSpan={2}>
                       {showDesignDeduction && fees.designDeduction > 0
                         ? currency === "CNY" && includeTax
                           ? "已含税并扣除设计费 / Tax included, design deduction applied"
