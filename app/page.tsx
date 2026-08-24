@@ -310,7 +310,7 @@ const money = (value: number | null, currency: "CNY" | "USD") => {
     minimumFractionDigits: currency === "CNY" ? 0 : 2,
     maximumFractionDigits: currency === "CNY" ? 0 : 2,
   }).format(value);
-  return currency === "CNY" ? `CNY ¥${amount}` : `USD $${amount}`;
+  return currency === "CNY" ? `CNY ¥${amount}` : `USD $${amount}`;
 };
 // Generated from the supplied Chinese product names.
 const englishNameByProductId: Record<string, string> = {

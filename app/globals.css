@@ -3522,6 +3522,16 @@ img {
   word-break: break-word;
   line-height: 1.35;
 }
+.quoteTable td:nth-child(9),
+.quoteTable td:nth-child(10),
+.quoteTable tfoot td:nth-child(2),
+.quoteAreaTotal,
+.quoteAreaSubtotal,
+.quoteAreaSubtotalRow td:last-child {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  word-break: normal;
+}
   .quoteTable td:nth-child(3),
 .quoteTable td:nth-child(6),
 .quoteTable td:nth-child(12) {
@@ -3647,6 +3657,10 @@ img {
 }
 .quoteTable .grandTotal td:first-child {
   text-align: center !important;
+}
+.quoteTable .grandTotal td:nth-child(2) {
+  font-size: 12px !important;
+  letter-spacing: -0.2px;
 }
 .quotePaperWide .quoteMeta {
   grid-template-columns: repeat(6, minmax(0, 1fr));
