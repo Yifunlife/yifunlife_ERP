@@ -168,6 +168,7 @@ img {
   align-items: center;
 }
 .employeeButton {
+  position: relative;
   display: grid;
   width: 40px;
   height: 40px;
@@ -191,6 +192,47 @@ img {
   stroke-linecap: round;
   stroke-width: 1.8;
 }
+.employeeApprovalBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #d5d627;
+  color: var(--navy);
+  font-size: 10px;
+  line-height: 1;
+}
+.staffApprovalNotice {
+  position: fixed;
+  z-index: 89;
+  top: 90px;
+  right: 30px;
+  display: flex;
+  width: min(360px, calc(100vw - 40px));
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 16px 15px 18px;
+  border: 1px solid #d9db39;
+  border-left: 5px solid #d5d627;
+  border-radius: 12px;
+  background: #fffef1;
+  box-shadow: 0 14px 32px rgba(3, 27, 45, 0.16);
+}
+.staffApprovalNotice > div { display: grid; gap: 3px; }
+.staffApprovalNotice span {
+  color: #929500;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+.staffApprovalNotice b { color: var(--navy); font-size: 14px; }
+.staffApprovalNotice small { color: #68797e; font-size: 11px; line-height: 1.45; }
 .employeeMenu {
   position: fixed;
   z-index: 94;
@@ -2535,6 +2577,51 @@ img {
   color: #315942;
   font-size: 11px;
   font-weight: 700;
+}
+.quoteAreaExpand {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 8px;
+  padding: 2px 0;
+  text-align: left;
+}
+.quoteAreaExpand span {
+  align-items: center;
+  background: #769664;
+  border-radius: 50%;
+  color: #fff;
+  display: inline-flex;
+  font-size: 14px;
+  height: 18px;
+  justify-content: center;
+  line-height: 1;
+  width: 18px;
+}
+.quoteAreaTotal {
+  color: var(--navy);
+  font-weight: 800;
+  justify-content: flex-end;
+  width: 100%;
+}
+.quoteQtyInput {
+  border: 1px solid #cbd7ce;
+  border-radius: 6px;
+  color: var(--navy);
+  font: inherit;
+  font-weight: 800;
+  max-width: 56px;
+  padding: 5px 6px;
+  text-align: center;
+  width: 100%;
+}
+.quoteQtyInput:focus {
+  border-color: var(--navy);
+  outline: 2px solid #dcecf3;
 }
 .quoteAreaSummaryRow td:last-child,
 .quoteAreaSubtotal,

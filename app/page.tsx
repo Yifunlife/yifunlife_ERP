@@ -699,8 +699,8 @@ const englishNameByProductId: Record<string, string> = {
   "junior-Y11119": "Double video game table and chair",
   "junior-Y11148": "Mechanical style two-handle video game",
   "junior-Y11149": "video game sofa",
-  "junior-Y10535": "Repair walls and cabinets",
-  "junior-Y10536": "Tire rack",
+  "junior-Y10535": "Mechanic Wall and Cabinet",
+  "junior-Y10536": "Tyre Rack",
   "junior-Y10519": "Frame repair generation",
   "junior-Y10575": "Second generation bike frame repair",
   "junior-Y10562": "Repair frame with lift",
@@ -746,9 +746,9 @@ const englishNameByProductId: Record<string, string> = {
   "junior-Y10553": "Multifunctional police cabinet",
   "junior-Y10554": "police cabinet",
   "junior-Y10555": "flight attendant cabinet",
-  "junior-Y10556": "semicircle detective cabinet",
-  "junior-Y10557": "architect wardrobe",
-  "junior-Y10558": "architect hat cabinet",
+  "junior-Y10556": "Half-Circle Detective Cabinet",
+  "junior-Y10557": "Architect Wardrobe",
+  "junior-Y10558": "Architect Hat Cabinet",
   "junior-Y10559": "Children's play cabinet",
   "junior-Y10531": "Construction site conveyor belt",
   "junior-Y10570": "Excavator table",
@@ -1501,6 +1501,7 @@ export default function Home() {
   const [staffOpen, setStaffOpen] = useState(false);
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [staffUsers, setStaffUsers] = useState<ManagedUser[]>([]);
+  const [pendingStaffCount, setPendingStaffCount] = useState(0);
   const [staffError, setStaffError] = useState("");
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [activeMajor, setActiveMajor] = useState<NavigationMajor>(
@@ -1560,6 +1561,9 @@ export default function Home() {
   const [cartOpen, setCartOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [quoteActiveTab, setQuoteActiveTab] = useState("summary");
+  const [quoteExpandedAreas, setQuoteExpandedAreas] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [quoteProject, setQuoteProject] = useState("");
   const [designerName, setDesignerName] = useState("");
   const [salesName, setSalesName] = useState("");
@@ -1988,6 +1992,14 @@ export default function Home() {
         total + item.quantity * (displayPrice(item.product) || 0),
       0,
     );
+  const toggleQuoteArea = (area: string) => {
+    setQuoteExpandedAreas((current) => {
+      const next = new Set(current);
+      if (next.has(area)) next.delete(area);
+      else next.add(area);
+      return next;
+    });
+  };
   const preTax =
     subtotal +
     fees.packaging +
@@ -2120,6 +2132,83 @@ export default function Home() {
       ...current,
       [childId]: Math.max(0, (current[childId] || 0) + change),
     }));
+  };
+  const setQuoteItemQuantity = (
+    productId: string,
+    nextQuantity: number,
+    parentId?: string,
+  ) => {
+    const quantity = Math.max(1, Math.floor(nextQuantity || 1));
+    if (!parentId) {
+      setCart((current) => ({ ...current, [productId]: quantity }));
+      return;
+    }
+    const currentQuantity = cartPairings[parentId]?.[productId] || 0;
+    const change = quantity - currentQuantity;
+    if (!change) return;
+    setCartPairings((current) => ({
+      ...current,
+      [parentId]: { ...(current[parentId] || {}), [productId]: quantity },
+    }));
+    setCart((current) => ({
+      ...current,
+      [productId]: Math.max(0, (current[productId] || 0) + change),
+    }));
+  };
+  const renderQuoteItemRow = (
+    item: (typeof cartHierarchyItems)[number],
+    serial: number,
+  ) => {
+    const { product: p, quantity, parentId } = item;
+    const unitPrice = displayPrice(p);
+    const amount = unitPrice === null ? null : unitPrice * quantity;
+    return (
+      <tr
+        className={parentId ? "quoteChildRow" : "quoteParentRow"}
+        key={`${parentId || "root"}-${p.id}`}
+      >
+        <td>{serial}</td>
+        <td className="quoteSku">{p.sku || "—"}</td>
+        <td>
+          {parentId && <span className="quoteRelationLabel">关联产品 / Paired item</span>}
+          <b>{p.name}</b>
+          <small className={needsEnglishTranslation(p) ? "missingEnglish" : ""}>
+            {englishProductName(p)}
+          </small>
+        </td>
+        <td>
+          <div className="quoteImage">
+            <Visual p={p} mini />
+          </div>
+        </td>
+        <td>{p.brand || "YIFUN"}</td>
+        <td>{p.spec || "—"}</td>
+        <td>
+          <QuoteBilingual {...unitLabel(p.unit)} />
+        </td>
+        <td>
+          <input
+            aria-label={`${p.sku || p.name} 数量`}
+            className="quoteQtyInput"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            type="text"
+            value={quantity}
+            onChange={(event) => {
+              if (!/^\d+$/.test(event.target.value)) return;
+              setQuoteItemQuantity(p.id, Number(event.target.value), parentId);
+            }}
+          />
+        </td>
+        <td>{money(unitPrice, currency)}</td>
+        <td>{money(amount, currency)}</td>
+        <td>
+          <QuoteBilingual {...colourLabel(p.colorTag)} />
+        </td>
+        <td>{p.volume || "—"}</td>
+        <td>{p.note || "—"}</td>
+      </tr>
+    );
   };
   const remove = (id: string) => {
     const product = quoteProducts.find((candidate) => candidate.id === id);
@@ -3127,12 +3216,20 @@ export default function Home() {
       setStaffError(d.error || "员工列表加载失败。");
       return;
     }
-    setStaffUsers(d.users || []);
+    const users = d.users || [];
+    setStaffUsers(users);
+    setPendingStaffCount(
+      users.filter((user: ManagedUser) => user.status === "pending").length,
+    );
   };
   const openStaff = () => {
     setStaffOpen(true);
     void loadStaff();
   };
+  useEffect(() => {
+    if (auth !== "signedIn" || authAccount?.role !== "admin") return;
+    void loadStaff();
+  }, [auth, authAccount?.role]);
   const updateStaffStatus = async (email: string, action: "approve" | "suspend" | "activate") => {
     const r = await fetch("/api/admin/users", {
       method: "PATCH",
@@ -3287,9 +3384,27 @@ export default function Home() {
               <circle cx="12" cy="8" r="3.5" />
               <path d="M4.5 20c.7-4 3.2-6 7.5-6s6.8 2 7.5 6" />
             </svg>
+            {authAccount?.role === "admin" && pendingStaffCount > 0 && (
+              <b className="employeeApprovalBadge">{pendingStaffCount}</b>
+            )}
           </button>
         </div>
       </header>
+      {authAccount?.role === "admin" && pendingStaffCount > 0 && (
+        <aside className="staffApprovalNotice" aria-live="polite">
+          <div>
+            <span>ACCOUNT APPROVAL</span>
+            <b>有 {pendingStaffCount} 位员工等待批准</b>
+            <small>新注册账号需由管理员批准后才能进入系统。</small>
+          </div>
+          <button
+            className="primary smallPrimary"
+            onClick={() => void openStaff()}
+          >
+            立即处理
+          </button>
+        </aside>
+      )}
       {employeeMenuOpen && (
         <aside className="employeeMenu" role="menu" aria-label="员工账户菜单">
           <div className="employeeMenuAccount">
@@ -5126,15 +5241,40 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {quoteActiveTab === "summary"
-                    ? quoteGroups.map(([area, items]) => (
-                      <tr className="quoteAreaSummaryRow" key={`${area}-summary`}>
-                        <td colSpan={7}>
-                          <b>{area}</b>
-                        </td>
-                        <td colSpan={2}>{items.length} 项 / Items</td>
-                        <td colSpan={4}>{money(quoteAreaSubtotal(items), currency)}</td>
-                      </tr>
-                    ))
+                    ? quoteGroups.flatMap(([area, items]) => {
+                      const isExpanded = quoteExpandedAreas.has(area);
+                      return [
+                        <tr className="quoteAreaSummaryRow" key={`${area}-summary`}>
+                          <td colSpan={7}>
+                            <button
+                              aria-expanded={isExpanded}
+                              className="quoteAreaExpand"
+                              onClick={() => toggleQuoteArea(area)}
+                            >
+                              <span>{isExpanded ? "−" : "+"}</span>
+                              <b>{area}</b>
+                            </button>
+                          </td>
+                          <td colSpan={2}>{items.length} 项 / Items</td>
+                          <td colSpan={4}>
+                            <button
+                              className="quoteAreaExpand quoteAreaTotal"
+                              onClick={() => toggleQuoteArea(area)}
+                            >
+                              {money(quoteAreaSubtotal(items), currency)}
+                            </button>
+                          </td>
+                        </tr>,
+                        ...(isExpanded
+                          ? items.map((item) =>
+                              renderQuoteItemRow(
+                                item,
+                                quoteItemsInOrder.indexOf(item) + 1,
+                              ),
+                            )
+                          : []),
+                      ];
+                    })
                     : quoteVisibleGroups.flatMap(([area, items]) => [
                     <tr className="areaRow" key={`${area}-area`}>
                       <td colSpan={10}>{area}</td>
@@ -5142,47 +5282,12 @@ export default function Home() {
                         区域小计 / Area subtotal：{money(quoteAreaSubtotal(items), currency)}
                       </td>
                     </tr>,
-                    ...items.map((item) => {
-                      const { product: p, quantity, parentId } = item;
-                      const unitPrice = displayPrice(p);
-                      const amount =
-                        unitPrice === null ? null : unitPrice * quantity;
-                      const serial = quoteItemsInOrder.indexOf(item) + 1;
-                      return (
-                        <tr
-                          className={parentId ? "quoteChildRow" : "quoteParentRow"}
-                          key={`${parentId || "root"}-${p.id}`}
-                        >
-                          <td>{serial}</td>
-                          <td className="quoteSku">{p.sku || "—"}</td>
-                          <td>
-                            {parentId && <span className="quoteRelationLabel">关联产品 / Paired item</span>}
-                            <b>{p.name}</b>
-                            <small className={needsEnglishTranslation(p) ? "missingEnglish" : ""}>
-                              {englishProductName(p)}
-                            </small>
-                          </td>
-                          <td>
-                            <div className="quoteImage">
-                              <Visual p={p} mini />
-                            </div>
-                          </td>
-                          <td>{p.brand || "YIFUN"}</td>
-                          <td>{p.spec || "—"}</td>
-                          <td>
-                            <QuoteBilingual {...unitLabel(p.unit)} />
-                          </td>
-                          <td>{quantity}</td>
-                          <td>{money(unitPrice, currency)}</td>
-                          <td>{money(amount, currency)}</td>
-                          <td>
-                            <QuoteBilingual {...colourLabel(p.colorTag)} />
-                          </td>
-                          <td>{p.volume || "—"}</td>
-                          <td>{p.note || "—"}</td>
-                        </tr>
-                      );
-                    }),
+                    ...items.map((item) =>
+                      renderQuoteItemRow(
+                        item,
+                        quoteItemsInOrder.indexOf(item) + 1,
+                      ),
+                    ),
                     <tr className="quoteAreaSubtotalRow" key={`${area}-subtotal`}>
                       <td colSpan={10}>区域小计 / Area Subtotal</td>
                       <td colSpan={3}>{money(quoteAreaSubtotal(items), currency)}</td>
