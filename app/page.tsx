@@ -1357,6 +1357,20 @@ function QuoteBilingual({ zh, en }: { zh: string; en: string }) {
     </span>
   );
 }
+function PrintBilingual({ zh, en }: { zh: string; en: string }) {
+  return (
+    <span className="printBilingual">
+      <span>{zh || "\u00a0"}</span>
+      <span>{en || "\u00a0"}</span>
+    </span>
+  );
+}
+const splitBilingual = (value: string) => {
+  const [zh = "", ...englishParts] = value.split(/\s*\/\s*/);
+  return { zh, en: englishParts.join(" / ") };
+};
+const printValue = (value: string | number | null | undefined) =>
+  value === null || value === undefined || value === "" ? "\u00a0" : value;
 function autoColor(src: string): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -2212,6 +2226,36 @@ export default function Home() {
         <td>{p.volume || "—"}</td>
         <td>{p.note || "—"}</td>
       </tr>
+    );
+  };
+  const renderPrintQuoteItem = (
+    item: (typeof cartHierarchyItems)[number],
+    serial: number,
+  ) => {
+    const { product: p, quantity } = item;
+    const unitPrice = displayPrice(p);
+    const amount = unitPrice === null ? null : unitPrice * quantity;
+    const englishName = needsEnglishTranslation(p) ? "" : englishProductName(p);
+    const colour = ["待重新识别", "未识别", "无主图"].includes(p.colorTag)
+      ? { zh: "", en: "" }
+      : colourLabel(p.colorTag);
+    return (
+      <div className="quotePrintItem" key={`print-${item.parentId || "root"}-${p.id}`}>
+        <span className="quotePrintNo">{serial}</span>
+        <div className="quotePrintImage">
+          <Visual p={p} mini />
+        </div>
+        <PrintBilingual zh={p.name} en={englishName} />
+        <span>{printValue(p.brand || "YIFUN")}</span>
+        <span>{printValue(p.spec)}</span>
+        <PrintBilingual {...unitLabel(p.unit)} />
+        <strong>{quantity}</strong>
+        <strong className="quotePrintAmount">{money(unitPrice, currency)}</strong>
+        <strong className="quotePrintAmount">{money(amount, currency)}</strong>
+        <PrintBilingual {...colour} />
+        <span>{printValue(p.volume)}</span>
+        <span>{printValue(p.note)}</span>
+      </div>
     );
   };
   const remove = (id: string) => {
@@ -5526,6 +5570,146 @@ export default function Home() {
                   第 <i /> 页 / Page <i />
                 </span>
               </div>
+            </article>
+            <article className="quotePrintPaper" aria-hidden="true">
+              <header className="quotePrintHeader">
+                <CompanyLogo className="quotePrintLogo" />
+                <div className="quotePrintTitle">
+                  <span>QUOTATION · {currency}</span>
+                  <PrintBilingual zh="产品报价清单" en="Product Quotation" />
+                </div>
+              </header>
+              <section className="quotePrintMeta">
+                <div>
+                  <PrintBilingual zh="项目名称" en="Project" />
+                  <b>{printValue(quoteProject)}</b>
+                </div>
+                <div>
+                  <PrintBilingual zh="设计师名称" en="Designer" />
+                  <b>{printValue(designerName)}</b>
+                </div>
+                <div>
+                  <PrintBilingual zh="业务员名称" en="Sales" />
+                  <b>{printValue(salesName)}</b>
+                </div>
+                <div>
+                  <PrintBilingual zh="报价币种" en="Currency" />
+                  <b>{currency}</b>
+                </div>
+                <div>
+                  <PrintBilingual zh="报价日期" en="Date" />
+                  <b>{new Date().toLocaleDateString("zh-CN")}</b>
+                </div>
+                <div>
+                  <PrintBilingual zh="报价产品" en="Items" />
+                  <b>{cartItems.length}</b>
+                </div>
+              </section>
+              {quoteGroups.map(([area, items]) => {
+                const areaLabel = splitBilingual(area);
+                return (
+                  <section className="quotePrintArea" key={`print-${area}`}>
+                    <div className="quotePrintAreaTitle">
+                      <PrintBilingual {...areaLabel} />
+                      <span>
+                        {items.length} 项
+                        <small>{items.length} Items</small>
+                      </span>
+                    </div>
+                    <div className="quotePrintColumnHeader">
+                      <PrintBilingual zh="序号" en="No." />
+                      <PrintBilingual zh="图片" en="Image" />
+                      <PrintBilingual zh="产品名称" en="Product" />
+                      <PrintBilingual zh="品牌" en="Brand" />
+                      <PrintBilingual zh="规格/尺寸" en="Size" />
+                      <PrintBilingual zh="单位" en="Unit" />
+                      <PrintBilingual zh="数量" en="Qty" />
+                      <PrintBilingual
+                        zh={currency === "USD" ? "美元单价" : "人民币单价"}
+                        en={currency === "USD" ? "USD Unit Price" : "CNY Unit Price"}
+                      />
+                      <PrintBilingual
+                        zh={currency === "USD" ? "美元报价" : "人民币报价"}
+                        en={currency === "USD" ? "USD Amount" : "CNY Amount"}
+                      />
+                      <PrintBilingual zh="颜色" en="Colour" />
+                      <PrintBilingual zh="体积" en="Volume" />
+                      <PrintBilingual zh="备注" en="Remarks" />
+                    </div>
+                    {items.map((item) =>
+                      renderPrintQuoteItem(
+                        item,
+                        quoteItemsInOrder.indexOf(item) + 1,
+                      ),
+                    )}
+                    <div className="quotePrintAreaSubtotal">
+                      <PrintBilingual zh="区域小计" en="Area subtotal" />
+                      <strong className="quotePrintAmount">
+                        {money(quoteAreaSubtotal(items), currency)}
+                      </strong>
+                    </div>
+                  </section>
+                );
+              })}
+              <section className="quotePrintFees">
+                <div className="quotePrintFee">
+                  <PrintBilingual
+                    zh="包装费（含部分产品特定包装箱）"
+                    en="Packaging fee (including special packing cases)"
+                  />
+                  <strong className="quotePrintAmount">{money(fees.packaging, currency)}</strong>
+                </div>
+                <div className="quotePrintFee">
+                  <PrintBilingual zh="除甲醛" en="Formaldehyde removal" />
+                  <strong className="quotePrintAmount">{money(fees.formaldehyde, currency)}</strong>
+                </div>
+                <div className="quotePrintFee">
+                  <PrintBilingual
+                    zh="运输费（含装货不含卸货）"
+                    en="Shipping fee (loading included, unloading excluded)"
+                  />
+                  <strong className="quotePrintAmount">{money(fees.shipping, currency)}</strong>
+                </div>
+                <div className="quotePrintFee">
+                  <PrintBilingual
+                    zh={installationIncludesTravel ? "安装费（含工人出行食宿）" : "安装费（不含工人出行食宿）"}
+                    en={installationIncludesTravel ? "Installation fee (travel and accommodation included)" : "Installation fee (travel and accommodation excluded)"}
+                  />
+                  <strong className="quotePrintAmount">{money(fees.installation, currency)}</strong>
+                </div>
+                <div className="quotePrintFee quotePrintSubtotal">
+                  <PrintBilingual zh="小计（不含税）" en="Subtotal (tax excluded)" />
+                  <strong className="quotePrintAmount">{money(preTax, currency)}</strong>
+                </div>
+                {currency === "CNY" && includeTax && (
+                  <div className="quotePrintFee">
+                    <PrintBilingual zh="税额 13%（可抵税）" en="Tax 13% (deductible)" />
+                    <strong className="quotePrintAmount">{money(tax, currency)}</strong>
+                  </div>
+                )}
+                {showDesignDeduction && fees.designDeduction > 0 && (
+                  <div className="quotePrintFee">
+                    <PrintBilingual zh="设计费抵扣" en="Design fee deduction" />
+                    <strong className="quotePrintAmount">
+                      −{money(fees.designDeduction, currency)}
+                    </strong>
+                  </div>
+                )}
+                <div className="quotePrintFee quotePrintGrandTotal">
+                  <PrintBilingual
+                    zh={currency === "CNY" && includeTax ? "总计（含税）" : "总计（不含税）"}
+                    en={currency === "CNY" && includeTax ? "Total (tax included)" : "Total (tax excluded)"}
+                  />
+                  <strong className="quotePrintAmount">{money(totalWithTax, currency)}</strong>
+                </div>
+              </section>
+              <footer className="quotePrintFooter">
+                <span>{printValue(companyAddress)}</span>
+                <span>
+                  第 <i /> 页
+                  <small>Page <i /></small>
+                </span>
+              </footer>
             </article>
           </div>
         </div>

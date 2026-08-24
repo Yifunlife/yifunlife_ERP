@@ -1697,14 +1697,16 @@ img {
   margin-right: 8px;
 }
 .priceRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   margin-top: 10px;
 }
 .priceRow > div {
   min-width: 0;
+}
+.priceRow > div:first-child {
+  flex: 1 1 auto;
 }
 .priceRow small {
   display: block;
@@ -1714,34 +1716,38 @@ img {
 }
 .priceRow strong {
   display: block;
-  font-size: 16px;
+  font-size: clamp(13px, 1.05vw, 16px);
   color: var(--navy);
-  overflow-wrap: anywhere;
+  letter-spacing: -0.25px;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 .productAddButton {
   box-sizing: border-box;
-  width: 64px;
-  min-height: 34px;
+  flex: 0 0 54px;
+  width: 54px;
+  min-height: 30px;
   border: 0;
   background: var(--lime-bright);
   color: #243342;
-  border-radius: 15px;
-  padding: 6px 4px;
+  border-radius: 14px;
+  padding: 5px 3px;
   font-weight: 700;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1;
   white-space: nowrap;
 }
 .productQuantityControl {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: 24px 36px 24px;
+  grid-template-columns: 20px 32px 20px;
   align-items: stretch;
-  width: 88px;
-  height: 34px;
+  flex: 0 0 74px;
+  width: 74px;
+  height: 30px;
   overflow: hidden;
   border: 1px solid #cbd4cc;
-  border-radius: 17px;
+  border-radius: 15px;
   background: #fff;
 }
 .productQuantityControl button {
@@ -1749,7 +1755,7 @@ img {
   border: 0;
   background: transparent;
   color: var(--navy);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   line-height: 1;
   padding: 0;
@@ -1766,7 +1772,7 @@ img {
   background: #fff;
   color: var(--navy);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
   text-align: center;
   outline: none;
@@ -3848,6 +3854,299 @@ img {
   @page {
     size: A4 landscape;
     margin: 10mm 12mm 17mm;
+  }
+}
+
+/* The print document is intentionally separate from the editable quotation table. */
+.quotePrintPaper {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 7mm 8mm 15mm;
+  }
+  .quoteOverlay,
+  .quoteShell {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  .quotePaperWide {
+    display: none !important;
+  }
+  .quotePrintPaper {
+    display: block;
+    color: #17222c;
+    font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 8px;
+    line-height: 1.28;
+  }
+  .quotePrintHeader {
+    display: grid;
+    grid-template-columns: 126px minmax(0, 1fr);
+    gap: 18px;
+    align-items: end;
+    border-bottom: 2px solid var(--navy);
+    padding: 0 0 8px;
+  }
+  .quotePrintLogo {
+    width: 120px;
+    max-height: 34px;
+    object-fit: contain;
+    object-position: left center;
+  }
+  .quotePrintTitle > span {
+    display: block;
+    margin-bottom: 3px;
+    color: #a49c16;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+  }
+  .quotePrintTitle .printBilingual {
+    grid-template-columns: auto 1fr;
+    justify-content: start;
+    gap: 13px;
+    color: var(--navy);
+    font-size: 23px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .printBilingual {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px;
+    color: #17222c;
+  }
+  .printBilingual > span {
+    min-width: 0;
+    color: inherit;
+  }
+  .quotePrintMeta {
+    display: grid;
+    grid-template-columns: 1.35fr 1.05fr 1.05fr .62fr .72fr .52fr;
+    gap: 7px;
+    padding: 8px 0 10px;
+    border-bottom: 1px solid #d9ded9;
+  }
+  .quotePrintMeta > div {
+    min-width: 0;
+  }
+  .quotePrintMeta .printBilingual {
+    color: #65717b;
+    font-size: 7px;
+    letter-spacing: .15px;
+  }
+  .quotePrintMeta b {
+    display: block;
+    min-height: 13px;
+    margin-top: 3px;
+    overflow: hidden;
+    color: #111820;
+    font-size: 9px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .quotePrintArea {
+    margin-top: 9px;
+    break-inside: auto;
+  }
+  .quotePrintAreaTitle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 25px;
+    padding: 5px 8px;
+    border-top: 2px solid #759872;
+    background: #e7f0e1;
+    color: #254d36;
+  }
+  .quotePrintAreaTitle .printBilingual {
+    grid-template-columns: auto auto;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .quotePrintAreaTitle > span {
+    display: flex;
+    gap: 5px;
+    align-items: baseline;
+    color: #305543;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .quotePrintAreaTitle small {
+    color: inherit;
+    font-size: 7px;
+    font-weight: 700;
+  }
+  .quotePrintColumnHeader,
+  .quotePrintItem {
+    display: grid;
+    grid-template-columns: 3% 8% 22% 7% 10% 6% 4% 9% 10% 7% 7% 7%;
+    align-items: center;
+  }
+  .quotePrintColumnHeader {
+    min-height: 28px;
+    border-bottom: 1px solid #6f9272;
+    background: var(--navy);
+    color: #fff;
+    font-size: 6.5px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .quotePrintColumnHeader .printBilingual {
+    color: inherit;
+  }
+  .quotePrintItem {
+    min-height: 64px;
+    border-bottom: 1px solid #dbe0db;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .quotePrintItem > * {
+    min-width: 0;
+    padding: 4px 5px;
+    color: #17222c;
+    overflow-wrap: anywhere;
+  }
+  .quotePrintItem > span:not(.printBilingual),
+  .quotePrintItem > strong {
+    text-align: center;
+  }
+  .quotePrintItem > .printBilingual {
+    font-size: 7px;
+  }
+  .quotePrintItem > .printBilingual > span:first-child {
+    font-weight: 700;
+  }
+  .quotePrintNo {
+    font-variant-numeric: tabular-nums;
+  }
+  .quotePrintImage {
+    width: 56px;
+    height: 54px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    margin: auto;
+  }
+  .quotePrintImage img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .quotePrintImage .productFallback {
+    font-size: 7px;
+  }
+  .quotePrintAmount {
+    color: #102d50 !important;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    word-break: normal !important;
+  }
+  .quotePrintAreaSubtotal {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    min-height: 27px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #8fa78f;
+    background: #f1f5ef;
+    color: #2c4c37;
+    font-size: 8px;
+    font-weight: 800;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .quotePrintAreaSubtotal .printBilingual {
+    grid-template-columns: auto auto;
+    justify-content: start;
+    gap: 6px;
+  }
+  .quotePrintFees {
+    margin-top: 12px;
+    border-top: 1px solid #d4dbd4;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .quotePrintFee {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 120px;
+    align-items: center;
+    min-height: 26px;
+    border-bottom: 1px solid #dce2dc;
+    color: #263945;
+    font-size: 8px;
+    font-weight: 600;
+  }
+  .quotePrintFee .printBilingual {
+    grid-template-columns: minmax(180px, .8fr) minmax(0, 1.2fr);
+    padding: 4px 10px;
+  }
+  .quotePrintFee .quotePrintAmount {
+    padding: 4px 10px;
+    text-align: right;
+    font-size: 8px;
+  }
+  .quotePrintSubtotal {
+    border-top: 2px solid var(--navy);
+    background: #f0f3ec;
+    color: var(--navy);
+    font-weight: 800;
+  }
+  .quotePrintGrandTotal {
+    min-height: 34px;
+    border-top: 2px solid #c2c500;
+    border-bottom: 0;
+    background: var(--navy);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .quotePrintGrandTotal .printBilingual,
+  .quotePrintGrandTotal .quotePrintAmount {
+    color: #fff !important;
+  }
+  .quotePrintGrandTotal .quotePrintAmount {
+    font-size: 11px;
+  }
+  .quotePrintFooter {
+    position: fixed;
+    right: 8mm;
+    bottom: 4mm;
+    left: 8mm;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    border-top: 1px solid #cdd5cd;
+    padding-top: 2mm;
+    color: #53616a;
+    font-size: 7px;
+  }
+  .quotePrintFooter > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .quotePrintFooter > span:last-child,
+  .quotePrintFooter small {
+    color: inherit;
+    font-size: inherit;
+    white-space: nowrap;
+  }
+  .quotePrintFooter small {
+    margin-left: 5px;
+  }
+  .quotePrintFooter i::after {
+    content: counter(page);
   }
 }
 
