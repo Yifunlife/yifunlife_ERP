@@ -2555,11 +2555,30 @@ export default function Home() {
       usedSheetNames.add(name);
       return name;
     };
-    const areaSheets = quoteGroups.map(([area, items], index) => {
+    const otherArea = "其他产品 / Other Products";
+    const pairedToyItems = quoteItemsInOrder.filter((item) => item.parentId);
+    const areaSheetGroups = [
+      ...quoteGroups
+        .filter(([area]) => area !== otherArea)
+        .map(([area, items]) => [
+          area,
+          items.filter((item) => !item.parentId),
+          items,
+        ] as const)
+        .filter(([, items]) => items.length),
+      [
+        otherArea,
+        quoteGroups
+          .find(([area]) => area === otherArea)?.[1]
+          .filter((item) => !item.parentId) || [],
+        quoteGroups.find(([area]) => area === otherArea)?.[1] || [],
+      ] as const,
+    ];
+    const areaSheets = areaSheetGroups.map(([area, items, allItems], index) => {
       const sheetName = sheetNameFor(area, index);
       const rows: Array<Array<string | number>> = [
         ["YIFUN LIFE / 亦玩集团", "", "", "", "", "", "", "", "", "区域效果图片 / Area Effect Visual"],
-        ["亦玩集团产品报价清单 / Yifun Life Product Quotation", "", "", "", "", "", "", "", "", "请在此插入该区域的效果图 / Insert area visual here"],
+        ["亦玩集团产品报价清单 / Yifun Life Product Quotation", "", "", "", "", "", "", "", "", ""],
         [area],
         ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
         ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
@@ -2612,9 +2631,8 @@ export default function Home() {
       };
       sheet["!merges"] = [
         XLSX.utils.decode_range("A1:I1"),
-        XLSX.utils.decode_range("J1:M1"),
+        XLSX.utils.decode_range("J1:M6"),
         XLSX.utils.decode_range("A2:I2"),
-        XLSX.utils.decode_range("J2:M2"),
         XLSX.utils.decode_range("A3:M3"),
       ];
       sheet["!cols"] = [
@@ -2623,8 +2641,77 @@ export default function Home() {
         { wch: 12 }, { wch: 13 }, { wch: 34 },
       ];
       XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
-      return { area, items, sheetName, subtotalRow };
+      return { area, items, allItems, sheetName, subtotalRow };
     });
+    const pairedToySheetName = sheetNameFor("配套玩具 / Paired Toys", areaSheets.length);
+    const pairedToyRows: Array<Array<string | number>> = [
+      ["YIFUN LIFE / 亦玩集团", "", "", "", "", "", "", "", "", "自动区配玩具 / Automatically paired toys"],
+      ["亦玩集团产品报价清单 / Yifun Life Product Quotation", "", "", "", "", "", "", "", "", "所有主设备的已配对玩具 / Paired toys for all simulation devices"],
+      ["配套玩具 / Paired Toys"],
+      ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
+      ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
+      [],
+      [...headers, "所属区域 / Area"],
+    ];
+    const pairedToyRowsWithProducts: number[] = [];
+    pairedToyItems.forEach(({ product, quantity, parentId, area }) => {
+      const rowNumber = pairedToyRows.length + 1;
+      pairedToyRowsWithProducts.push(rowNumber);
+      pairedToyRows.push([
+        "",
+        product.sku,
+        `↳ ${product.name}`,
+        product.image || "",
+        product.brand || "YIFUN",
+        product.spec || "—",
+        unitLabel(product.unit).zh,
+        quantity,
+        displayPrice(product) ?? "",
+        "",
+        colourLabel(product.colorTag).zh,
+        product.volume || "—",
+        `关联产品 / Paired with ${cartItemById.get(parentId!)?.sku || "主产品"}`,
+        area,
+      ]);
+    });
+    if (!pairedToyItems.length)
+      pairedToyRows.push(["", "", "暂无自动配对的玩具 / No paired toys"]);
+    const pairedToySubtotalRow = pairedToyRows.length + 1;
+    pairedToyRows.push(["", "", "配套玩具小计 / Paired Toys Subtotal"]);
+    const pairedToySheet = XLSX.utils.aoa_to_sheet(pairedToyRows);
+    pairedToyRowsWithProducts.forEach((rowNumber, index) => {
+      pairedToySheet[`A${rowNumber}`] = { t: "n", f: "ROW()-7", v: index + 1 };
+      pairedToySheet[`J${rowNumber}`] = {
+        t: "n",
+        f: `IF(OR(H${rowNumber}=\"\",I${rowNumber}=\"\"),\"\",H${rowNumber}*I${rowNumber})`,
+        v: (pairedToyItems[index].quantity || 0) * (displayPrice(pairedToyItems[index].product) || 0),
+        z: currencyFormat,
+      };
+    });
+    const pairedToyFirstRow = pairedToyRowsWithProducts[0] || 8;
+    const pairedToyLastRow = pairedToyRowsWithProducts.at(-1) || pairedToyFirstRow;
+    pairedToySheet[`J${pairedToySubtotalRow}`] = {
+      t: "n",
+      f: `SUM(J${pairedToyFirstRow}:J${pairedToyLastRow})`,
+      v: pairedToyItems.reduce(
+        (total, item) => total + item.quantity * (displayPrice(item.product) || 0),
+        0,
+      ),
+      z: currencyFormat,
+    };
+    pairedToySheet["!merges"] = [
+      XLSX.utils.decode_range("A1:I1"),
+      XLSX.utils.decode_range("J1:N1"),
+      XLSX.utils.decode_range("A2:I2"),
+      XLSX.utils.decode_range("J2:N2"),
+      XLSX.utils.decode_range("A3:N3"),
+    ];
+    pairedToySheet["!cols"] = [
+      { wch: 9 }, { wch: 14 }, { wch: 30 }, { wch: 42 }, { wch: 18 },
+      { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
+      { wch: 12 }, { wch: 13 }, { wch: 34 }, { wch: 30 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, pairedToySheet, pairedToySheetName);
     const summaryRows: Array<Array<string | number>> = [
       ["YIFUN LIFE / 亦玩集团", "", "", "", "", "LOGO"],
       ["产品报价清单 / Product Quotation", "", "", "", "", ""],
@@ -2657,16 +2744,16 @@ export default function Home() {
     const totalRow = summaryRows.length + 1;
     summaryRows.push(["总计（含税） / Total (tax included)"]);
     const summary = XLSX.utils.aoa_to_sheet(summaryRows);
-    summaryAreaRows.forEach(({ sheetName, subtotalRow: areaSubtotalRow, rowNumber, items }) => {
+    summaryAreaRows.forEach(({ sheetName, subtotalRow: areaSubtotalRow, rowNumber, allItems }) => {
       summary[`B${rowNumber}`] = {
         t: "n",
-        f: `COUNTA('${sheetName}'!B8:B${areaSubtotalRow - 1})`,
-        v: items.length,
+        f: `COUNTA('${sheetName}'!B8:B${areaSubtotalRow - 1})+COUNTIF('${pairedToySheetName}'!N${pairedToyFirstRow}:N${pairedToyLastRow},A${rowNumber})`,
+        v: allItems.length,
       };
       summary[`C${rowNumber}`] = {
         t: "n",
-        f: `'${sheetName}'!J${areaSubtotalRow}`,
-        v: items.reduce(
+        f: `'${sheetName}'!J${areaSubtotalRow}+SUMIF('${pairedToySheetName}'!N${pairedToyFirstRow}:N${pairedToyLastRow},A${rowNumber},'${pairedToySheetName}'!J${pairedToyFirstRow}:J${pairedToyLastRow})`,
+        v: allItems.reduce(
           (total, item) => total + item.quantity * (displayPrice(item.product) || 0),
           0,
         ),
@@ -2698,7 +2785,16 @@ export default function Home() {
     ];
     summary["!cols"] = [{ wch: 38 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(workbook, summary, "Summary");
-    workbook.SheetNames.unshift(workbook.SheetNames.pop()!);
+    workbook.SheetNames = [
+      "Summary",
+      ...areaSheets
+        .filter((areaSheet) => areaSheet.area !== otherArea)
+        .map((areaSheet) => areaSheet.sheetName),
+      pairedToySheetName,
+      ...areaSheets
+        .filter((areaSheet) => areaSheet.area === otherArea)
+        .map((areaSheet) => areaSheet.sheetName),
+    ];
     const reorderedSheets = Object.fromEntries(
       workbook.SheetNames.map((name) => [name, workbook.Sheets[name]]),
     );
