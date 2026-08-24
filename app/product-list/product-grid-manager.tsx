@@ -1184,27 +1184,31 @@ export function ProductGridManager({
                   <small>{pairingSimulationRows.length} 项</small>
                 </div>
                 <div className="pairingPinnedRows" ref={pairingPinnedRowsRef}>
-                  {pairingSimulationRows.map((source) => (
-                    <article className="pairingPinnedSource" key={source.id}>
-                      {source.image && <img src={source.image} alt="" />}
-                      <span>
-                        <b>
-                          {source.sku}
-                          <em>
-                            已匹配{" "}
-                            {
-                              Object.values(pairingMatrix[source.id] || {}).filter(
-                                (quantity) => quantity > 0,
-                              ).length
-                            }{" "}
-                            款
-                          </em>
-                        </b>
-                        <i>库存 / Stock：{source.stock === null ? "待维护" : source.stock}</i>
-                        <small>{source.productName}</small>
-                      </span>
-                    </article>
-                  ))}
+                  {pairingSimulationRows.map((source) => {
+                    const matchedToys = pairingToyRows.flatMap((toy) => {
+                      const quantity = pairingMatrix[source.id]?.[toy.id] || 0;
+                      return quantity > 0 ? [{ quantity }] : [];
+                    });
+                    const matchedToyQuantity = matchedToys.reduce(
+                      (total, toy) => total + toy.quantity,
+                      0,
+                    );
+                    return (
+                      <article className="pairingPinnedSource" key={source.id}>
+                        {source.image && <img src={source.image} alt="" />}
+                        <span>
+                          <b>
+                            {source.sku}
+                            <em>
+                              已匹配 {matchedToys.length} 款 · 总数 {matchedToyQuantity} 件
+                            </em>
+                          </b>
+                          <i>库存 / Stock：{source.stock === null ? "待维护" : source.stock}</i>
+                          <small>{source.productName}</small>
+                        </span>
+                      </article>
+                    );
+                  })}
                 </div>
               </aside>
               <div

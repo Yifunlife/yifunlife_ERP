@@ -1550,6 +1550,7 @@ export default function Home() {
   const [quoteImporting, setQuoteImporting] = useState(false);
   const [quoteImportDragging, setQuoteImportDragging] = useState(false);
   const [importedProducts, setImportedProducts] = useState<Product[]>([]);
+  const [importedAreaOrder, setImportedAreaOrder] = useState<string[]>([]);
   const quoteImportTemplateRef = useRef<QuoteImportTemplate | null>(null);
   const [quoteImportPriceMode, setQuoteImportPriceMode] =
     useState<QuoteImportPriceMode>("vip");
@@ -1960,7 +1961,16 @@ export default function Home() {
     .map(([area, items]) => [area, items] as const)
     .sort(([left], [right]) => {
       const otherArea = "其他产品 / Other Products";
-      return Number(left === otherArea) - Number(right === otherArea);
+      if (left === otherArea || right === otherArea)
+        return Number(left === otherArea) - Number(right === otherArea);
+      const leftIndex = importedAreaOrder.indexOf(left);
+      const rightIndex = importedAreaOrder.indexOf(right);
+      if (leftIndex >= 0 || rightIndex >= 0) {
+        if (leftIndex < 0) return 1;
+        if (rightIndex < 0) return -1;
+        return leftIndex - rightIndex;
+      }
+      return 0;
     });
   const quoteItemsInOrder = quoteGroups.flatMap(([, items]) => items);
   const preTax =
@@ -2018,6 +2028,7 @@ export default function Home() {
     setCart({});
     setCartPairings({});
     setImportedProducts([]);
+    setImportedAreaOrder([]);
     quoteImportTemplateRef.current = null;
     setPairingSuggestion(null);
     setPairingRemovalPrompt(null);
@@ -2391,6 +2402,13 @@ export default function Home() {
         });
     });
     setImportedProducts(importedRows.map(({ product }) => product));
+    setImportedAreaOrder(
+      [...new Set(
+        importedRows
+          .map(({ product }) => product.importArea)
+          .filter((area): area is string => Boolean(area)),
+      )],
+    );
     if (quoteImportPreview.projectName) setQuoteProject(quoteImportPreview.projectName);
     if (quoteImportPreview.designerName) setDesignerName(quoteImportPreview.designerName);
     if (quoteImportPreview.salesName) setSalesName(quoteImportPreview.salesName);
