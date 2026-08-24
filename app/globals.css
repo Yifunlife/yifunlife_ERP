@@ -4020,6 +4020,8 @@ img {
     min-width: 0;
   }
   .quotePrintMeta .printBilingual {
+    grid-template-columns: 1fr;
+    gap: 1px;
     color: #65717b;
     font-size: 7px;
     letter-spacing: .15px;
