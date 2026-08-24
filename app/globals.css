@@ -1010,13 +1010,73 @@ img {
   border-radius: 0;
   box-shadow: none;
 }
-.pairingMatrixWrap {
-  position: relative;
+.pairingMatrixLayout {
   min-height: 0;
   flex: 1;
+  display: flex;
+  overflow: hidden;
+  background: #f7f9f5;
+}
+.pairingPinnedColumn {
+  z-index: 2;
+  display: flex;
+  flex: 0 0 220px;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #cdd9cf;
+  background: #fff;
+  box-shadow: 5px 0 12px rgba(34, 57, 72, 0.1);
+}
+.pairingPinnedHeader {
+  box-sizing: border-box;
+  flex: 0 0 110px;
+  padding: 14px 18px;
+  background: #f0f4ed;
+  color: var(--navy);
+  font-weight: 800;
+  line-height: 1.25;
+}
+.pairingPinnedHeader small {
+  display: block;
+  margin-top: 4px;
+  color: #71818b;
+  font-size: 10px;
+  font-weight: 500;
+}
+.pairingPinnedRows {
+  will-change: transform;
+}
+.pairingPinnedSource {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 74px;
+  gap: 10px;
+  border-bottom: 1px solid #e0e7df;
+  background: #fff;
+  padding: 8px 12px;
+}
+.pairingPinnedSource img {
+  width: 68px;
+  height: 52px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+.pairingPinnedSource span { min-width: 0; }
+.pairingPinnedSource b,
+.pairingPinnedSource small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pairingPinnedSource b { color: var(--navy); font-size: 12px; }
+.pairingPinnedSource small { margin-top: 4px; color: #687983; font-size: 11px; font-weight: 500; }
+.pairingMatrixWrap {
+  min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  background: #f7f9f5;
+  background: #fff;
   scrollbar-color: #58758c #dfe7df;
   scrollbar-gutter: stable both-edges;
 }
@@ -1031,24 +1091,18 @@ img {
   border-right: 1px solid #e0e7df;
   border-bottom: 1px solid #e0e7df;
 }
-.pairingMatrix tr > :first-child {
-  position: -webkit-sticky;
-  position: sticky;
-  left: 0;
-  z-index: 20;
-  background-clip: padding-box;
-  box-shadow: 5px 0 10px rgba(34, 57, 72, 0.08);
-}
 .pairingMatrix thead th {
   position: -webkit-sticky;
   position: sticky;
-  z-index: 25;
+  z-index: 3;
   top: 0;
   width: 112px;
   min-width: 112px;
   max-width: 112px;
   background: #f0f4ed;
   color: var(--navy);
+  box-sizing: border-box;
+  height: 110px;
   padding: 9px;
   text-align: center;
   vertical-align: bottom;
@@ -1074,57 +1128,9 @@ img {
   font-size: 9px;
   font-weight: 500;
 }
-.pairingMatrix .pairingMatrixDeviceHead {
-  z-index: 60;
-  left: 0;
-  background: #f0f4ed;
-  width: 220px;
-  min-width: 220px;
-  max-width: 220px;
-  padding: 14px 18px;
-  text-align: left;
-  vertical-align: middle;
-}
-.pairingMatrixDeviceHead small {
-  display: block;
-  margin-top: 4px;
-  color: #71818b;
-  font-size: 10px;
-  font-weight: 500;
-}
-.pairingMatrixSource {
-  position: -webkit-sticky;
-  position: sticky;
-  z-index: 50;
-  left: 0;
-  display: flex;
-  align-items: center;
-  width: 220px;
-  min-width: 220px;
-  max-width: 220px;
-  gap: 10px;
-  background: #fff;
-  color: var(--ink);
-  padding: 8px 12px;
-  text-align: left;
-}
-.pairingMatrixSource img {
-  width: 68px;
-  height: 52px;
-  flex: 0 0 auto;
-  object-fit: contain;
-}
-.pairingMatrixSource span { min-width: 0; }
-.pairingMatrixSource b,
-.pairingMatrixSource small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pairingMatrixSource b { color: var(--navy); font-size: 12px; }
-.pairingMatrixSource small { margin-top: 4px; color: #687983; font-size: 11px; font-weight: 500; }
 .pairingMatrix td {
+  box-sizing: border-box;
+  height: 74px;
   min-width: 112px;
   background: #fff;
   padding: 10px;

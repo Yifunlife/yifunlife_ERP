@@ -279,6 +279,7 @@ export function ProductGridManager({
   const [areaRuleSaving, setAreaRuleSaving] = useState(false);
   const [areaRuleApplying, setAreaRuleApplying] = useState(false);
   const [pairingSavedMessage, setPairingSavedMessage] = useState("");
+  const pairingPinnedRowsRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
     const response = await fetch("/api/catalog");
@@ -1172,50 +1173,64 @@ export function ProductGridManager({
               </label>
               <p>竖排为模拟区主设备，横排为同区域配套玩具；交叉格填写该玩具的绑定数量。</p>
             </div>
-            <div className="pairingMatrixWrap">
-              <table className="pairingMatrix">
-                <thead>
-                  <tr>
-                    <th className="pairingMatrixDeviceHead" scope="col">
-                      模拟区主设备
-                      <small>{pairingSimulationRows.length} 项</small>
-                    </th>
-                    {pairingToyRows.map((toy) => (
-                      <th key={toy.id} scope="col" title={`${toy.sku} · ${toy.productName}`}>
-                        {toy.image && <img src={toy.image} alt="" />}
-                        <b>{toy.sku}</b>
-                        <small>{toy.productName}</small>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="pairingMatrixLayout">
+              <aside className="pairingPinnedColumn" aria-label="模拟区主设备">
+                <div className="pairingPinnedHeader">
+                  模拟区主设备
+                  <small>{pairingSimulationRows.length} 项</small>
+                </div>
+                <div className="pairingPinnedRows" ref={pairingPinnedRowsRef}>
                   {pairingSimulationRows.map((source) => (
-                    <tr key={source.id}>
-                      <th className="pairingMatrixSource" scope="row">
-                        {source.image && <img src={source.image} alt="" />}
-                        <span>
-                          <b>{source.sku}</b>
-                          <small>{source.productName}</small>
-                        </span>
-                      </th>
+                    <article className="pairingPinnedSource" key={source.id}>
+                      {source.image && <img src={source.image} alt="" />}
+                      <span>
+                        <b>{source.sku}</b>
+                        <small>{source.productName}</small>
+                      </span>
+                    </article>
+                  ))}
+                </div>
+              </aside>
+              <div
+                className="pairingMatrixWrap"
+                onScroll={(event) => {
+                  if (pairingPinnedRowsRef.current)
+                    pairingPinnedRowsRef.current.style.transform = `translateY(-${event.currentTarget.scrollTop}px)`;
+                }}
+              >
+                <table className="pairingMatrix">
+                  <thead>
+                    <tr>
                       {pairingToyRows.map((toy) => (
-                        <td key={toy.id}>
-                          <input
-                            aria-label={`${source.sku} 配对 ${toy.sku} 的数量`}
-                            min="0"
-                            onChange={(event) =>
-                              setMatrixQuantity(source.id, toy.id, Number(event.target.value))
-                            }
-                            type="number"
-                            value={pairingMatrix[source.id]?.[toy.id] || 0}
-                          />
-                        </td>
+                        <th key={toy.id} scope="col" title={`${toy.sku} · ${toy.productName}`}>
+                          {toy.image && <img src={toy.image} alt="" />}
+                          <b>{toy.sku}</b>
+                          <small>{toy.productName}</small>
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {pairingSimulationRows.map((source) => (
+                      <tr key={source.id}>
+                        {pairingToyRows.map((toy) => (
+                          <td key={toy.id}>
+                            <input
+                              aria-label={`${source.sku} 配对 ${toy.sku} 的数量`}
+                              min="0"
+                              onChange={(event) =>
+                                setMatrixQuantity(source.id, toy.id, Number(event.target.value))
+                              }
+                              type="number"
+                              value={pairingMatrix[source.id]?.[toy.id] || 0}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
             <footer className="pairingFoot">
               <span>
