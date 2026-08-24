@@ -3728,10 +3728,10 @@ img {
   color: #7d8587;
 }
 .quoteTable .grandTotal td {
-  background: var(--navy) !important;
-  color: #fff !important;
+  background: #dfead8 !important;
+  color: #17222c !important;
   font-size: 14px !important;
-  border-top: 2px solid var(--lime) !important;
+  border-top: 2px solid #759872 !important;
 }
 .quoteTable .grandTotal td:first-child {
   text-align: center !important;
@@ -3739,7 +3739,7 @@ img {
 .quoteTable .grandTotal .feeLabel,
 .quoteTable .grandTotal .feeAmount,
 .quoteTable .grandTotal .feeNote {
-  color: #fff !important;
+  color: #17222c !important;
 }
 .quoteTable .grandTotal .feeLabel {
   font-size: 14px;
@@ -3963,6 +3963,7 @@ img {
   }
   .quotePrintPaper {
     display: block;
+    padding-bottom: 14mm;
     color: #17222c;
     font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
     font-size: 8px;
@@ -4048,8 +4049,8 @@ img {
     min-height: 25px;
     padding: 5px 8px;
     border-top: 2px solid #759872;
-    background: #e7f0e1;
-    color: #254d36;
+    background: #dfead8;
+    color: #17222c;
   }
   .quotePrintAreaTitle .printBilingual {
     grid-template-columns: auto auto;
@@ -4061,7 +4062,7 @@ img {
     display: flex;
     gap: 5px;
     align-items: baseline;
-    color: #305543;
+    color: #17222c;
     font-weight: 800;
     white-space: nowrap;
   }
@@ -4125,6 +4126,16 @@ img {
   .quotePrintItem > .printBilingual {
     font-size: 7px;
   }
+  .quotePrintItem > .printBilingual:nth-child(3),
+  .quotePrintItem > .printBilingual:nth-child(12) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    line-height: 1.2;
+  }
+  .quotePrintItem > .printBilingual:nth-child(3) > span:nth-child(2),
+  .quotePrintItem > .printBilingual:nth-child(12) > span:nth-child(2) {
+    color: #6c7880;
+  }
   .quotePrintItem > .printBilingual > span:first-child {
     font-weight: 700;
   }
@@ -4163,8 +4174,8 @@ img {
     border-right: 1px solid #8fa78f;
     border-bottom: 1px solid #8fa78f;
     border-left: 1px solid #8fa78f;
-    background: #f1f5ef;
-    color: #2c4c37;
+    background: #dfead8;
+    color: #17222c;
     font-size: 8px;
     font-weight: 800;
     break-inside: avoid;
@@ -4177,8 +4188,11 @@ img {
   }
   .quotePrintFees {
     margin-top: 12px;
+    margin-bottom: 14mm;
     border: 1px solid #c7d3c6;
+    break-before: page;
     break-inside: avoid;
+    page-break-before: always;
     page-break-inside: avoid;
   }
   .quotePrintFee {
@@ -4209,16 +4223,16 @@ img {
   }
   .quotePrintGrandTotal {
     min-height: 34px;
-    border-top: 2px solid #c2c500;
+    border-top: 2px solid #759872;
     border-bottom: 0;
-    background: var(--navy);
-    color: #fff;
+    background: #dfead8;
+    color: #17222c;
     font-size: 10px;
     font-weight: 800;
   }
   .quotePrintGrandTotal .printBilingual,
   .quotePrintGrandTotal .quotePrintAmount {
-    color: #fff !important;
+    color: #17222c !important;
   }
   .quotePrintGrandTotal .quotePrintAmount {
     font-size: 11px;
@@ -4234,6 +4248,7 @@ img {
     border-top: 1px solid #cdd5cd;
     padding-top: 2mm;
     color: #53616a;
+    background: #fff;
     font-size: 7px;
   }
   .quotePrintFooter > span:first-child {

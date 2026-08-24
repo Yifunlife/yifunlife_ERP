@@ -1369,6 +1369,19 @@ const splitBilingual = (value: string) => {
   const [zh = "", ...englishParts] = value.split(/\s*\/\s*/);
   return { zh, en: englishParts.join(" / ") };
 };
+const englishRemark = (value: string) => {
+  const { zh, en } = splitBilingual(value || "");
+  if (en && !/[\u4e00-\u9fff]/.test(en)) return en;
+  const remark = zh.trim();
+  if (!remark || remark === "—") return "";
+  if (/^三代触屏.*打印.*小票$/.test(remark))
+    return "Third-generation touchscreen with receipt printer";
+  const toyCount = remark.match(/^含玩具\s*(\d+)\s*个?$/);
+  if (toyCount) return `Includes ${toyCount[1]} toys`;
+  if (/^不含工具$/.test(remark)) return "Tools not included";
+  if (/^如图$/.test(remark)) return "As shown";
+  return "English translation pending";
+};
 const printValue = (value: string | number | null | undefined) =>
   value === null || value === undefined || value === "" ? "\u00a0" : value;
 function autoColor(src: string): Promise<string> {
@@ -2251,7 +2264,9 @@ export default function Home() {
           <QuoteBilingual {...colourLabel(p.colorTag)} />
         </td>
         <td>{p.volume || "—"}</td>
-        <td>{p.note || "—"}</td>
+        <td>
+          <QuoteBilingual zh={p.note || "—"} en={englishRemark(p.note)} />
+        </td>
       </tr>
     );
   };
@@ -2281,7 +2296,7 @@ export default function Home() {
         <strong className="quotePrintAmount">{money(amount, currency)}</strong>
         <PrintBilingual {...colour} />
         <span>{printValue(p.volume)}</span>
-        <span>{printValue(p.note)}</span>
+        <PrintBilingual zh={p.note || "\u00a0"} en={englishRemark(p.note)} />
       </div>
     );
   };
