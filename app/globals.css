@@ -4054,7 +4054,7 @@ img {
   }
   .quotePrintColumnHeader {
     min-height: 28px;
-    border-bottom: 1px solid #6f9272;
+    border: 1px solid #597965;
     background: var(--navy);
     color: #fff;
     font-size: 6.5px;
@@ -4062,11 +4062,25 @@ img {
     text-align: center;
   }
   .quotePrintColumnHeader .printBilingual {
+    grid-template-columns: 1fr;
+    gap: 2px;
     color: inherit;
+  }
+  .quotePrintColumnHeader > * {
+    height: 100%;
+    display: grid;
+    align-content: center;
+    padding: 3px 2px;
+    border-right: 1px solid rgba(255, 255, 255, .38);
+  }
+  .quotePrintColumnHeader > *:last-child {
+    border-right: 0;
   }
   .quotePrintItem {
     min-height: 64px;
-    border-bottom: 1px solid #dbe0db;
+    border-right: 1px solid #c7d3c6;
+    border-bottom: 1px solid #c7d3c6;
+    border-left: 1px solid #c7d3c6;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -4075,6 +4089,10 @@ img {
     padding: 4px 5px;
     color: #17222c;
     overflow-wrap: anywhere;
+    border-right: 1px solid #d3ddd2;
+  }
+  .quotePrintItem > *:last-child {
+    border-right: 0;
   }
   .quotePrintItem > span:not(.printBilingual),
   .quotePrintItem > strong {
@@ -4118,7 +4136,9 @@ img {
     align-items: center;
     min-height: 27px;
     padding: 4px 8px;
+    border-right: 1px solid #8fa78f;
     border-bottom: 1px solid #8fa78f;
+    border-left: 1px solid #8fa78f;
     background: #f1f5ef;
     color: #2c4c37;
     font-size: 8px;
@@ -4133,7 +4153,7 @@ img {
   }
   .quotePrintFees {
     margin-top: 12px;
-    border-top: 1px solid #d4dbd4;
+    border: 1px solid #c7d3c6;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -4142,7 +4162,7 @@ img {
     grid-template-columns: minmax(0, 1fr) 120px;
     align-items: center;
     min-height: 26px;
-    border-bottom: 1px solid #dce2dc;
+    border-bottom: 1px solid #c7d3c6;
     color: #263945;
     font-size: 8px;
     font-weight: 600;
@@ -4150,6 +4170,7 @@ img {
   .quotePrintFee .printBilingual {
     grid-template-columns: minmax(180px, .8fr) minmax(0, 1.2fr);
     padding: 4px 10px;
+    border-right: 1px solid #c7d3c6;
   }
   .quotePrintFee .quotePrintAmount {
     padding: 4px 10px;
