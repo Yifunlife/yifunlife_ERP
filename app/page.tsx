@@ -2247,6 +2247,10 @@ export default function Home() {
         sourceRows += 1;
         const quantity = rawQuantity !== null && rawQuantity > 0 ? rawQuantity : 1;
         const sourceImageId = importCellText(row[imageColumn]).match(/(ID_[A-F0-9]+)/i)?.[1];
+        const sourceImageValue = importCellText(row[imageColumn]);
+        const importedImage =
+          (sourceImageId ? workbookImages.get(sourceImageId) : "") ||
+          (/^https?:\/\//i.test(sourceImageValue) ? sourceImageValue : "");
         const sourceUnitPrice = (unitColumn: number, amountColumn: number) => {
           const unitPrice = unitColumn >= 0 ? importCellNumber(row[unitColumn]) : null;
           const amount = amountColumn >= 0 ? importCellNumber(row[amountColumn]) : null;
@@ -2258,26 +2262,26 @@ export default function Home() {
         const createImportedProduct = (sku: string, catalog?: Product): Product => ({
           id: `imported-${headerIndex + rowOffset + 1}-${sku || "no-sku"}`,
           sku,
-          name: catalog?.name || sourceName || sku || "未命名导入项目",
+          name: sourceName || catalog?.name || sku || "未命名导入项目",
           en: catalog?.en || "",
           category: currentArea,
           family: catalog?.family || ("大型设备" as const),
           price: catalog?.price ?? cnyUnitPrice,
           priceNote: "来自导入报价表",
           usd: catalog?.usd ?? usdUnitPrice,
-          unit: catalog?.unit || importCellText(row[unitColumn]),
-          spec: catalog?.spec || importCellText(row[specificationColumn]),
-          brand: catalog?.brand || importCellText(row[brandColumn]) || "YIFUN",
+          unit: importCellText(row[unitColumn]) || catalog?.unit,
+          spec: importCellText(row[specificationColumn]) || catalog?.spec,
+          brand: importCellText(row[brandColumn]) || catalog?.brand || "YIFUN",
           material: catalog?.material || "",
-          note: catalog?.note || importCellText(row[noteColumn]),
-          image: catalog?.image || (sourceImageId ? workbookImages.get(sourceImageId) : "") || "",
-          volume: catalog?.volume || importCellText(row[volumeColumn]),
+          note: importCellText(row[noteColumn]) || catalog?.note,
+          image: importedImage || catalog?.image || "",
+          volume: importCellText(row[volumeColumn]) || catalog?.volume,
           stock: catalog?.stock ?? null,
           majorCategory: catalog?.majorCategory || ("生活场景 / Lifestyle Scene" as MajorCategory),
           category1: catalog?.category1 || "自定义产品",
-          category2: catalog?.category2 || currentArea,
+          category2: currentArea,
           category3: catalog?.category3 || "自定义产品",
-          colorTag: catalog?.colorTag || importCellText(row[colorColumn]) || "待确认",
+          colorTag: importCellText(row[colorColumn]) || catalog?.colorTag || "待确认",
           hasScreen: catalog?.hasScreen || false,
           isRecommended: catalog?.isRecommended || false,
           relatedIds: [],
