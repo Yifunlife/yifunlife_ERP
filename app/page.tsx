@@ -5114,7 +5114,8 @@ export default function Home() {
                     </td>
                     <td colSpan={3}>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={fees.packaging}
                         onChange={(e) =>
                           setFees({
@@ -5129,7 +5130,8 @@ export default function Home() {
                     <td colSpan={10}>除甲醛 / Formaldehyde removal</td>
                     <td colSpan={3}>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={fees.formaldehyde}
                         onChange={(e) =>
                           setFees({
@@ -5147,7 +5149,8 @@ export default function Home() {
                     </td>
                     <td colSpan={3}>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={fees.shipping}
                         onChange={(e) =>
                           setFees({
@@ -5181,7 +5184,8 @@ export default function Home() {
                     </td>
                     <td colSpan={3}>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={fees.installation}
                         onChange={(e) =>
                           setFees({
@@ -5225,7 +5229,8 @@ export default function Home() {
                       </td>
                       <td colSpan={3}>
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           value={fees.designDeduction}
                           onChange={(e) =>
                             setFees({
