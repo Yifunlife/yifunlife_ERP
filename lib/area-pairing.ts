@@ -18,7 +18,7 @@ export const pairedAreasByMajor: Record<MajorArea, string[]> = {
     "阅读区", "桌面游戏区", "洗衣房区", "BABY区", "育婴室区", "舞台区", "花店区",
   ],
   "农牧生活 / Agro-pastoral Life": [
-    "牧场区", "母鸡生蛋区", "种植采摘区", "果蔬采摘区", "鱼池区",
+    "牧场区", "母鸡生蛋区", "种植采摘区", "鱼池区",
   ],
   "动物世界 / Animal World": ["宠物医院区", "宠物之家区", "沐浴区", "恐龙区"],
   "车生活 / Car Life": ["赛车区", "修车区", "洗车区"],
@@ -75,7 +75,8 @@ const exactAreaMap: Record<string, string> = {
   牧场区域配套玩具: "牧场区",
   母鸡生蛋区域配套玩具: "母鸡生蛋区",
   种植采摘区域配套玩具: "种植采摘区",
-  果蔬采摘区域配套玩具: "果蔬采摘区",
+  果蔬采摘区域配套玩具: "种植采摘区",
+  果蔬采摘区: "种植采摘区",
   鱼池区域配套玩具: "鱼池区",
   恐龙区设备: "恐龙区",
   赛车区域配套玩具: "赛车区",
@@ -118,7 +119,7 @@ export function pairedArea(sourceArea: string, productName: string) {
   if (sourceArea === "牧场区") {
     if (has(text, /母鸡|鸡蛋/)) return "母鸡生蛋区";
     if (has(text, /种植|采摘/)) return "种植采摘区";
-    if (has(text, /果蔬|蔬菜|水果/)) return "果蔬采摘区";
+    if (has(text, /果蔬|蔬菜|水果/)) return "种植采摘区";
     if (has(text, /鱼|钓/)) return "鱼池区";
     return "牧场区";
   }
