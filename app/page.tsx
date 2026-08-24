@@ -2365,9 +2365,16 @@ export default function Home() {
     const nextPairings: Record<string, Record<string, number>> = {};
     importedRows.forEach(({ product, quantity }) => {
       const catalogProduct = catalogProductBySku.get(product.sku.toUpperCase());
-      if (!catalogProduct || catalogProduct.category1 !== "模拟设备") return;
-      relations
-        .filter((relation) => relation.productId === catalogProduct.id)
+      const pairedRelations = catalogProduct
+        ? relations.filter((relation) => relation.productId === catalogProduct.id)
+        : [];
+      if (
+        !catalogProduct ||
+        catalogProduct.category1 === "小玩具" ||
+        !pairedRelations.length
+      )
+        return;
+      pairedRelations
         .forEach((relation) => {
           const relatedProduct = products.find(
             (candidate) => candidate.id === relation.relatedProductId,
