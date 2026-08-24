@@ -2735,155 +2735,10 @@ export default function Home() {
   };
   const exportQuoteExcel = () => {
     if (exportImportedQuoteTemplate()) return;
-    const headers = [
-      "序号 / No.",
-      "款号 / Item Number",
-      "产品名称 / Product Name",
-      "图片展示 / Product Image",
-      "玩具品牌 / Toy Brand",
-      "规格/尺寸 / Specifications",
-      "单位 / Unit",
-      "数量 / Quantity",
-      "成本单价 / Cost RMB",
-      "成本价 / Cost Total RMB",
-      "人民币单价 / CNY Unit Price",
-      "人民币合计 / CNY Amount",
-      "美元单价 / USD Unit Price",
-      "美元合计 / USD Amount",
-      "区域小计 / Area Subtotal",
-      "备注 / Notes",
-      "颜色 / Colour",
-      "体积 / Volume",
-    ];
-    const workbook = XLSX.utils.book_new();
-    const cnyFormat = "¥#,##0";
-    const usdFormat = "$#,##0.00";
-    const rows: Array<Array<string | number>> = [
-      ["YIFUN LIFE / 亦玩集团"],
-      ["产品报价清单 / Product Quotation"],
-      ["项目名称 / Project", quoteProject, "", "", "", "设计师 / Designer", designerName, "", "", "", "业务员 / Sales", salesName],
-      ["报价币种 / Currency", currency, "", "", "", "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
-      [],
-      headers,
-    ];
-    const groupedRows = quoteGroups.filter(([, items]) => items.length);
-    const productRows: Array<{ row: number; item: (typeof quoteItemsInOrder)[number] }> = [];
-    const areaRows: Array<{ row: number; itemRows: number[] }> = [];
-    let serial = 1;
-    groupedRows.forEach(([area, items]) => {
-      const areaRow = rows.length + 1;
-      rows.push([area]);
-      const itemRows: number[] = [];
-      items.forEach((item) => {
-        const row = rows.length + 1;
-        itemRows.push(row);
-        productRows.push({ row, item });
-        rows.push([
-          serial,
-          item.product.sku,
-          `${item.parentId ? "↳ " : ""}${item.product.name}`,
-          item.product.image || "",
-          item.product.brand || "YIFUN",
-          item.product.spec || "—",
-          unitLabel(item.product.unit).zh,
-          item.quantity,
-          "",
-          "",
-          item.product.price ?? "",
-          "",
-          item.product.usd ?? "",
-          "",
-          "",
-          item.parentId
-            ? `关联产品 / Paired with ${cartItemById.get(item.parentId)?.sku || "主产品"}`
-            : item.product.note || "—",
-          colourLabel(item.product.colorTag).zh,
-          item.product.volume || "—",
-        ]);
-        serial += 1;
-      });
-      areaRows.push({ row: areaRow, itemRows });
-    });
-    const feeRows = [
-      ["包装费 / Packaging fee", fees.packaging],
-      ["除甲醛 / Formaldehyde removal", fees.formaldehyde],
-      ["运输费 / Shipping fee", fees.shipping],
-      ["安装费 / Installation fee", fees.installation],
-    ] as const;
-    rows.push([]);
-    const firstFeeRow = rows.length + 1;
-    feeRows.forEach(([label, value]) => rows.push([label, "", "", "", "", "", "", "", "", "", value, "", value]));
-    const subtotalRow = rows.length + 1;
-    rows.push(["小计（不含税） / Subtotal (tax excluded)"]);
-    const taxRow = rows.length + 1;
-    rows.push([includeTax && currency === "CNY" ? "税额 13% / Tax 13%" : "不含税 / Tax excluded"]);
-    const designRow = rows.length + 1;
-    rows.push(["设计费抵扣 / Design fee deduction", "", "", "", "", "", "", "", "", "", showDesignDeduction ? fees.designDeduction : 0, "", showDesignDeduction ? fees.designDeduction : 0]);
-    const totalRow = rows.length + 1;
-    rows.push(["总计（含税） / Total (tax included)"]);
-    const sheet = XLSX.utils.aoa_to_sheet(rows);
-    productRows.forEach(({ row, item }) => {
-      sheet[`L${row}`] = {
-        t: "n",
-        f: `H${row}*K${row}`,
-        v: item.quantity * (item.product.price || 0),
-        z: cnyFormat,
-      };
-      sheet[`N${row}`] = {
-        t: "n",
-        f: `H${row}*M${row}`,
-        v: item.quantity * (item.product.usd || 0),
-        z: usdFormat,
-      };
-      sheet[`K${row}`] = { ...sheet[`K${row}`], z: cnyFormat };
-      sheet[`M${row}`] = { ...sheet[`M${row}`], z: usdFormat };
-    });
-    areaRows.forEach(({ row, itemRows }) => {
-      const firstRow = itemRows[0];
-      const lastRow = itemRows.at(-1);
-      if (!firstRow || !lastRow) return;
-      sheet[`O${row}`] = {
-        t: "n",
-        f: `SUM(${currency === "USD" ? "N" : "L"}${firstRow}:${currency === "USD" ? "N" : "L"}${lastRow})`,
-        v: itemRows.reduce((total, itemRow) => total + Number(sheet[`${currency === "USD" ? "N" : "L"}${itemRow}`]?.v || 0), 0),
-        z: currency === "USD" ? usdFormat : cnyFormat,
-      };
-    });
-    const amountColumn = currency === "USD" ? "N" : "L";
-    const feeColumn = currency === "USD" ? "M" : "K";
-    const areaTotalFormula = areaRows.map(({ row }) => `O${row}`).join(",") || "0";
-    sheet[`${amountColumn}${subtotalRow}`] = {
-      t: "n",
-      f: `SUM(${areaTotalFormula})+SUM(${feeColumn}${firstFeeRow}:${feeColumn}${firstFeeRow + feeRows.length - 1})`,
-      v: subtotal + fees.packaging + fees.formaldehyde + fees.shipping + fees.installation,
-      z: currency === "USD" ? usdFormat : cnyFormat,
-    };
-    sheet[`${amountColumn}${taxRow}`] = {
-      t: "n",
-      f: currency === "CNY" && includeTax ? `${amountColumn}${subtotalRow}*13%` : "0",
-      v: tax,
-      z: currency === "USD" ? usdFormat : cnyFormat,
-    };
-    sheet[`${amountColumn}${totalRow}`] = {
-      t: "n",
-      f: `${amountColumn}${subtotalRow}+${amountColumn}${taxRow}-${feeColumn}${designRow}`,
-      v: totalWithTax,
-      z: currency === "USD" ? usdFormat : cnyFormat,
-    };
-    sheet["!merges"] = [
-      XLSX.utils.decode_range("A1:R1"),
-      XLSX.utils.decode_range("A2:R2"),
-      ...areaRows.map(({ row }) => XLSX.utils.decode_range(`A${row}:N${row}`)),
-    ];
-    sheet["!cols"] = [
-      { wch: 8 }, { wch: 16 }, { wch: 34 }, { wch: 28 }, { wch: 16 },
-      { wch: 25 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
-      { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 18 },
-      { wch: 28 }, { wch: 14 }, { wch: 14 },
-    ];
-    XLSX.utils.book_append_sheet(workbook, sheet, "报价清单");
-    const fileName = `${(quoteProject || "Yifun_Life_Quotation").replace(/[^\w\u4e00-\u9fff-]+/g, "_")}_${currency}.xlsx`;
-    XLSX.writeFile(workbook, fileName, { compression: true });
+    setQuoteImportError(
+      "请先导入报价总表模板。系统只会在原模板中填写数据和公式，不会再新建或改变表格格式。",
+    );
+    setQuoteImportOpen(true);
   };
   const packageProducts = (group: KitchenPackageGroup) =>
     group.source === "main"
@@ -5006,8 +4861,13 @@ export default function Home() {
         </div>
       )}
       {cartOpen && (
-        <div className="overlay">
-          <aside className="drawer">
+        <div
+          className="overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCartOpen(false);
+          }}
+        >
+          <aside className="drawer" onMouseDown={(event) => event.stopPropagation()}>
             <div className="drawerHead">
               <div>
                 <span>YOUR SELECTION · {currency}</span>
