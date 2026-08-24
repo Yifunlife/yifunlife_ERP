@@ -2099,14 +2099,14 @@ export default function Home() {
     }));
     setPairingSuggestion(null);
   };
-  const changeSuggestedPairingQuantity = (id: string, change: number) => {
+  const setSuggestedPairingQuantity = (id: string, quantity: number) => {
     setPairingSuggestion((current) =>
       current
         ? {
             ...current,
             relatedItems: current.relatedItems.map((item) =>
               item.product.id === id
-                ? { ...item, quantity: Math.max(0, item.quantity + change) }
+                ? { ...item, quantity: Math.max(0, Math.floor(quantity || 0)) }
                 : item,
             ),
           }
@@ -3322,10 +3322,22 @@ export default function Home() {
             <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
             <small>SKU: {product.sku}</small>
           </div>
-          <div className="pairingDialogQty" aria-label={`${product.sku} 数量`}>
-            <button onClick={() => changeSuggestedPairingQuantity(product.id, -1)} disabled={quantity === 0} aria-label={`减少 ${product.sku} 数量`}>−</button>
-            <span>{quantity}</span>
-            <button onClick={() => changeSuggestedPairingQuantity(product.id, 1)} aria-label={`增加 ${product.sku} 数量`}>＋</button>
+          <div className="pairingDialogQty">
+            <label>
+              <span>数量</span>
+              <input
+                aria-label={`${product.sku} 数量`}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                type="text"
+                value={quantity || ""}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (/^\d*$/.test(value))
+                    setSuggestedPairingQuantity(product.id, Number(value || 0));
+                }}
+              />
+            </label>
           </div>
         </article>
       ))
