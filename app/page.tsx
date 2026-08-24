@@ -1873,7 +1873,7 @@ export default function Home() {
             : category;
   const quoteProducts = [...products, ...importedProducts];
   const cartItems = quoteProducts
-    .filter((p) => cart[p.id])
+    .filter((p) => Object.hasOwn(cart, p.id))
     .map((p) => ({ ...p, qty: cart[p.id] }))
     .sort(
       (a, b) =>
@@ -1908,6 +1908,7 @@ export default function Home() {
   }> = [];
   const cartItemById = new Map(cartItems.map((item) => [item.id, item]));
   const allocatedChildQuantities = new Map<string, number>();
+  const pairedChildIds = new Set<string>();
   const pairedParentIds = new Set(
     Object.entries(cartPairings)
       .filter(
@@ -1929,12 +1930,12 @@ export default function Home() {
         ([childId, configuredQuantity]) => {
           const child = cartItemById.get(childId);
           if (!child) return;
+          pairedChildIds.add(childId);
           const allocated = allocatedChildQuantities.get(childId) || 0;
           const quantity = Math.min(
             Math.max(0, configuredQuantity),
             Math.max(0, child.qty - allocated),
           );
-          if (!quantity) return;
           allocatedChildQuantities.set(childId, allocated + quantity);
           cartHierarchyItems.push({
             product: child,
@@ -1949,7 +1950,8 @@ export default function Home() {
     .filter((item) => !pairedParentIds.has(item.id))
     .forEach((item) => {
       const quantity = item.qty - (allocatedChildQuantities.get(item.id) || 0);
-      if (!quantity) return;
+      if (quantity === 0 && pairedChildIds.has(item.id)) return;
+      if (quantity < 0) return;
       cartHierarchyItems.push({
         product: item,
         quantity,
@@ -2140,7 +2142,7 @@ export default function Home() {
     nextQuantity: number,
     parentId?: string,
   ) => {
-    const quantity = Math.max(1, Math.floor(nextQuantity || 1));
+    const quantity = Math.max(0, Math.floor(nextQuantity || 0));
     if (!parentId) {
       setCart((current) => ({ ...current, [productId]: quantity }));
       return;
@@ -2166,7 +2168,7 @@ export default function Home() {
     const amount = unitPrice === null ? null : unitPrice * quantity;
     return (
       <tr
-        className={parentId ? "quoteChildRow" : "quoteParentRow"}
+        className={`${parentId ? "quoteChildRow" : "quoteParentRow"}${quantity === 0 ? " quoteZeroQuantity" : ""}`}
         key={`${parentId || "root"}-${p.id}`}
       >
         <td>{serial}</td>
@@ -5076,7 +5078,7 @@ export default function Home() {
             <div className="drawerContent">
               {cartHierarchyItems.map(({ product: p, quantity, parentId }) => (
                 <div
-                  className={`cartItem${parentId ? " cartChildItem" : ""}`}
+                  className={`cartItem${parentId ? " cartChildItem" : ""}${quantity === 0 ? " cartZeroQuantity" : ""}`}
                   key={`${parentId || "root"}-${p.id}`}
                 >
                   <div className="cartImage">
@@ -5099,25 +5101,21 @@ export default function Home() {
                     </strong>
                   </div>
                   <div className="qty">
-                    <button
-                      onClick={() =>
-                        parentId
-                          ? changePairedCartQuantity(parentId, p.id, -1)
-                          : remove(p.id)
-                      }
-                    >
-                      −
-                    </button>
-                    <span>{quantity}</span>
-                    <button
-                      onClick={() =>
-                        parentId
-                          ? changePairedCartQuantity(parentId, p.id, 1)
-                          : add(p.id)
-                      }
-                    >
-                      ＋
-                    </button>
+                    <label>
+                      <span>数量</span>
+                      <input
+                        aria-label={`${p.sku || p.name} 数量`}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        type="text"
+                        value={quantity}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (/^\d+$/.test(value))
+                            setQuoteItemQuantity(p.id, Number(value), parentId);
+                        }}
+                      />
+                    </label>
                   </div>
                 </div>
               ))}
@@ -5152,6 +5150,12 @@ export default function Home() {
             <div className="quoteToolbar">
               <b>报价清单已生成 / Quotation ready · {currency}</b>
               <div>
+                <button
+                  className="outline"
+                  onClick={() => setCurrency((value) => (value === "CNY" ? "USD" : "CNY"))}
+                >
+                  切换至 {currency === "CNY" ? "美元 USD" : "人民币 CNY"}
+                </button>
                 <button className="outline" onClick={() => setQuoteOpen(false)}>
                   返回编辑 / Back
                 </button>

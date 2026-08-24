@@ -2340,6 +2340,10 @@ img {
   padding-left: 12px;
   background: #f8faf6;
 }
+.cartZeroQuantity {
+  background: #fff3f3;
+  box-shadow: inset 4px 0 0 #d94c4c;
+}
 .cartRelationLabel,
 .quoteRelationLabel {
   display: block;
@@ -2386,21 +2390,41 @@ img {
   color: var(--navy);
 }
 .qty {
-  display: flex;
+  min-width: 78px;
+}
+.qty label {
+  display: grid;
+  grid-template-columns: auto 44px;
   align-items: center;
-  border: 1px solid #e0e3de;
-  border-radius: 17px;
+  gap: 5px;
+  color: #71818b;
+  font-size: 10px;
+  font-weight: 700;
 }
-.qty button {
-  border: 0;
-  background: transparent;
-  width: 28px;
+.qty input {
+  width: 44px;
   height: 30px;
-}
-.qty span {
-  font-size: 11px;
-  min-width: 20px;
+  border: 1px solid #cbd7cf;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--navy);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
   text-align: center;
+}
+.qty input:focus {
+  outline: 2px solid #a6c9ed;
+  outline-offset: 1px;
+}
+.cartZeroQuantity .qty input,
+.quoteZeroQuantity .quoteQtyInput {
+  border-color: #d94c4c;
+  background: #fff8f8;
+  color: #b62f2f;
+}
+.quoteZeroQuantity td {
+  background: #fff8f8;
 }
 .drawerFoot {
   padding: 22px 30px 28px;
