@@ -1839,6 +1839,27 @@ img {
 }
 .pairingDialogSectionTitle b { font-size: 14px; }
 .pairingDialogSectionTitle small { color: #72828d; font-size: 11px; }
+.pairingDialogTabs {
+  display: flex;
+  gap: 8px;
+  padding: 14px 0 0;
+}
+.pairingDialogTabs button {
+  border: 1px solid #ccd8ce;
+  border-radius: 999px;
+  background: #fff;
+  color: #5d7180;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+.pairingDialogTabs button.on {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fff;
+}
+.pairingDialogTabs button span { margin-left: 4px; opacity: .78; }
 .pairingDialogSectionEmpty {
   margin: 8px 0 0;
   padding: 12px;

@@ -1158,6 +1158,15 @@ const hospitalPairingGroups = {
   english: ["医院区（英文版）"],
   future: ["未来医院区", "未来医院区（英文版）"],
 } as const;
+type HospitalPairingGroup = keyof typeof hospitalPairingGroups;
+const hospitalPairingGroupLabels: Record<
+  HospitalPairingGroup,
+  { tab: string; title: string; empty: string }
+> = {
+  regular: { tab: "常规", title: "常规医院玩具", empty: "暂无常规医院玩具。" },
+  english: { tab: "英文", title: "英文版医院玩具", empty: "暂无英文版医院玩具。" },
+  future: { tab: "未来", title: "未来医院玩具", empty: "暂无未来医院玩具。" },
+};
 const hospitalToySourceCategories = new Set(
   Object.values(hospitalToyNavigationGroups).flat(),
 );
@@ -1530,6 +1539,8 @@ export default function Home() {
   >({});
   const [pairingSuggestion, setPairingSuggestion] =
     useState<PairingSuggestion | null>(null);
+  const [collapsedHospitalPairingGroups, setCollapsedHospitalPairingGroups] =
+    useState<Set<HospitalPairingGroup>>(() => new Set());
   const [pairingRemovalPrompt, setPairingRemovalPrompt] =
     useState<PairingRemovalPrompt | null>(null);
   const [quoteImportOpen, setQuoteImportOpen] = useState(false);
@@ -1998,6 +2009,7 @@ export default function Home() {
           .map((product) => ({ product, quantity: 0, isBound: false }))
       : [];
     const relatedItems = [...pairedItems, ...areaOptions];
+    setCollapsedHospitalPairingGroups(new Set());
     setPairingSuggestion({ source, relatedItems });
   };
   const clearQuotation = () => {
@@ -3064,6 +3076,13 @@ export default function Home() {
     ) : (
       <p className="pairingDialogSectionEmpty">{emptyText}</p>
     );
+  const toggleHospitalPairingGroup = (group: HospitalPairingGroup) =>
+    setCollapsedHospitalPairingGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
   return (
     <main>
       <header className="topbar">
@@ -3945,48 +3964,44 @@ export default function Home() {
               </section>
               {hospitalPairingSource ? (
                 <>
-                  <section className="pairingDialogSection">
-                    <div className="pairingDialogSectionTitle">
-                      <b>常规医院玩具</b>
-                      <small>默认不加入，可按需加减</small>
-                    </div>
-                    {pairingDialogItems(
-                      pairingSuggestion.relatedItems.filter(
+                  <div className="pairingDialogTabs" role="group" aria-label="医院玩具分类">
+                    {(Object.keys(hospitalPairingGroups) as HospitalPairingGroup[]).map((group) => {
+                      const collapsed = collapsedHospitalPairingGroups.has(group);
+                      const count = pairingSuggestion.relatedItems.filter(
                         (item) =>
                           !item.isBound &&
-                          hospitalPairingGroups.regular.includes(item.product.category2 as never),
-                      ),
-                      "暂无常规医院玩具。",
-                    )}
-                  </section>
-                  <section className="pairingDialogSection">
-                    <div className="pairingDialogSectionTitle">
-                      <b>英文版医院玩具</b>
-                      <small>默认不加入，可按需加减</small>
-                    </div>
-                    {pairingDialogItems(
-                      pairingSuggestion.relatedItems.filter(
-                        (item) =>
-                          !item.isBound &&
-                          hospitalPairingGroups.english.includes(item.product.category2 as never),
-                      ),
-                      "暂无英文版医院玩具。",
-                    )}
-                  </section>
-                  <section className="pairingDialogSection">
-                    <div className="pairingDialogSectionTitle">
-                      <b>未来医院玩具</b>
-                      <small>默认不加入，可按需加减</small>
-                    </div>
-                    {pairingDialogItems(
-                      pairingSuggestion.relatedItems.filter(
-                        (item) =>
-                          !item.isBound &&
-                          hospitalPairingGroups.future.includes(item.product.category2 as never),
-                      ),
-                      "暂无未来医院玩具。",
-                    )}
-                  </section>
+                          hospitalPairingGroups[group].includes(item.product.category2 as never),
+                      ).length;
+                      return (
+                        <button
+                          type="button"
+                          className={collapsed ? "" : "on"}
+                          aria-expanded={!collapsed}
+                          onClick={() => toggleHospitalPairingGroup(group)}
+                          key={group}
+                        >
+                          {hospitalPairingGroupLabels[group].tab} {collapsed ? "＋" : "−"} <span>{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(Object.keys(hospitalPairingGroups) as HospitalPairingGroup[]).map((group) => {
+                    const collapsed = collapsedHospitalPairingGroups.has(group);
+                    const items = pairingSuggestion.relatedItems.filter(
+                      (item) =>
+                        !item.isBound &&
+                        hospitalPairingGroups[group].includes(item.product.category2 as never),
+                    );
+                    return (
+                      <section className="pairingDialogSection" hidden={collapsed} key={group}>
+                        <div className="pairingDialogSectionTitle">
+                          <b>{hospitalPairingGroupLabels[group].title}</b>
+                          <small>默认不加入，可按需加减</small>
+                        </div>
+                        {pairingDialogItems(items, hospitalPairingGroupLabels[group].empty)}
+                      </section>
+                    );
+                  })}
                 </>
               ) : (
                 <section className="pairingDialogSection">
