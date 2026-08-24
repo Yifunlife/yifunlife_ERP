@@ -1564,6 +1564,7 @@ export default function Home() {
   const [companyAddress, setCompanyAddress] = useState("");
   const [installationIncludesTravel, setInstallationIncludesTravel] =
     useState(true);
+  const [includeTax, setIncludeTax] = useState(true);
   const [showDesignDeduction, setShowDesignDeduction] = useState(false);
   const [fees, setFees] = useState({
     packaging: 0,
@@ -1968,7 +1969,7 @@ export default function Home() {
     fees.formaldehyde +
     fees.shipping +
     fees.installation;
-  const tax = currency === "CNY" ? preTax * 0.13 : 0;
+  const tax = currency === "CNY" && includeTax ? preTax * 0.13 : 0;
   const totalWithTax =
     preTax + tax - (showDesignDeduction ? fees.designDeduction : 0);
   const add = (id: string) => {
@@ -2746,7 +2747,11 @@ export default function Home() {
     const subtotalRow = summaryRows.length + 1;
     summaryRows.push(["小计（不含税） / Subtotal (tax excluded)"]);
     const taxRow = summaryRows.length + 1;
-    summaryRows.push(["税额 13% / Tax 13%"]);
+    summaryRows.push([
+      includeTax && currency === "CNY"
+        ? "税额 13% / Tax 13%"
+        : "不含税 / Tax excluded",
+    ]);
     const designRow = summaryRows.length + 1;
     summaryRows.push(["设计费抵扣 / Design fee deduction", showDesignDeduction ? fees.designDeduction : 0]);
     const totalRow = summaryRows.length + 1;
@@ -2776,7 +2781,7 @@ export default function Home() {
     };
     summary[`C${taxRow}`] = {
       t: "n",
-      f: currency === "CNY" ? `C${subtotalRow}*13%` : "0",
+      f: currency === "CNY" && includeTax ? `C${subtotalRow}*13%` : "0",
       v: tax,
       z: currencyFormat,
     };
@@ -5205,17 +5210,32 @@ export default function Home() {
                       产品与附加费用合计 / Products and additional fees
                     </td>
                   </tr>
-                  {currency === "CNY" && (
-                    <tr>
-                      <td colSpan={10}>
-                        税额 13%（可抵税） / Tax 13% (deductible)
-                      </td>
-                      <td>{money(tax, currency)}</td>
-                      <td colSpan={2}>
-                        按不含税小计计算 / Calculated on pre-tax subtotal
-                      </td>
-                    </tr>
-                  )}
+                  {currency === "CNY" &&
+                    (includeTax ? (
+                      <tr className="costRow">
+                        <td colSpan={10}>
+                          税额 13%（可抵税） / Tax 13% (deductible){" "}
+                          <button
+                            className="hideDeduction"
+                            onClick={() => setIncludeTax(false)}
+                          >
+                            不含税 / Tax excluded
+                          </button>
+                        </td>
+                        <td>{money(tax, currency)}</td>
+                        <td colSpan={2}>
+                          按不含税小计计算 / Calculated on pre-tax subtotal
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr className="showDeduction">
+                        <td colSpan={13}>
+                          <button onClick={() => setIncludeTax(true)}>
+                            ＋ 含税 / Include tax 13%
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   {showDesignDeduction ? (
                     <tr className="costRow">
                       <td colSpan={10}>
@@ -5252,15 +5272,15 @@ export default function Home() {
                   )}
                   <tr className="grandTotal">
                     <td colSpan={10}>
-                      {currency === "CNY"
+                      {currency === "CNY" && includeTax
                         ? "总计（含税） / Total (tax included)"
-                        : "总计 / Total"}
+                        : "总计（不含税） / Total (tax excluded)"}
                     </td>
                     <td>{money(totalWithTax, currency)}</td>
                     <td colSpan={2}>
-                      {currency === "CNY"
+                      {currency === "CNY" && includeTax
                         ? "已含税并扣除设计费 / Tax included, design deduction applied"
-                        : "Design deduction applied"}
+                        : "未含税，已扣除设计费 / Tax excluded, design deduction applied"}
                     </td>
                   </tr>
                 </tfoot>
