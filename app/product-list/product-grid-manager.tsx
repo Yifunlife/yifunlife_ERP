@@ -257,6 +257,9 @@ export function ProductGridManager({
   pairingStandalone?: boolean;
 }) {
   const [rows, setRows] = useState<GridRow[]>([]);
+  const [adminAccess, setAdminAccess] = useState<
+    "checking" | "granted" | "denied"
+  >("checking");
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("正在加载产品清单…");
@@ -287,6 +290,14 @@ export function ProductGridManager({
   const pairingMatrixWrapRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
+    const sessionResponse = await fetch("/api/auth/session");
+    const session = await sessionResponse.json().catch(() => ({}));
+    if (!session.authenticated || session.role !== "admin") {
+      setAdminAccess("denied");
+      setStatus("产品清单与玩具配对仅限管理员使用。");
+      return;
+    }
+    setAdminAccess("granted");
     const response = await fetch("/api/catalog");
     if (!response.ok) {
       setStatus("无法加载产品清单，请返回主页面重新登录。");
@@ -1012,6 +1023,27 @@ export function ProductGridManager({
     ],
     [categoryPaths],
   );
+
+  if (adminAccess !== "granted") {
+    return (
+      <main className="skuGridPage skuGridAccess">
+        <section className="skuGridAccessCard">
+          <span>ADMIN ACCESS</span>
+          <h1>{adminAccess === "checking" ? "正在验证权限…" : "仅管理员可访问"}</h1>
+          <p>
+            {adminAccess === "checking"
+              ? "正在确认当前账号权限。"
+              : "员工账号只能浏览产品、制作报价单、导入清单和导出文件。"}
+          </p>
+          {adminAccess === "denied" && (
+            <a className="outline" href="/">
+              返回报价系统
+            </a>
+          )}
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className={`skuGridPage ${pairingStandalone ? "pairingStandalone" : ""}`}>

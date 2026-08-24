@@ -1498,6 +1498,7 @@ export default function Home() {
   const [loginPasswordConfirm, setLoginPasswordConfirm] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
   const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
+  const isAdmin = authAccount?.role === "admin";
   const [staffOpen, setStaffOpen] = useState(false);
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [staffUsers, setStaffUsers] = useState<ManagedUser[]>([]);
@@ -3035,6 +3036,7 @@ export default function Home() {
     }
   };
   const openEditor = async (p: Product) => {
+    if (!isAdmin) return;
     setEditor(p);
     setDraft(p);
     if (
@@ -3354,12 +3356,14 @@ export default function Home() {
           >
             筛选器
           </button>
-          <button
-            className="outline"
-            onClick={() => window.open("/product-pairing", "_blank", "noopener")}
-          >
-            玩具配对管理
-          </button>
+          {isAdmin && (
+            <button
+              className="outline"
+              onClick={() => window.open("/product-pairing", "_blank", "noopener")}
+            >
+              玩具配对管理
+            </button>
+          )}
           <button
             className="outline"
             onClick={() => {
@@ -3888,15 +3892,17 @@ export default function Home() {
                       <h3>{pack.name}</h3>
                       <p>{pack.description}</p>
                     </div>
-                    <button
-                      className="outline"
-                      onClick={() => {
-                        setPackageDraft(pack);
-                        setPackageManagerOpen(true);
-                      }}
-                    >
-                      配置套餐
-                    </button>
+                    {isAdmin && (
+                      <button
+                        className="outline"
+                        onClick={() => {
+                          setPackageDraft(pack);
+                          setPackageManagerOpen(true);
+                        }}
+                      >
+                        配置套餐
+                      </button>
+                    )}
                   </div>
                   <div className="packageGroups">
                     {pack.groups.map((group) => {
@@ -4066,9 +4072,9 @@ export default function Home() {
                 <div className="productGrid">
                   {items.map((p) => (
                     <article
-                      className="productCard editableCard"
+                      className={`productCard${isAdmin ? " editableCard" : ""}`}
                       key={p.id}
-                      onClick={() => openEditor(p)}
+                      onClick={isAdmin ? () => openEditor(p) : undefined}
                     >
                       <div className="productImage">
                         <Visual p={p} />

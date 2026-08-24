@@ -17,6 +17,11 @@ export const dynamic = "force-dynamic";
 const imageUrl = (key: string) =>
   key ? `/api/catalog/image?key=${encodeURIComponent(key)}` : "";
 
+async function requireAdmin(request: Request) {
+  const session = await getLoginSession(request);
+  return session?.role === "admin" ? session : null;
+}
+
 const recommendationForClient = (recommendation: {
   productId: string;
   relatedProductId: string;
@@ -144,8 +149,8 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await getLoginSession(request)))
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await requireAdmin(request)))
+    return Response.json({ error: "仅管理员可修改产品资料" }, { status: 403 });
   const { productId, patch } = (await request.json()) as {
     productId: string;
     patch: Record<string, unknown>;
@@ -165,8 +170,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await getLoginSession(request)))
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await requireAdmin(request)))
+    return Response.json({ error: "仅管理员可修改系统设置" }, { status: 403 });
   await ensureRecommendationQuantityColumn();
   const payload = (await request.json()) as {
     action:

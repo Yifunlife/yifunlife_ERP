@@ -13,7 +13,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!await getLoginSession(request)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await getLoginSession(request);
+  if (session?.role !== "admin")
+    return Response.json({ error: "仅管理员可更换产品图片" }, { status: 403 });
   const form = await request.formData();
   const file = form.get("file"); const productId = String(form.get("productId") || "").replace(/[^a-zA-Z0-9_-]/g, "");
   if (!(file instanceof File) || !productId || !file.type.startsWith("image/")) return Response.json({ error: "请选择图片文件" }, { status: 400 });
