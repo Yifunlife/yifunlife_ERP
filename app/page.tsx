@@ -1548,6 +1548,7 @@ export default function Home() {
     useState<QuoteImportPreview | null>(null);
   const [quoteImportError, setQuoteImportError] = useState("");
   const [quoteImporting, setQuoteImporting] = useState(false);
+  const [quoteImportDragging, setQuoteImportDragging] = useState(false);
   const [importedProducts, setImportedProducts] = useState<Product[]>([]);
   const quoteImportTemplateRef = useRef<QuoteImportTemplate | null>(null);
   const [quoteImportPriceMode, setQuoteImportPriceMode] =
@@ -4192,7 +4193,20 @@ export default function Home() {
                   当前默认使用国内 VIP 价格；出厂价资料补齐后可在此启用。
                 </small>
               </label>
-              <label className="importDropzone">
+              <label
+                className={quoteImportDragging ? "importDropzone dragging" : "importDropzone"}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setQuoteImportDragging(true);
+                }}
+                onDragLeave={() => setQuoteImportDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setQuoteImportDragging(false);
+                  const file = event.dataTransfer.files?.[0];
+                  if (file) void readQuoteImport(file);
+                }}
+              >
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
@@ -4202,8 +4216,8 @@ export default function Home() {
                     event.currentTarget.value = "";
                   }}
                 />
-                <b>{quoteImporting ? "正在读取表单…" : "选择 Excel 表单"}</b>
-                <small>支持 .xlsx、.xls、.csv；未匹配款号会保留在核对清单中。</small>
+                <b>{quoteImporting ? "正在读取表单…" : quoteImportDragging ? "松开以导入 Excel 表单" : "拖拽 Excel 表单到这里，或点击选择"}</b>
+                <small>支持 .xlsx、.xls、.csv；未匹配款号会作为自定义产品保留在核对清单中。</small>
               </label>
               {quoteImportError && <p className="importError">{quoteImportError}</p>}
               {quoteImportPreview && (
