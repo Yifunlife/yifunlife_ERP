@@ -3695,7 +3695,6 @@ img {
   outline: none;
 }
 .quoteTable .taxModeSelect {
-  margin-left: 12px;
   border: 1px solid #bdcbc1;
   border-radius: 5px;
   background: #fff;
@@ -3704,6 +3703,29 @@ img {
   font-size: 11px;
   font-weight: 700;
   padding: 4px 8px;
+}
+.quoteTable .taxControl {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 12px;
+  color: var(--navy);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.quoteTable .taxControl label {
+  font-weight: 800;
+}
+.quoteTable .taxControl small {
+  color: #74818a;
+  font-size: 9px;
+  font-weight: 600;
+}
+.quoteTable .taxModeSelect:disabled {
+  cursor: not-allowed;
+  background: #eef0ec;
+  color: #7d8587;
 }
 .quoteTable .grandTotal td {
   background: var(--navy) !important;

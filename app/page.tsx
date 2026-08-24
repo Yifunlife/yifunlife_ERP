@@ -2602,7 +2602,10 @@ export default function Home() {
   };
   const exportImportedQuoteTemplate = () => {
     const template = quoteImportTemplateRef.current;
-    if (!template || !importedProducts.length) return false;
+    const sourceProducts = importedProducts.length
+      ? importedProducts
+      : quoteImportPreview?.rows.map(({ product }) => product) || [];
+    if (!template || !sourceProducts.length) return false;
     try {
       const files = unzipSync(new Uint8Array(template.source));
       const worksheetPath = Object.keys(files).find((path) =>
@@ -2634,7 +2637,7 @@ export default function Home() {
       };
       const sourceLines = [
         ...new Map(
-          importedProducts
+          sourceProducts
             .filter(
               (product) =>
                 product.importSourceRow !== undefined &&
@@ -2735,10 +2738,9 @@ export default function Home() {
   };
   const exportQuoteExcel = () => {
     if (exportImportedQuoteTemplate()) return;
-    setQuoteImportError(
-      "请先导入报价总表模板。系统只会在原模板中填写数据和公式，不会再新建或改变表格格式。",
+    window.alert(
+      "当前报价单没有可用的原始 Excel 模板，因此无法保持原格式导出。请先通过“导入清单”载入原报价表后再导出。",
     );
-    setQuoteImportOpen(true);
   };
   const packageProducts = (group: KitchenPackageGroup) =>
     group.source === "main"
@@ -4908,11 +4910,35 @@ export default function Home() {
                         inputMode="numeric"
                         pattern="[0-9]*"
                         type="text"
-                        value={quantity}
+                        value={
+                          quoteQuantityDrafts[quoteQuantityKey(p.id, parentId)] ??
+                          String(quantity)
+                        }
                         onChange={(event) => {
                           const value = event.target.value;
-                          if (/^\d+$/.test(value))
+                          if (!/^\d*$/.test(value)) return;
+                          const quantityKey = quoteQuantityKey(p.id, parentId);
+                          setQuoteQuantityDrafts((current) => ({
+                            ...current,
+                            [quantityKey]: value,
+                          }));
+                          if (value !== "")
                             setQuoteItemQuantity(p.id, Number(value), parentId);
+                        }}
+                        onBlur={() => {
+                          const quantityKey = quoteQuantityKey(p.id, parentId);
+                          const value = quoteQuantityDrafts[quantityKey];
+                          if (value === undefined) return;
+                          if (value !== "")
+                            setQuoteItemQuantity(p.id, Number(value), parentId);
+                          setQuoteQuantityDrafts((current) => {
+                            const next = { ...current };
+                            delete next[quantityKey];
+                            return next;
+                          });
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
                         }}
                       />
                     </label>
@@ -5235,19 +5261,25 @@ export default function Home() {
                   </tr>
                   <tr className="feeSummaryRow">
                     <td className="feeLabel" colSpan={8}>
-                      小计（不含税） / Subtotal (tax excluded){" "}
-                      {currency === "CNY" && (
+                      小计（不含税） / Subtotal (tax excluded)
+                      <span className="taxControl">
+                        <label htmlFor="quote-tax-mode">税额 / Tax</label>
                         <select
+                          id="quote-tax-mode"
                           className="taxModeSelect"
                           value={includeTax ? "included" : "excluded"}
+                          disabled={currency === "USD"}
                           onChange={(event) =>
                             setIncludeTax(event.target.value === "included")
                           }
                         >
-                          <option value="included">含税 13% / Tax included</option>
+                          <option value="included">含税 13% / Tax included (13%)</option>
                           <option value="excluded">不含税 / Tax excluded</option>
                         </select>
-                      )}
+                        {currency === "USD" && (
+                          <small>美元订单不含税 / USD orders are tax excluded</small>
+                        )}
+                      </span>
                     </td>
                     <td className="feeAmount" colSpan={3}>{money(preTax, currency)}</td>
                     <td className="feeNote" colSpan={2}>
