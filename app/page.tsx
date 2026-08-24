@@ -5203,39 +5203,36 @@ export default function Home() {
                   </tr>
                   <tr>
                     <td colSpan={10}>
-                      小计（不含税） / Subtotal (tax excluded)
+                      小计（不含税） / Subtotal (tax excluded){" "}
+                      {currency === "CNY" && (
+                        <select
+                          className="taxModeSelect"
+                          value={includeTax ? "included" : "excluded"}
+                          onChange={(event) =>
+                            setIncludeTax(event.target.value === "included")
+                          }
+                        >
+                          <option value="included">含税 13% / Tax included</option>
+                          <option value="excluded">不含税 / Tax excluded</option>
+                        </select>
+                      )}
                     </td>
                     <td>{money(preTax, currency)}</td>
                     <td colSpan={2}>
                       产品与附加费用合计 / Products and additional fees
                     </td>
                   </tr>
-                  {currency === "CNY" &&
-                    (includeTax ? (
-                      <tr className="costRow">
-                        <td colSpan={10}>
-                          税额 13%（可抵税） / Tax 13% (deductible){" "}
-                          <button
-                            className="hideDeduction"
-                            onClick={() => setIncludeTax(false)}
-                          >
-                            不含税 / Tax excluded
-                          </button>
-                        </td>
-                        <td>{money(tax, currency)}</td>
-                        <td colSpan={2}>
-                          按不含税小计计算 / Calculated on pre-tax subtotal
-                        </td>
-                      </tr>
-                    ) : (
-                      <tr className="showDeduction">
-                        <td colSpan={13}>
-                          <button onClick={() => setIncludeTax(true)}>
-                            ＋ 含税 / Include tax 13%
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                  {currency === "CNY" && includeTax && (
+                    <tr className="costRow">
+                      <td colSpan={10}>
+                        税额 13%（可抵税） / Tax 13% (deductible)
+                      </td>
+                      <td>{money(tax, currency)}</td>
+                      <td colSpan={2}>
+                        按不含税小计计算 / Calculated on pre-tax subtotal
+                      </td>
+                    </tr>
+                  )}
                   {showDesignDeduction ? (
                     <tr className="costRow">
                       <td colSpan={10}>

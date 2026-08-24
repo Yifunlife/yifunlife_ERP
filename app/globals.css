@@ -3389,13 +3389,26 @@ img {
   font-size: 12px;
 }
 .quoteTable .costRow input {
-  width: 100%;
-  border: 0;
-  background: transparent;
+  width: min(100%, 160px);
+  border: 1px solid #bdcbc1;
+  border-radius: 5px;
+  background: #fff;
+  padding: 6px 8px;
   text-align: right;
   font-weight: 700;
   color: var(--navy);
   outline: none;
+}
+.quoteTable .taxModeSelect {
+  margin-left: 12px;
+  border: 1px solid #bdcbc1;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--navy);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
 }
 .quoteTable .grandTotal td {
   background: var(--navy) !important;
