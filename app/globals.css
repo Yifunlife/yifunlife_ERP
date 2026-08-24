@@ -1029,7 +1029,7 @@ img {
 }
 .pairingPinnedHeader {
   box-sizing: border-box;
-  flex: 0 0 110px;
+  flex: 0 0 128px;
   padding: 14px 18px;
   background: #f0f4ed;
   color: var(--navy);
@@ -1044,7 +1044,12 @@ img {
   font-weight: 500;
 }
 .pairingPinnedRows {
-  will-change: transform;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #58758c #dfe7df;
+  scrollbar-gutter: stable;
 }
 .pairingPinnedSource {
   box-sizing: border-box;
@@ -1101,6 +1106,8 @@ img {
 .pairingPinnedSource small { margin-top: 4px; color: #687983; font-size: 11px; font-weight: 500; }
 .pairingMatrixWrap {
   min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
   background: #fff;

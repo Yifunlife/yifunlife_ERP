@@ -284,6 +284,7 @@ export function ProductGridManager({
   const [areaRuleApplying, setAreaRuleApplying] = useState(false);
   const [pairingSavedMessage, setPairingSavedMessage] = useState("");
   const pairingPinnedRowsRef = useRef<HTMLDivElement>(null);
+  const pairingMatrixWrapRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
     const response = await fetch("/api/catalog");
@@ -1183,7 +1184,15 @@ export function ProductGridManager({
                   模拟区主设备
                   <small>{pairingSimulationRows.length} 项</small>
                 </div>
-                <div className="pairingPinnedRows" ref={pairingPinnedRowsRef}>
+                <div
+                  className="pairingPinnedRows"
+                  ref={pairingPinnedRowsRef}
+                  onScroll={(event) => {
+                    const matrix = pairingMatrixWrapRef.current;
+                    if (matrix && matrix.scrollTop !== event.currentTarget.scrollTop)
+                      matrix.scrollTop = event.currentTarget.scrollTop;
+                  }}
+                >
                   {pairingSimulationRows.map((source) => {
                     const matchedToys = pairingToyRows.flatMap((toy) => {
                       const quantity = pairingMatrix[source.id]?.[toy.id] || 0;
@@ -1212,9 +1221,10 @@ export function ProductGridManager({
               </aside>
               <div
                 className="pairingMatrixWrap"
+                ref={pairingMatrixWrapRef}
                 onScroll={(event) => {
                   if (pairingPinnedRowsRef.current)
-                    pairingPinnedRowsRef.current.style.transform = `translateY(-${event.currentTarget.scrollTop}px)`;
+                    pairingPinnedRowsRef.current.scrollTop = event.currentTarget.scrollTop;
                 }}
               >
                 <table className="pairingMatrix">
