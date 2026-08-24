@@ -2707,6 +2707,7 @@ export default function Home() {
     }
   };
   const exportQuoteExcel = () => {
+    if (exportImportedQuoteTemplate()) return;
     const unitPriceTitle = currency === "USD" ? "USD Unit Price" : "CNY Unit Price";
     const amountTitle = currency === "USD" ? "USD Amount" : "CNY Amount";
     const headers = [
@@ -3484,7 +3485,7 @@ export default function Home() {
             <span>当前账号 / ACCOUNT</span>
             <b>{authAccount?.name || "员工"}</b>
             <small>{authAccount?.email}</small>
-            <small>{authAccount?.role === "admin" ? "管理员 / Administrator" : authAccount?.role === "management" ? "管理层 / Management（只读）" : "员工 / Employee"}</small>
+            <small>{authAccount?.role === "admin" ? "管理员 / Administrator" : authAccount?.role === "management" ? "管理层 / Management（可查看全部信息并使用系统）" : "员工 / Employee"}</small>
           </div>
           {canViewStaff && (
             <button
@@ -3546,7 +3547,7 @@ export default function Home() {
               <div>
                 <span className="eyebrow">ACCOUNT ADMINISTRATION</span>
                 <h2>员工管理</h2>
-                <p>{isAdmin ? "管理员可修改全部设置；管理层只读；员工仅可使用报价功能。" : "管理层仅可查看账号、权限与审批状态。"}</p>
+                <p>{isAdmin ? "管理员可修改全部设置；管理层可查看全部信息并使用员工所有功能；员工仅可使用系统功能。" : "管理层可查看全部信息、账号、权限与审批状态，并可使用员工所有系统功能；不能修改系统设置。"}</p>
               </div>
               <button className="closeStaff" onClick={() => setStaffOpen(false)} aria-label="关闭员工管理">×</button>
             </div>
@@ -3566,7 +3567,7 @@ export default function Home() {
                       <label className="staffRoleSelect">
                         <select aria-label={`${user.name} 的账号权限`} value={user.role === "management" ? "management" : "employee"} onChange={(event) => void updateStaffRole(user.email, event.target.value as "employee" | "management")}>
                           <option value="employee">员工（可使用）</option>
-                          <option value="management">管理层（只读）</option>
+                          <option value="management">管理层（查看全部信息并可使用）</option>
                         </select>
                       </label>
                     )}
@@ -5194,12 +5195,6 @@ export default function Home() {
             <div className="quoteToolbar">
               <b>报价清单已生成 / Quotation ready · {currency}</b>
               <div>
-                <button
-                  className="outline"
-                  onClick={() => setCurrency((value) => (value === "CNY" ? "USD" : "CNY"))}
-                >
-                  切换至 {currency === "CNY" ? "美元 USD" : "人民币 CNY"}
-                </button>
                 <button className="outline" onClick={() => setQuoteOpen(false)}>
                   返回编辑 / Back
                 </button>
@@ -5254,7 +5249,15 @@ export default function Home() {
                 </div>
                 <div>
                   <label>报价币种 / Currency</label>
-                  <b>{currency === "USD" ? "美元 / USD" : "人民币 / CNY"}</b>
+                  <select
+                    className="quoteCurrencySelect"
+                    value={currency}
+                    onChange={(event) => setCurrency(event.target.value as "CNY" | "USD")}
+                    aria-label="选择报价币种"
+                  >
+                    <option value="CNY">人民币 / CNY</option>
+                    <option value="USD">美元 / USD</option>
+                  </select>
                 </div>
                 <div>
                   <label>报价日期 / Date</label>

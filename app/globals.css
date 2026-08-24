@@ -2603,6 +2603,18 @@ img {
   padding: 0 0 4px;
   font-weight: 700;
 }
+.quoteMeta .quoteCurrencySelect {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #cfd4ce;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  outline: 0;
+  padding: 0 18px 4px 0;
+}
 .quoteLead {
   padding: 26px 0 20px;
 }
