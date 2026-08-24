@@ -1551,6 +1551,9 @@ export default function Home() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [currency, setCurrency] = useState<"CNY" | "USD">("CNY");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [quoteQuantityDrafts, setQuoteQuantityDrafts] = useState<
+    Record<string, string>
+  >({});
   const [cartPairings, setCartPairings] = useState<
     Record<string, Record<string, number>>
   >({});
@@ -2071,6 +2074,7 @@ export default function Home() {
   };
   const clearQuotation = () => {
     setCart({});
+    setQuoteQuantityDrafts({});
     setCartPairings({});
     setImportedProducts([]);
     setImportedAreaOrder([]);
@@ -2173,6 +2177,8 @@ export default function Home() {
       [productId]: Math.max(0, (current[productId] || 0) + change),
     }));
   };
+  const quoteQuantityKey = (productId: string, parentId?: string) =>
+    `${parentId || "root"}:${productId}`;
   const renderQuoteItemRow = (
     item: (typeof cartHierarchyItems)[number],
     serial: number,
@@ -2180,6 +2186,7 @@ export default function Home() {
     const { product: p, quantity, parentId } = item;
     const unitPrice = displayPrice(p);
     const amount = unitPrice === null ? null : unitPrice * quantity;
+    const quantityKey = quoteQuantityKey(p.id, parentId);
     return (
       <tr
         className={`${parentId ? "quoteChildRow" : "quoteParentRow"}${quantity === 0 ? " quoteZeroQuantity" : ""}`}
@@ -2211,10 +2218,30 @@ export default function Home() {
             inputMode="numeric"
             pattern="[0-9]*"
             type="text"
-            value={quantity}
+            value={quoteQuantityDrafts[quantityKey] ?? String(quantity)}
             onChange={(event) => {
-              if (!/^\d+$/.test(event.target.value)) return;
-              setQuoteItemQuantity(p.id, Number(event.target.value), parentId);
+              const value = event.target.value;
+              if (!/^\d*$/.test(value)) return;
+              setQuoteQuantityDrafts((current) => ({
+                ...current,
+                [quantityKey]: value,
+              }));
+              if (value !== "")
+                setQuoteItemQuantity(p.id, Number(value), parentId);
+            }}
+            onBlur={() => {
+              const value = quoteQuantityDrafts[quantityKey];
+              if (value === undefined) return;
+              if (value !== "")
+                setQuoteItemQuantity(p.id, Number(value), parentId);
+              setQuoteQuantityDrafts((current) => {
+                const next = { ...current };
+                delete next[quantityKey];
+                return next;
+              });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
             }}
           />
         </td>
