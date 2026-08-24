@@ -84,7 +84,7 @@ type QuoteImportPreview = {
   designerName: string;
   salesName: string;
 };
-type QuoteImportPriceMode = "factory" | "vip" | "usd";
+type QuoteImportPriceMode = "vip" | "usd";
 type QuoteImportColumns = {
   quantity: number;
   cnyUnit: number;
@@ -3180,13 +3180,15 @@ export default function Home() {
               placeholder="搜索名称、款号、分类"
             />
           </label>
-          <button
+          <select
             className="currency"
-            onClick={() => setCurrency((x) => (x === "CNY" ? "USD" : "CNY"))}
-            aria-label="切换报价货币"
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value as "CNY" | "USD")}
+            aria-label="选择报价货币"
           >
-            {currency === "CNY" ? "人民币 ¥" : "USD $"}
-          </button>
+            <option value="CNY">国内 VIP 价（CNY）</option>
+            <option value="USD">美金价格（USD）</option>
+          </select>
           <button
             className="outline"
             onClick={() => setFiltersOpen(!filtersOpen)}
@@ -3964,7 +3966,7 @@ export default function Home() {
                         )}
                         <div className="priceRow">
                           <div>
-                            <small>参考单价 / {p.unit}</small>
+                            <small>{currency === "CNY" ? "国内 VIP 价" : "美金价格"} / {p.unit}</small>
                             <strong>{money(displayPrice(p), currency)}</strong>
                           </div>
                           {cart[p.id] ? (
@@ -4200,14 +4202,11 @@ export default function Home() {
                     )
                   }
                 >
-                  <option value="factory" disabled>
-                    出厂价（CNY）— 暂未维护
-                  </option>
                   <option value="vip">国内 VIP 价格（CNY）</option>
                   <option value="usd">美金价格（USD）</option>
                 </select>
                 <small>
-                  当前默认使用国内 VIP 价格；出厂价资料补齐后可在此启用。
+                  当前可使用国内 VIP 价格或美金价格导入。
                 </small>
               </label>
               <label
@@ -4358,7 +4357,7 @@ export default function Home() {
                   />
                 </label>
                 <label>
-                  参考价格（人民币） / CNY price
+                  国内 VIP 价（人民币） / Domestic VIP price (CNY)
                   <input
                     type="number"
                     value={draft.price ?? ""}
