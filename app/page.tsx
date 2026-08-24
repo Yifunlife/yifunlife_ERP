@@ -1559,6 +1559,7 @@ export default function Home() {
   const [relatedSearch, setRelatedSearch] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
+  const [quoteActiveTab, setQuoteActiveTab] = useState("summary");
   const [quoteProject, setQuoteProject] = useState("");
   const [designerName, setDesignerName] = useState("");
   const [salesName, setSalesName] = useState("");
@@ -1973,6 +1974,20 @@ export default function Home() {
       return 0;
     });
   const quoteItemsInOrder = quoteGroups.flatMap(([, items]) => items);
+  const quoteVisibleGroups =
+    quoteActiveTab === "summary"
+      ? []
+      : quoteActiveTab === "all"
+        ? quoteGroups
+        : quoteGroups.filter(([area]) => area === quoteActiveTab);
+  const quoteAreaSubtotal = (
+    items: typeof quoteItemsInOrder,
+  ) =>
+    items.reduce(
+      (total, item) =>
+        total + item.quantity * (displayPrice(item.product) || 0),
+      0,
+    );
   const preTax =
     subtotal +
     fees.packaging +
@@ -4966,6 +4981,7 @@ export default function Home() {
                   className="primary"
                   onClick={() => {
                     setCartOpen(false);
+                    setQuoteActiveTab("summary");
                     setQuoteOpen(true);
                   }}
                 >
@@ -4988,7 +5004,13 @@ export default function Home() {
                 <button className="outline" onClick={exportQuoteExcel}>
                   导出 Excel / Export Excel
                 </button>
-                <button className="primary" onClick={() => window.print()}>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setQuoteActiveTab("all");
+                    window.setTimeout(() => window.print(), 120);
+                  }}
+                >
                   导出 PDF / Export PDF
                 </button>
               </div>
@@ -5056,6 +5078,23 @@ export default function Home() {
                   Products are grouped by experience area.
                 </p>
               </section>
+              <nav className="quoteAreaTabs" aria-label="报价区域">
+                <button
+                  className={quoteActiveTab === "summary" ? "active" : ""}
+                  onClick={() => setQuoteActiveTab("summary")}
+                >
+                  总览 / Summary
+                </button>
+                {quoteGroups.map(([area, items]) => (
+                  <button
+                    className={quoteActiveTab === area ? "active" : ""}
+                    key={area}
+                    onClick={() => setQuoteActiveTab(area)}
+                  >
+                    {area} · {items.length} 项
+                  </button>
+                ))}
+              </nav>
               <table className="quoteTable">
                 <thead>
                   <tr>
@@ -5086,9 +5125,22 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {quoteGroups.flatMap(([area, items]) => [
+                  {quoteActiveTab === "summary"
+                    ? quoteGroups.map(([area, items]) => (
+                      <tr className="quoteAreaSummaryRow" key={`${area}-summary`}>
+                        <td colSpan={7}>
+                          <b>{area}</b>
+                        </td>
+                        <td colSpan={2}>{items.length} 项 / Items</td>
+                        <td colSpan={4}>{money(quoteAreaSubtotal(items), currency)}</td>
+                      </tr>
+                    ))
+                    : quoteVisibleGroups.flatMap(([area, items]) => [
                     <tr className="areaRow" key={`${area}-area`}>
-                      <td colSpan={13}>{area}</td>
+                      <td colSpan={10}>{area}</td>
+                      <td className="quoteAreaSubtotal" colSpan={3}>
+                        区域小计 / Area subtotal：{money(quoteAreaSubtotal(items), currency)}
+                      </td>
                     </tr>,
                     ...items.map((item) => {
                       const { product: p, quantity, parentId } = item;
@@ -5131,6 +5183,10 @@ export default function Home() {
                         </tr>
                       );
                     }),
+                    <tr className="quoteAreaSubtotalRow" key={`${area}-subtotal`}>
+                      <td colSpan={10}>区域小计 / Area Subtotal</td>
+                      <td colSpan={3}>{money(quoteAreaSubtotal(items), currency)}</td>
+                    </tr>,
                   ])}
                 </tbody>
                 <tfoot>
