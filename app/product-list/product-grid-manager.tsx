@@ -1197,14 +1197,13 @@ export function ProductGridManager({
                       <article className="pairingPinnedSource" key={source.id}>
                         {source.image && <img src={source.image} alt="" />}
                         <span>
-                          <b>
-                            {source.sku}
-                            <em>
-                              已匹配 {matchedToys.length} 款 · 总数 {matchedToyQuantity} 件
-                            </em>
-                          </b>
-                          <i>库存 / Stock：{source.stock === null ? "待维护" : source.stock}</i>
+                          <b>{source.sku}</b>
                           <small>{source.productName}</small>
+                          <span className="pairingSourceSummary">
+                            <em>已匹配 {matchedToys.length} 款</em>
+                            <strong>总数 {matchedToyQuantity} 件</strong>
+                          </span>
+                          <i>库存 / Stock：{source.stock === null ? "待维护" : source.stock}</i>
                         </span>
                       </article>
                     );

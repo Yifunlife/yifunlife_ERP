@@ -1050,7 +1050,7 @@ img {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  height: 92px;
+  height: 112px;
   gap: 10px;
   border-bottom: 1px solid #e0e7df;
   background: #fff;
@@ -1072,8 +1072,14 @@ img {
   white-space: nowrap;
 }
 .pairingPinnedSource b { color: var(--navy); font-size: 12px; }
-.pairingPinnedSource b em {
-  margin-left: 7px;
+.pairingSourceSummary {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+.pairingSourceSummary em,
+.pairingSourceSummary strong {
   color: #77901d;
   font-size: 10px;
   font-style: normal;
@@ -1151,7 +1157,7 @@ img {
 }
 .pairingMatrix td {
   box-sizing: border-box;
-  height: 92px;
+  height: 112px;
   min-width: 112px;
   background: #fff;
   padding: 10px;
