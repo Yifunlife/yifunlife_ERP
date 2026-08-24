@@ -2735,285 +2735,153 @@ export default function Home() {
   };
   const exportQuoteExcel = () => {
     if (exportImportedQuoteTemplate()) return;
-    const unitPriceTitle = currency === "USD" ? "USD Unit Price" : "CNY Unit Price";
-    const amountTitle = currency === "USD" ? "USD Amount" : "CNY Amount";
     const headers = [
       "序号 / No.",
       "款号 / Item Number",
       "产品名称 / Product Name",
-      "图片链接 / Image URL",
+      "图片展示 / Product Image",
       "玩具品牌 / Toy Brand",
       "规格/尺寸 / Specifications",
       "单位 / Unit",
       "数量 / Quantity",
-      unitPriceTitle,
-      amountTitle,
+      "成本单价 / Cost RMB",
+      "成本价 / Cost Total RMB",
+      "人民币单价 / CNY Unit Price",
+      "人民币合计 / CNY Amount",
+      "美元单价 / USD Unit Price",
+      "美元合计 / USD Amount",
+      "区域小计 / Area Subtotal",
+      "备注 / Notes",
       "颜色 / Colour",
       "体积 / Volume",
-      "备注 / Notes",
     ];
     const workbook = XLSX.utils.book_new();
-    const currencyFormat = currency === "USD" ? "$#,##0.00" : "¥#,##0";
-    const usedSheetNames = new Set<string>();
-    const sheetNameFor = (area: string, index: number) => {
-      const base = area.replace(/[\\/:?*\[\]]/g, " ").trim() || `Area ${index + 1}`;
-      let name = base.slice(0, 31);
-      let suffix = 2;
-      while (usedSheetNames.has(name)) {
-        name = `${base.slice(0, 28)} ${suffix}`;
-        suffix += 1;
-      }
-      usedSheetNames.add(name);
-      return name;
-    };
-    const otherArea = "其他产品 / Other Products";
-    const pairedToyItems = quoteItemsInOrder.filter((item) => item.parentId);
-    const areaSheetGroups = [
-      ...quoteGroups
-        .filter(([area]) => area !== otherArea)
-        .map(([area, items]) => [
-          area,
-          items.filter((item) => !item.parentId),
-          items,
-        ] as const)
-        .filter(([, items]) => items.length),
-      [
-        otherArea,
-        quoteGroups
-          .find(([area]) => area === otherArea)?.[1]
-          .filter((item) => !item.parentId) || [],
-        quoteGroups.find(([area]) => area === otherArea)?.[1] || [],
-      ] as const,
+    const cnyFormat = "¥#,##0";
+    const usdFormat = "$#,##0.00";
+    const rows: Array<Array<string | number>> = [
+      ["YIFUN LIFE / 亦玩集团"],
+      ["产品报价清单 / Product Quotation"],
+      ["项目名称 / Project", quoteProject, "", "", "", "设计师 / Designer", designerName, "", "", "", "业务员 / Sales", salesName],
+      ["报价币种 / Currency", currency, "", "", "", "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
+      [],
+      headers,
     ];
-    const areaSheets = areaSheetGroups.map(([area, items, allItems], index) => {
-      const sheetName = sheetNameFor(area, index);
-      const rows: Array<Array<string | number>> = [
-        ["YIFUN LIFE / 亦玩集团", "", "", "", "", "", "", "", "", "区域效果图片 / Area Effect Visual"],
-        ["亦玩集团产品报价清单 / Yifun Life Product Quotation", "", "", "", "", "", "", "", "", ""],
-        [area],
-        ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
-        ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
-        [],
-        headers,
-      ];
-      const productRows: number[] = [];
-      items.forEach(({ product, quantity, parentId }) => {
-        const rowNumber = rows.length + 1;
-        productRows.push(rowNumber);
+    const groupedRows = quoteGroups.filter(([, items]) => items.length);
+    const productRows: Array<{ row: number; item: (typeof quoteItemsInOrder)[number] }> = [];
+    const areaRows: Array<{ row: number; itemRows: number[] }> = [];
+    let serial = 1;
+    groupedRows.forEach(([area, items]) => {
+      const areaRow = rows.length + 1;
+      rows.push([area]);
+      const itemRows: number[] = [];
+      items.forEach((item) => {
+        const row = rows.length + 1;
+        itemRows.push(row);
+        productRows.push({ row, item });
         rows.push([
+          serial,
+          item.product.sku,
+          `${item.parentId ? "↳ " : ""}${item.product.name}`,
+          item.product.image || "",
+          item.product.brand || "YIFUN",
+          item.product.spec || "—",
+          unitLabel(item.product.unit).zh,
+          item.quantity,
           "",
-          product.sku,
-          `${parentId ? "↳ " : ""}${product.name}`,
-          product.image || "",
-          product.brand || "YIFUN",
-          product.spec || "—",
-          unitLabel(product.unit).zh,
-          quantity,
-          displayPrice(product) ?? "",
           "",
-          colourLabel(product.colorTag).zh,
-          product.volume || "—",
-          parentId ? `关联产品 / Paired with ${cartItemById.get(parentId)?.sku || "主产品"}` : product.note || "—",
+          item.product.price ?? "",
+          "",
+          item.product.usd ?? "",
+          "",
+          "",
+          item.parentId
+            ? `关联产品 / Paired with ${cartItemById.get(item.parentId)?.sku || "主产品"}`
+            : item.product.note || "—",
+          colourLabel(item.product.colorTag).zh,
+          item.product.volume || "—",
         ]);
+        serial += 1;
       });
-      const subtotalRow = rows.length + 1;
-      rows.push(["", "", "区域小计 / Area Subtotal"]);
-      const sheet = XLSX.utils.aoa_to_sheet(rows);
-      productRows.forEach((rowNumber, index) => {
-        sheet[`A${rowNumber}`] = { t: "n", f: `ROW()-7`, v: index + 1 };
-        sheet[`J${rowNumber}`] = {
-          t: "n",
-          f: `IF(OR(H${rowNumber}=\"\",I${rowNumber}=\"\"),\"\",H${rowNumber}*I${rowNumber})`,
-          v: (items[index].quantity || 0) * (displayPrice(items[index].product) || 0),
-          z: currencyFormat,
-        };
-      });
-      const firstProductRow = productRows[0] || 8;
-      const lastProductRow = productRows.at(-1) || firstProductRow;
-      sheet[`J${subtotalRow}`] = {
-        t: "n",
-        f: `SUM(J${firstProductRow}:J${lastProductRow})`,
-        v: items.reduce(
-          (total, item) =>
-            total + item.quantity * (displayPrice(item.product) || 0),
-          0,
-        ),
-        z: currencyFormat,
-      };
-      sheet["!merges"] = [
-        XLSX.utils.decode_range("A1:I1"),
-        XLSX.utils.decode_range("J1:M6"),
-        XLSX.utils.decode_range("A2:I2"),
-        XLSX.utils.decode_range("A3:M3"),
-      ];
-      sheet["!cols"] = [
-        { wch: 9 }, { wch: 14 }, { wch: 30 }, { wch: 42 }, { wch: 18 },
-        { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
-        { wch: 12 }, { wch: 13 }, { wch: 34 },
-      ];
-      XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
-      return { area, items, allItems, sheetName, subtotalRow };
+      areaRows.push({ row: areaRow, itemRows });
     });
-    const pairedToySheetName = sheetNameFor("配套玩具 / Paired Toys", areaSheets.length);
-    const pairedToyRows: Array<Array<string | number>> = [
-      ["YIFUN LIFE / 亦玩集团", "", "", "", "", "", "", "", "", "自动区配玩具 / Automatically paired toys"],
-      ["亦玩集团产品报价清单 / Yifun Life Product Quotation", "", "", "", "", "", "", "", "", "所有主设备的已配对玩具 / Paired toys for all simulation devices"],
-      ["配套玩具 / Paired Toys"],
-      ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
-      ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
-      [],
-      [...headers, "所属区域 / Area"],
-    ];
-    const pairedToyRowsWithProducts: number[] = [];
-    pairedToyItems.forEach(({ product, quantity, parentId, area }) => {
-      const rowNumber = pairedToyRows.length + 1;
-      pairedToyRowsWithProducts.push(rowNumber);
-      pairedToyRows.push([
-        "",
-        product.sku,
-        `↳ ${product.name}`,
-        product.image || "",
-        product.brand || "YIFUN",
-        product.spec || "—",
-        unitLabel(product.unit).zh,
-        quantity,
-        displayPrice(product) ?? "",
-        "",
-        colourLabel(product.colorTag).zh,
-        product.volume || "—",
-        `关联产品 / Paired with ${cartItemById.get(parentId!)?.sku || "主产品"}`,
-        area,
-      ]);
-    });
-    if (!pairedToyItems.length)
-      pairedToyRows.push(["", "", "暂无自动配对的玩具 / No paired toys"]);
-    const pairedToySubtotalRow = pairedToyRows.length + 1;
-    pairedToyRows.push(["", "", "配套玩具小计 / Paired Toys Subtotal"]);
-    const pairedToySheet = XLSX.utils.aoa_to_sheet(pairedToyRows);
-    pairedToyRowsWithProducts.forEach((rowNumber, index) => {
-      pairedToySheet[`A${rowNumber}`] = { t: "n", f: "ROW()-7", v: index + 1 };
-      pairedToySheet[`J${rowNumber}`] = {
-        t: "n",
-        f: `IF(OR(H${rowNumber}=\"\",I${rowNumber}=\"\"),\"\",H${rowNumber}*I${rowNumber})`,
-        v: (pairedToyItems[index].quantity || 0) * (displayPrice(pairedToyItems[index].product) || 0),
-        z: currencyFormat,
-      };
-    });
-    const pairedToyFirstRow = pairedToyRowsWithProducts[0] || 8;
-    const pairedToyLastRow = pairedToyRowsWithProducts.at(-1) || pairedToyFirstRow;
-    pairedToySheet[`J${pairedToySubtotalRow}`] = {
-      t: "n",
-      f: `SUM(J${pairedToyFirstRow}:J${pairedToyLastRow})`,
-      v: pairedToyItems.reduce(
-        (total, item) => total + item.quantity * (displayPrice(item.product) || 0),
-        0,
-      ),
-      z: currencyFormat,
-    };
-    pairedToySheet["!merges"] = [
-      XLSX.utils.decode_range("A1:I1"),
-      XLSX.utils.decode_range("J1:N1"),
-      XLSX.utils.decode_range("A2:I2"),
-      XLSX.utils.decode_range("J2:N2"),
-      XLSX.utils.decode_range("A3:N3"),
-    ];
-    pairedToySheet["!cols"] = [
-      { wch: 9 }, { wch: 14 }, { wch: 30 }, { wch: 42 }, { wch: 18 },
-      { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
-      { wch: 12 }, { wch: 13 }, { wch: 34 }, { wch: 30 },
-    ];
-    XLSX.utils.book_append_sheet(workbook, pairedToySheet, pairedToySheetName);
-    const summaryRows: Array<Array<string | number>> = [
-      ["YIFUN LIFE / 亦玩集团", "", "", "", "", "LOGO"],
-      ["产品报价清单 / Product Quotation", "", "", "", "", ""],
-      ["项目名称 / Project", quoteProject, "设计师 / Designer", designerName, "业务员 / Sales", salesName],
-      ["报价币种 / Currency", currency, "报价日期 / Date", new Date().toLocaleDateString("zh-CN")],
-      [],
-      ["区域小计 / Area Subtotals"],
-      ["区域 / Area", "项目数 / Items", "区域总价 / Area Total"],
-    ];
-    const summaryAreaRows = areaSheets.map((areaSheet, index) => {
-      const rowNumber = summaryRows.length + 1;
-      summaryRows.push([areaSheet.area, "", ""]);
-      return { ...areaSheet, rowNumber, index };
-    });
-    summaryRows.push([]);
     const feeRows = [
       ["包装费 / Packaging fee", fees.packaging],
       ["除甲醛 / Formaldehyde removal", fees.formaldehyde],
       ["运输费 / Shipping fee", fees.shipping],
       ["安装费 / Installation fee", fees.installation],
-    ];
-    const firstFeeRow = summaryRows.length + 1;
-    feeRows.forEach(([label, value]) => summaryRows.push([label, value]));
-    const subtotalRow = summaryRows.length + 1;
-    summaryRows.push(["小计（不含税） / Subtotal (tax excluded)"]);
-    const taxRow = summaryRows.length + 1;
-    summaryRows.push([
-      includeTax && currency === "CNY"
-        ? "税额 13% / Tax 13%"
-        : "不含税 / Tax excluded",
-    ]);
-    const designRow = summaryRows.length + 1;
-    summaryRows.push(["设计费抵扣 / Design fee deduction", showDesignDeduction ? fees.designDeduction : 0]);
-    const totalRow = summaryRows.length + 1;
-    summaryRows.push(["总计（含税） / Total (tax included)"]);
-    const summary = XLSX.utils.aoa_to_sheet(summaryRows);
-    summaryAreaRows.forEach(({ sheetName, subtotalRow: areaSubtotalRow, rowNumber, allItems }) => {
-      summary[`B${rowNumber}`] = {
+    ] as const;
+    rows.push([]);
+    const firstFeeRow = rows.length + 1;
+    feeRows.forEach(([label, value]) => rows.push([label, "", "", "", "", "", "", "", "", "", value, "", value]));
+    const subtotalRow = rows.length + 1;
+    rows.push(["小计（不含税） / Subtotal (tax excluded)"]);
+    const taxRow = rows.length + 1;
+    rows.push([includeTax && currency === "CNY" ? "税额 13% / Tax 13%" : "不含税 / Tax excluded"]);
+    const designRow = rows.length + 1;
+    rows.push(["设计费抵扣 / Design fee deduction", "", "", "", "", "", "", "", "", "", showDesignDeduction ? fees.designDeduction : 0, "", showDesignDeduction ? fees.designDeduction : 0]);
+    const totalRow = rows.length + 1;
+    rows.push(["总计（含税） / Total (tax included)"]);
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    productRows.forEach(({ row, item }) => {
+      sheet[`L${row}`] = {
         t: "n",
-        f: `COUNTA('${sheetName}'!B8:B${areaSubtotalRow - 1})+COUNTIF('${pairedToySheetName}'!N${pairedToyFirstRow}:N${pairedToyLastRow},A${rowNumber})`,
-        v: allItems.length,
+        f: `H${row}*K${row}`,
+        v: item.quantity * (item.product.price || 0),
+        z: cnyFormat,
       };
-      summary[`C${rowNumber}`] = {
+      sheet[`N${row}`] = {
         t: "n",
-        f: `'${sheetName}'!J${areaSubtotalRow}+SUMIF('${pairedToySheetName}'!N${pairedToyFirstRow}:N${pairedToyLastRow},A${rowNumber},'${pairedToySheetName}'!J${pairedToyFirstRow}:J${pairedToyLastRow})`,
-        v: allItems.reduce(
-          (total, item) => total + item.quantity * (displayPrice(item.product) || 0),
-          0,
-        ),
-        z: currencyFormat,
+        f: `H${row}*M${row}`,
+        v: item.quantity * (item.product.usd || 0),
+        z: usdFormat,
+      };
+      sheet[`K${row}`] = { ...sheet[`K${row}`], z: cnyFormat };
+      sheet[`M${row}`] = { ...sheet[`M${row}`], z: usdFormat };
+    });
+    areaRows.forEach(({ row, itemRows }) => {
+      const firstRow = itemRows[0];
+      const lastRow = itemRows.at(-1);
+      if (!firstRow || !lastRow) return;
+      sheet[`O${row}`] = {
+        t: "n",
+        f: `SUM(${currency === "USD" ? "N" : "L"}${firstRow}:${currency === "USD" ? "N" : "L"}${lastRow})`,
+        v: itemRows.reduce((total, itemRow) => total + Number(sheet[`${currency === "USD" ? "N" : "L"}${itemRow}`]?.v || 0), 0),
+        z: currency === "USD" ? usdFormat : cnyFormat,
       };
     });
-    summary[`C${subtotalRow}`] = {
+    const amountColumn = currency === "USD" ? "N" : "L";
+    const feeColumn = currency === "USD" ? "M" : "K";
+    const areaTotalFormula = areaRows.map(({ row }) => `O${row}`).join(",") || "0";
+    sheet[`${amountColumn}${subtotalRow}`] = {
       t: "n",
-      f: `SUM(C8:C${firstFeeRow - 2})+SUM(B${firstFeeRow}:B${firstFeeRow + feeRows.length - 1})`,
+      f: `SUM(${areaTotalFormula})+SUM(${feeColumn}${firstFeeRow}:${feeColumn}${firstFeeRow + feeRows.length - 1})`,
       v: subtotal + fees.packaging + fees.formaldehyde + fees.shipping + fees.installation,
-      z: currencyFormat,
+      z: currency === "USD" ? usdFormat : cnyFormat,
     };
-    summary[`C${taxRow}`] = {
+    sheet[`${amountColumn}${taxRow}`] = {
       t: "n",
-      f: currency === "CNY" && includeTax ? `C${subtotalRow}*13%` : "0",
+      f: currency === "CNY" && includeTax ? `${amountColumn}${subtotalRow}*13%` : "0",
       v: tax,
-      z: currencyFormat,
+      z: currency === "USD" ? usdFormat : cnyFormat,
     };
-    summary[`C${totalRow}`] = {
+    sheet[`${amountColumn}${totalRow}`] = {
       t: "n",
-      f: `C${subtotalRow}+C${taxRow}-B${designRow}`,
+      f: `${amountColumn}${subtotalRow}+${amountColumn}${taxRow}-${feeColumn}${designRow}`,
       v: totalWithTax,
-      z: currencyFormat,
+      z: currency === "USD" ? usdFormat : cnyFormat,
     };
-    summary["!merges"] = [
-      XLSX.utils.decode_range("A1:F1"),
-      XLSX.utils.decode_range("A2:F2"),
-      XLSX.utils.decode_range("A6:F6"),
+    sheet["!merges"] = [
+      XLSX.utils.decode_range("A1:R1"),
+      XLSX.utils.decode_range("A2:R2"),
+      ...areaRows.map(({ row }) => XLSX.utils.decode_range(`A${row}:N${row}`)),
     ];
-    summary["!cols"] = [{ wch: 38 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
-    XLSX.utils.book_append_sheet(workbook, summary, "Summary");
-    workbook.SheetNames = [
-      "Summary",
-      ...areaSheets
-        .filter((areaSheet) => areaSheet.area !== otherArea)
-        .map((areaSheet) => areaSheet.sheetName),
-      pairedToySheetName,
-      ...areaSheets
-        .filter((areaSheet) => areaSheet.area === otherArea)
-        .map((areaSheet) => areaSheet.sheetName),
+    sheet["!cols"] = [
+      { wch: 8 }, { wch: 16 }, { wch: 34 }, { wch: 28 }, { wch: 16 },
+      { wch: 25 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
+      { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 18 },
+      { wch: 28 }, { wch: 14 }, { wch: 14 },
     ];
-    const reorderedSheets = Object.fromEntries(
-      workbook.SheetNames.map((name) => [name, workbook.Sheets[name]]),
-    );
-    workbook.Sheets = reorderedSheets;
+    XLSX.utils.book_append_sheet(workbook, sheet, "报价清单");
     const fileName = `${(quoteProject || "Yifun_Life_Quotation").replace(/[^\w\u4e00-\u9fff-]+/g, "_")}_${currency}.xlsx`;
     XLSX.writeFile(workbook, fileName, { compression: true });
   };
