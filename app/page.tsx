@@ -1499,6 +1499,7 @@ export default function Home() {
   const [loginNotice, setLoginNotice] = useState("");
   const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
   const isAdmin = authAccount?.role === "admin";
+  const canViewStaff = isAdmin || authAccount?.role === "management";
   const [staffOpen, setStaffOpen] = useState(false);
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [staffUsers, setStaffUsers] = useState<ManagedUser[]>([]);
@@ -3427,7 +3428,7 @@ export default function Home() {
             <small>{authAccount?.email}</small>
             <small>{authAccount?.role === "admin" ? "管理员 / Administrator" : authAccount?.role === "management" ? "管理层 / Management（只读）" : "员工 / Employee"}</small>
           </div>
-          {authAccount?.role === "admin" && (
+          {canViewStaff && (
             <button
               role="menuitem"
               onClick={() => {
@@ -3435,7 +3436,7 @@ export default function Home() {
                 void openStaff();
               }}
             >
-              员工管理
+              {isAdmin ? "员工管理" : "员工管理（只读）"}
             </button>
           )}
           <button
@@ -3487,7 +3488,7 @@ export default function Home() {
               <div>
                 <span className="eyebrow">ACCOUNT ADMINISTRATION</span>
                 <h2>员工管理</h2>
-                <p>管理员可修改全部设置；管理层只读；员工仅可使用报价功能。</p>
+                <p>{isAdmin ? "管理员可修改全部设置；管理层只读；员工仅可使用报价功能。" : "管理层仅可查看账号、权限与审批状态。"}</p>
               </div>
               <button className="closeStaff" onClick={() => setStaffOpen(false)} aria-label="关闭员工管理">×</button>
             </div>
@@ -3503,7 +3504,7 @@ export default function Home() {
                   </div>
                   <div className="staffActions">
                     <span className={`staffStatus ${user.status}`}>{user.status === "pending" ? "待审批" : user.status === "active" ? "已启用" : "已停用"}</span>
-                    {user.role !== "admin" && (
+                    {isAdmin && user.role !== "admin" && (
                       <label className="staffRoleSelect">
                         <select aria-label={`${user.name} 的账号权限`} value={user.role === "management" ? "management" : "employee"} onChange={(event) => void updateStaffRole(user.email, event.target.value as "employee" | "management")}>
                           <option value="employee">员工（可使用）</option>
@@ -3511,9 +3512,9 @@ export default function Home() {
                         </select>
                       </label>
                     )}
-                    {user.role !== "admin" && user.status === "pending" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "approve")}>批准</button>}
-                    {user.role !== "admin" && user.status === "active" && <button className="outline" onClick={() => updateStaffStatus(user.email, "suspend")}>停用</button>}
-                    {user.role !== "admin" && user.status === "suspended" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "activate")}>启用</button>}
+                    {isAdmin && user.role !== "admin" && user.status === "pending" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "approve")}>批准</button>}
+                    {isAdmin && user.role !== "admin" && user.status === "active" && <button className="outline" onClick={() => updateStaffStatus(user.email, "suspend")}>停用</button>}
+                    {isAdmin && user.role !== "admin" && user.status === "suspended" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "activate")}>启用</button>}
                   </div>
                 </article>
               ))}

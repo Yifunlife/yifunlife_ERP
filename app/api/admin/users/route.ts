@@ -8,8 +8,13 @@ async function requireAdmin(request: Request) {
   return session?.role === "admin" ? session : null;
 }
 
+async function requireStaffViewer(request: Request) {
+  const session = await getLoginSession(request);
+  return session?.role === "admin" || session?.role === "management" ? session : null;
+}
+
 export async function GET(request: Request) {
-  if (!(await requireAdmin(request))) return Response.json({ error: "无权限" }, { status: 403 });
+  if (!(await requireStaffViewer(request))) return Response.json({ error: "无权限" }, { status: 403 });
   const users = await getDb().select({ email: appUsers.email, name: appUsers.name, role: appUsers.role, status: appUsers.status, createdAt: appUsers.createdAt }).from(appUsers).orderBy(desc(appUsers.createdAt));
   return Response.json({ users });
 }
