@@ -1149,6 +1149,13 @@ const quoteArea = (p: Product) => {
     return "其他产品 / Other Products";
   return `${p.category2} / Experience Area`;
 };
+const hospitalToyNavigationGroups = {
+  "常规医院": ["医院区", "医院区（英文版）"],
+  "未来医院": ["未来医院区", "未来医院区（英文版）"],
+} as const;
+const hospitalToySourceCategories = new Set(
+  Object.values(hospitalToyNavigationGroups).flat(),
+);
 const importedSkuCodes = (value: unknown) =>
   String(value || "")
     .toUpperCase()
@@ -1773,7 +1780,14 @@ export default function Home() {
   });
   const kitchenPackages = savedKitchenPackages.length
     ? savedKitchenPackages
-    : [kitchenPackageTemplate];
+      : [kitchenPackageTemplate];
+  const hospitalToyNavigationActive =
+    selectedCategoryKey === "toys:医院区" && navigationGroup === "toys";
+  const hospitalToyCategories = category3Filter
+    ? hospitalToyNavigationGroups[
+        category3Filter as keyof typeof hospitalToyNavigationGroups
+      ]
+    : undefined;
   const visible = [...(
     hasGlobalQuery
       ? products
@@ -1787,8 +1801,13 @@ export default function Home() {
   )]
     .filter(
     (p) =>
-      (hasGlobalQuery || category === "全部产品" || p.category2 === category) &&
-      (hasGlobalQuery || !category3Filter || p.category3 === category3Filter) &&
+      (hasGlobalQuery || category === "全部产品" ||
+        (hospitalToyNavigationActive
+          ? (hospitalToyCategories
+              ? hospitalToyCategories.includes(p.category2)
+              : hospitalToySourceCategories.has(p.category2))
+          : p.category2 === category)) &&
+      (hasGlobalQuery || hospitalToyNavigationActive || !category3Filter || p.category3 === category3Filter) &&
       (hasGlobalQuery || navigationGroup === "all" ||
         (navigationGroup === "simulation" && p.category1 !== "小玩具") ||
         (navigationGroup === "toys" && p.category1 === "小玩具")) &&
@@ -1806,7 +1825,13 @@ export default function Home() {
     );
   const grouped = Object.entries(
     visible.reduce<Record<string, Product[]>>((a, p) => {
-      (a[p.category2] ||= []).push(p);
+      const groupName = hospitalToyNavigationActive
+        ? category3Filter ||
+          (hospitalToyNavigationGroups["常规医院"].includes(p.category2)
+            ? "常规医院"
+            : "未来医院")
+        : p.category2;
+      (a[groupName] ||= []).push(p);
       return a;
     }, {}),
   );
@@ -3270,7 +3295,13 @@ export default function Home() {
                               (categoryName) =>
                                 !pairedCategories.includes(categoryName),
                             ),
-                        ])];
+                        ])].filter(
+                          (categoryName) =>
+                            section.key !== "toys" ||
+                            major !== "职业体验 / Career Experience" ||
+                            categoryName === "医院区" ||
+                            !hospitalToySourceCategories.has(categoryName),
+                        );
                         if (!sectionProducts.length) return null;
                         const sectionKey = `${major}:${section.key}`;
                         const sectionExpanded = expandedProductGroups.has(sectionKey);
@@ -3315,8 +3346,14 @@ export default function Home() {
                             </div>
                             {sectionExpanded &&
                               sectionCategories.map((c) => {
-                                const categoryProducts = sectionProducts.filter(
-                                  (p) => p.category2 === c,
+                                const isHospitalToyGroup =
+                                  section.key === "toys" &&
+                                  major === "职业体验 / Career Experience" &&
+                                  c === "医院区";
+                                const categoryProducts = sectionProducts.filter((p) =>
+                                  isHospitalToyGroup
+                                    ? hospitalToySourceCategories.has(p.category2)
+                                    : p.category2 === c,
                                 );
                                 const toyCategoryKey = `${sectionKey}:${c}`;
                                 const toyCategoryExpanded =
@@ -3381,7 +3418,10 @@ export default function Home() {
                                     </div>
                                     {toyCategoryExpanded && (
                                       <div className="subnavTertiary">
-                                        {["必配", "选配"].map((tier) => (
+                                        {(isHospitalToyGroup
+                                          ? Object.keys(hospitalToyNavigationGroups)
+                                          : ["必配", "选配"]
+                                        ).map((tier) => (
                                           <button
                                             className={
                                               selectedCategoryKey === `toys:${c}` &&
@@ -3400,9 +3440,15 @@ export default function Home() {
                                             {tier}
                                             <span>
                                               {
-                                                categoryProducts.filter(
-                                                  (p) => p.category3 === tier,
-                                                ).length
+                                                isHospitalToyGroup
+                                                  ? categoryProducts.filter((p) =>
+                                                      hospitalToyNavigationGroups[
+                                                        tier as keyof typeof hospitalToyNavigationGroups
+                                                      ].includes(p.category2),
+                                                    ).length
+                                                  : categoryProducts.filter(
+                                                      (p) => p.category3 === tier,
+                                                    ).length
                                               }
                                             </span>
                                           </button>
