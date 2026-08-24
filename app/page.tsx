@@ -5275,9 +5275,13 @@ export default function Home() {
                     </td>
                     <td>{money(totalWithTax, currency)}</td>
                     <td colSpan={2}>
-                      {currency === "CNY" && includeTax
-                        ? "已含税并扣除设计费 / Tax included, design deduction applied"
-                        : "未含税，已扣除设计费 / Tax excluded, design deduction applied"}
+                      {showDesignDeduction && fees.designDeduction > 0
+                        ? currency === "CNY" && includeTax
+                          ? "已含税并扣除设计费 / Tax included, design deduction applied"
+                          : "未含税，已扣除设计费 / Tax excluded, design deduction applied"
+                        : currency === "CNY" && includeTax
+                          ? "已含税 / Tax included"
+                          : "未含税 / Tax excluded"}
                     </td>
                   </tr>
                 </tfoot>
