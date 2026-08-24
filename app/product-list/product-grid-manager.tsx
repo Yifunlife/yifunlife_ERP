@@ -1232,10 +1232,12 @@ export function ProductGridManager({
                     <tr>
                       {pairingToyRows.map((toy) => (
                         <th key={toy.id} scope="col" title={`${toy.sku} · ${toy.productName}`}>
-                          {toy.image && <img src={toy.image} alt="" />}
-                          <b>{toy.sku}</b>
-                          <i>库存 / Stock：{toy.stock === null ? "待维护" : toy.stock}</i>
-                          <small>{toy.productName}</small>
+                          <div className="pairingToyHeader">
+                            {toy.image && <img src={toy.image} alt="" />}
+                            <b>{toy.sku}</b>
+                            <i>库存 / Stock：{toy.stock === null ? "待维护" : toy.stock}</i>
+                            <small>{toy.productName}</small>
+                          </div>
                         </th>
                       ))}
                     </tr>

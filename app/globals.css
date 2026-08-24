@@ -1137,30 +1137,54 @@ img {
   color: var(--navy);
   box-sizing: border-box;
   height: 128px;
-  padding: 9px;
+  padding: 0;
   text-align: center;
-  vertical-align: bottom;
+  vertical-align: top;
+}
+.pairingMatrix thead tr {
+  height: 128px;
+}
+.pairingToyHeader {
+  display: flex;
+  height: 128px;
+  min-height: 128px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: 8px 6px;
 }
 .pairingMatrix thead th img {
   display: block;
-  width: 72px;
-  height: 58px;
-  margin: 0 auto 6px;
+  width: 64px;
+  height: 48px;
+  margin: 0 auto 4px;
   object-fit: contain;
 }
 .pairingMatrix thead th b,
 .pairingMatrix thead th small {
   display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pairingMatrix thead th b { font-size: 11px; }
+.pairingMatrix thead th b { font-size: 11px; line-height: 1.2; }
 .pairingMatrix thead th small {
-  margin-top: 3px;
+  margin-top: 2px;
   color: #71818b;
   font-size: 9px;
+  line-height: 1.2;
   font-weight: 500;
+}
+.pairingMatrix thead th i {
+  max-width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+  padding: 1px 4px;
 }
 .pairingMatrix td {
   box-sizing: border-box;
