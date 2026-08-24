@@ -375,6 +375,16 @@ img {
 .staffStatus.pending { color: #9c7400; }
 .staffStatus.active { color: #416f4e; }
 .staffStatus.suspended { color: #a4514d; }
+.staffRoleSelect select {
+  min-height: 32px;
+  border: 1px solid #cbd7cd;
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--navy);
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
 .smallPrimary { min-height: 32px; padding: 0 14px; font-size: 12px; }
 .staffEmpty { color: var(--muted); font-size: 13px; padding: 24px 0; }
 .skuGridAccess {

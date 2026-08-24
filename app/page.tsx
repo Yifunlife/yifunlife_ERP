@@ -3242,6 +3242,16 @@ export default function Home() {
     if (!r.ok) setStaffError(d.error || "更新员工状态失败。");
     else void loadStaff();
   };
+  const updateStaffRole = async (email: string, role: "employee" | "management") => {
+    const r = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, action: "set_role", role }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) setStaffError(d.error || "更新员工权限失败。");
+    else void loadStaff();
+  };
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     setAuthAccount(null);
@@ -3415,6 +3425,7 @@ export default function Home() {
             <span>当前账号 / ACCOUNT</span>
             <b>{authAccount?.name || "员工"}</b>
             <small>{authAccount?.email}</small>
+            <small>{authAccount?.role === "admin" ? "管理员 / Administrator" : authAccount?.role === "management" ? "管理层 / Management（只读）" : "员工 / Employee"}</small>
           </div>
           {authAccount?.role === "admin" && (
             <button
@@ -3476,7 +3487,7 @@ export default function Home() {
               <div>
                 <span className="eyebrow">ACCOUNT ADMINISTRATION</span>
                 <h2>员工管理</h2>
-                <p>新注册账号需批准后才能访问报价系统。</p>
+                <p>管理员可修改全部设置；管理层只读；员工仅可使用报价功能。</p>
               </div>
               <button className="closeStaff" onClick={() => setStaffOpen(false)} aria-label="关闭员工管理">×</button>
             </div>
@@ -3487,10 +3498,19 @@ export default function Home() {
                   <div>
                     <strong>{user.name}</strong>
                     <small>{user.email}</small>
-                    <small>{user.role === "admin" ? "管理员 / Administrator" : `注册于 ${new Date(user.createdAt).toLocaleDateString("zh-CN")}`}</small>
+                    <small>{user.role === "admin" ? "管理员 / Administrator" : user.role === "management" ? "管理层 / Management" : "员工 / Employee"}</small>
+                    <small>注册于 {new Date(user.createdAt).toLocaleDateString("zh-CN")}</small>
                   </div>
                   <div className="staffActions">
                     <span className={`staffStatus ${user.status}`}>{user.status === "pending" ? "待审批" : user.status === "active" ? "已启用" : "已停用"}</span>
+                    {user.role !== "admin" && (
+                      <label className="staffRoleSelect">
+                        <select aria-label={`${user.name} 的账号权限`} value={user.role === "management" ? "management" : "employee"} onChange={(event) => void updateStaffRole(user.email, event.target.value as "employee" | "management")}>
+                          <option value="employee">员工（可使用）</option>
+                          <option value="management">管理层（只读）</option>
+                        </select>
+                      </label>
+                    )}
                     {user.role !== "admin" && user.status === "pending" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "approve")}>批准</button>}
                     {user.role !== "admin" && user.status === "active" && <button className="outline" onClick={() => updateStaffStatus(user.email, "suspend")}>停用</button>}
                     {user.role !== "admin" && user.status === "suspended" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "activate")}>启用</button>}
