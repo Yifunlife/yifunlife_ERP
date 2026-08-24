@@ -1050,7 +1050,7 @@ img {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  height: 74px;
+  height: 92px;
   gap: 10px;
   border-bottom: 1px solid #e0e7df;
   background: #fff;
@@ -1064,6 +1064,7 @@ img {
 }
 .pairingPinnedSource span { min-width: 0; }
 .pairingPinnedSource b,
+.pairingPinnedSource i,
 .pairingPinnedSource small {
   display: block;
   overflow: hidden;
@@ -1071,6 +1072,26 @@ img {
   white-space: nowrap;
 }
 .pairingPinnedSource b { color: var(--navy); font-size: 12px; }
+.pairingPinnedSource b em {
+  margin-left: 7px;
+  color: #77901d;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+.pairingPinnedSource i,
+.pairingMatrix thead th i {
+  display: inline-block;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: #e6f4fb;
+  color: #2b7098;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
+  padding: 2px 5px;
+}
 .pairingPinnedSource small { margin-top: 4px; color: #687983; font-size: 11px; font-weight: 500; }
 .pairingMatrixWrap {
   min-width: 0;
@@ -1102,7 +1123,7 @@ img {
   background: #f0f4ed;
   color: var(--navy);
   box-sizing: border-box;
-  height: 110px;
+  height: 128px;
   padding: 9px;
   text-align: center;
   vertical-align: bottom;
@@ -1130,7 +1151,7 @@ img {
 }
 .pairingMatrix td {
   box-sizing: border-box;
-  height: 74px;
+  height: 92px;
   min-width: 112px;
   background: #fff;
   padding: 10px;

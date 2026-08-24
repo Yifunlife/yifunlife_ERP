@@ -25,6 +25,7 @@ type Override = {
   productId: string;
   price?: string | null;
   imageUrl?: string | null;
+  stock?: number | null;
   category1?: string | null;
   category2?: string | null;
   category3?: string | null;
@@ -70,6 +71,7 @@ type GridRow = {
   categoryPath: string;
   colorTag: string;
   price: number | null;
+  stock: number | null;
   note: string;
   name: string;
   en: string;
@@ -241,6 +243,7 @@ const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] 
         override?.price === undefined || override.price === null || override.price === ""
           ? product.price
           : Number(override.price),
+      stock: override?.stock ?? null,
       note: product.note || product.priceNote,
       name: product.name,
       en: product.en,
@@ -1185,7 +1188,19 @@ export function ProductGridManager({
                     <article className="pairingPinnedSource" key={source.id}>
                       {source.image && <img src={source.image} alt="" />}
                       <span>
-                        <b>{source.sku}</b>
+                        <b>
+                          {source.sku}
+                          <em>
+                            已匹配{" "}
+                            {
+                              Object.values(pairingMatrix[source.id] || {}).filter(
+                                (quantity) => quantity > 0,
+                              ).length
+                            }{" "}
+                            款
+                          </em>
+                        </b>
+                        <i>库存 / Stock：{source.stock === null ? "待维护" : source.stock}</i>
                         <small>{source.productName}</small>
                       </span>
                     </article>
@@ -1206,6 +1221,7 @@ export function ProductGridManager({
                         <th key={toy.id} scope="col" title={`${toy.sku} · ${toy.productName}`}>
                           {toy.image && <img src={toy.image} alt="" />}
                           <b>{toy.sku}</b>
+                          <i>库存 / Stock：{toy.stock === null ? "待维护" : toy.stock}</i>
                           <small>{toy.productName}</small>
                         </th>
                       ))}
@@ -1218,11 +1234,16 @@ export function ProductGridManager({
                           <td key={toy.id}>
                             <input
                               aria-label={`${source.sku} 配对 ${toy.sku} 的数量`}
-                              min="0"
                               onChange={(event) =>
-                                setMatrixQuantity(source.id, toy.id, Number(event.target.value))
+                                setMatrixQuantity(
+                                  source.id,
+                                  toy.id,
+                                  Number(event.target.value.replace(/\D/g, "")) || 0,
+                                )
                               }
-                              type="number"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              type="text"
                               value={pairingMatrix[source.id]?.[toy.id] || 0}
                             />
                           </td>
