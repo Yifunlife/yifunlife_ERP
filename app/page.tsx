@@ -84,7 +84,8 @@ type QuoteImportPreview = {
   designerName: string;
   salesName: string;
 };
-type QuoteImportPriceMode = "vip" | "usd";
+type QuoteImportPriceMode = "factory" | "vip" | "usd";
+type PriceMode = QuoteImportPriceMode;
 type QuoteImportColumns = {
   quantity: number;
   cnyUnit: number;
@@ -1562,7 +1563,7 @@ export default function Home() {
   const [screenOnly, setScreenOnly] = useState(false);
   const [recommendedOnly, setRecommendedOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [currency, setCurrency] = useState<"CNY" | "USD">("CNY");
+  const [priceMode, setPriceMode] = useState<PriceMode>("vip");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [quoteQuantityDrafts, setQuoteQuantityDrafts] = useState<
     Record<string, string>
@@ -1914,10 +1915,28 @@ export default function Home() {
     );
   // Keep zero-quantity items visible in the cart, but never put them on a quotation.
   const quoteCartItems = cartItems.filter((item) => item.qty > 0);
-  const displayPrice = (p: Product) => (currency === "CNY" ? p.price : p.usd);
+  const currency: "CNY" | "USD" = priceMode === "usd" ? "USD" : "CNY";
+  const displayPrice = (p: Product) => {
+    if (priceMode === "usd") return p.usd;
+    if (priceMode === "factory")
+      return p.category1 === "小玩具" ? p.price : p.factory;
+    return p.price;
+  };
+  const displayPriceLabel = (p: Product) =>
+    priceMode === "factory"
+      ? p.category1 === "小玩具"
+        ? "国内 VIP 价（小玩具）"
+        : "出厂价"
+      : priceMode === "vip"
+        ? "国内 VIP 价"
+        : "美金价格";
   const importCurrency = quoteImportPriceMode === "usd" ? "USD" : "CNY";
   const importUnitPrice = (product: Product) =>
-    quoteImportPriceMode === "vip"
+    quoteImportPriceMode === "factory"
+      ? product.category1 === "小玩具"
+        ? product.price
+        : product.factory
+      : quoteImportPriceMode === "vip"
       ? product.price
       : quoteImportPriceMode === "usd"
         ? product.usd
@@ -2561,7 +2580,7 @@ export default function Home() {
   };
   const applyQuoteImport = () => {
     if (!quoteImportPreview || !quoteImportPreview.rows.length) return;
-    setCurrency(importCurrency);
+    setPriceMode(quoteImportPriceMode);
     const importedRows = quoteImportPreview.rows;
     const catalogProductBySku = new Map(
       products.map((product) => [product.sku.toUpperCase(), product]),
@@ -3184,12 +3203,13 @@ export default function Home() {
           </label>
           <select
             className="currency"
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value as "CNY" | "USD")}
+            value={priceMode}
+            onChange={(event) => setPriceMode(event.target.value as PriceMode)}
             aria-label="选择报价货币"
           >
-            <option value="CNY">国内 VIP 价（CNY）</option>
-            <option value="USD">美金价格（USD）</option>
+            <option value="factory">出厂价（CNY）</option>
+            <option value="vip">国内 VIP 价（CNY）</option>
+            <option value="usd">美金价格（USD）</option>
           </select>
           <button
             className="outline"
@@ -3968,7 +3988,7 @@ export default function Home() {
                         )}
                         <div className="priceRow">
                           <div>
-                            <small>{currency === "CNY" ? "国内 VIP 价" : "美金价格"} / {p.unit}</small>
+                            <small>{displayPriceLabel(p)} / {p.unit}</small>
                             <strong>{money(displayPrice(p), currency)}</strong>
                           </div>
                           {cart[p.id] ? (
@@ -4204,11 +4224,12 @@ export default function Home() {
                     )
                   }
                 >
+                  <option value="factory">出厂价（CNY；小玩具自动使用国内 VIP 价）</option>
                   <option value="vip">国内 VIP 价格（CNY）</option>
                   <option value="usd">美金价格（USD）</option>
                 </select>
                 <small>
-                  当前可使用国内 VIP 价格或美金价格导入。
+                  主设备可按出厂价、国内 VIP 价或美金价格导入；配套小玩具仅使用国内 VIP 价或美金价格。
                 </small>
               </label>
               <label
@@ -4252,7 +4273,7 @@ export default function Home() {
                     <span>商务：{quoteImportPreview.salesName || "表单未提供"}</span>
                   </div>
                   <p>
-                    下表金额已按 {quoteImportPriceMode === "usd" ? "美金价格（USD）" : "国内 VIP 价格（CNY）"} 计算。
+                    下表金额已按 {quoteImportPriceMode === "factory" ? "出厂价（CNY；小玩具使用国内 VIP 价）" : quoteImportPriceMode === "usd" ? "美金价格（USD）" : "国内 VIP 价格（CNY）"} 计算。
                   </p>
                   <div className="importTableWrap">
                     <table className="importTable">
@@ -5048,12 +5069,13 @@ export default function Home() {
                   <label>报价币种 / Currency</label>
                   <select
                     className="quoteCurrencySelect"
-                    value={currency}
-                    onChange={(event) => setCurrency(event.target.value as "CNY" | "USD")}
+                    value={priceMode}
+                    onChange={(event) => setPriceMode(event.target.value as PriceMode)}
                     aria-label="选择报价币种"
                   >
-                    <option value="CNY">人民币 / CNY</option>
-                    <option value="USD">美元 / USD</option>
+                    <option value="factory">出厂价 / Factory (CNY)</option>
+                    <option value="vip">国内 VIP 价 / Domestic VIP (CNY)</option>
+                    <option value="usd">美元 / USD</option>
                   </select>
                 </div>
                 <div>

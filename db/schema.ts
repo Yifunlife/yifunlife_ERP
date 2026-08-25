@@ -14,6 +14,8 @@ export const catalogProducts = sqliteTable("catalog_products", {
   category: text("category").notNull().default(""),
   family: text("family").notNull().default(""),
   price: real("price"),
+  factoryPrice: real("factory_price"),
+  vipPrice: real("vip_price"),
   priceNote: text("price_note").notNull().default(""),
   usdPrice: real("usd_price"),
   unit: text("unit").notNull().default(""),

@@ -6,6 +6,7 @@ export type CatalogProduct = {
   category: string;
   family: "小玩具" | "模拟设备" | "大型设备";
   price: number | null;
+  factory: number | null;
   priceNote: string;
   usd: number | null;
   unit: string;

@@ -81,7 +81,7 @@ async function getStoredCatalogBackup() {
   if (!object) return [];
   const products = (await object.json()) as Array<{
     id: string; sku: string; name: string; en: string; category: string;
-    family: string; price: number | null; priceNote: string; usd: number | null;
+    family: string; price: number | null; factory?: number | null; priceNote: string; usd: number | null;
     unit: string; spec: string; brand: string; material: string; note: string; image: string;
   }>;
   return products.map((product) => ({
@@ -92,6 +92,7 @@ async function getStoredCatalogBackup() {
     category: product.category,
     family: product.family,
     price: product.price,
+    factory: product.factory ?? null,
     priceNote: product.priceNote,
     usd: product.usd,
     unit: product.unit,
@@ -127,7 +128,8 @@ export async function GET(request: Request) {
         en: product.englishName,
         category: product.category,
         family: product.family,
-        price: product.price,
+        price: product.vipPrice ?? product.price,
+        factory: product.factoryPrice,
         priceNote: product.priceNote,
         usd: product.usdPrice,
         unit: product.unit,
