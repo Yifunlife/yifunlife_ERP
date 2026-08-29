@@ -224,6 +224,7 @@ const majorCategoryByArea: Record<string, MajorCategory> = {
   "宠物医院、宠物之家区域配套玩具（英文版）": "动物世界 / Animal World",
   "萌宠、沐浴区模拟设备": "动物世界 / Animal World",
   恐龙区设备: "动物世界 / Animal World",
+  恐龙区域配套玩具: "动物世界 / Animal World",
   赛车区域配套玩具: "车生活 / Car Life",
   "赛车、修车区模拟设备": "车生活 / Car Life",
   修理店区域配套玩具: "车生活 / Car Life",
@@ -1730,7 +1731,9 @@ export default function Home() {
         const category1 = o?.category1 || p.family;
         const name = o?.name || p.name;
         const rawCategory2 = o?.category2 || p.category;
-        const category2 = pairedArea(rawCategory2, name) || rawCategory2;
+        const category2 = /^Y407(?:1[6-9]|2\d|3[01])$/.test(p.sku)
+          ? "恐龙区"
+          : pairedArea(rawCategory2, name) || rawCategory2;
         return {
           ...p,
           name,
