@@ -23,8 +23,13 @@ import { pairedArea } from "../../lib/area-pairing";
 
 type Override = {
   productId: string;
-  price?: string | null;
+  name?: string | null;
+  price?: string | number | null;
   imageUrl?: string | null;
+  specification?: string | null;
+  unit?: string | null;
+  cost?: number | null;
+  supplyMethod?: string | null;
   stock?: number | null;
   category1?: string | null;
   category2?: string | null;
@@ -44,22 +49,6 @@ type ProductRelation = {
   quantity?: number | string;
 };
 
-type AreaPairingRule = {
-  id: string;
-  name: string;
-  selectionMode: "fixed" | "single" | "multiple";
-  minSelections: number;
-  maxSelections: number;
-  note: string;
-  items: Array<{ sku: string; quantity: number }>;
-};
-
-type StoredAreaPairingRule = {
-  area: string;
-  rules: AreaPairingRule[];
-  updatedAt: string;
-};
-
 type GridRow = {
   id: string;
   image: string;
@@ -69,8 +58,13 @@ type GridRow = {
   category2: string;
   category3: string;
   categoryPath: string;
+  productType: string;
   colorTag: string;
   price: number | null;
+  cost: number | null;
+  specification: string;
+  unit: string;
+  supplyMethod: string;
   stock: number | null;
   note: string;
   name: string;
@@ -80,7 +74,7 @@ type GridRow = {
 type UndoItem = {
   productId: string;
   sku: string;
-  patch: Record<string, string>;
+  patch: Record<string, unknown>;
   restoreRow: GridRow;
 };
 
@@ -113,48 +107,9 @@ const colorSwatches: Record<string, string> = {
   待重新识别: "#d7b55f", 未识别: "#d7b55f", 无主图: "#c9cfca",
 };
 
-const kitchenAreaPairingRules: AreaPairingRule[] = [
-  {
-    id: "kitchen-essentials",
-    name: "厨房基础必配",
-    selectionMode: "fixed",
-    minSelections: 3,
-    maxSelections: 3,
-    note: "每厨房位：厨师服、挂钩、厨具五件套各 1 套。",
-    items: [
-      { sku: "Y30787", quantity: 1 },
-      { sku: "Y40708", quantity: 1 },
-      { sku: "Y40655", quantity: 1 },
-    ],
-  },
-  {
-    id: "kitchen-condiments",
-    name: "调料组合",
-    selectionMode: "single",
-    minSelections: 1,
-    maxSelections: 1,
-    note: "每厨房位选择 1 套。",
-    items: [
-      { sku: "Y40611", quantity: 1 },
-      { sku: "Y30786", quantity: 1 },
-    ],
-  },
-  {
-    id: "kitchen-tableware",
-    name: "餐具组合",
-    selectionMode: "multiple",
-    minSelections: 2,
-    maxSelections: 2,
-    note: "每厨房位选择 2 种餐具，每种 1 套。",
-    items: [
-      { sku: "Y30729", quantity: 1 },
-      { sku: "Y31190", quantity: 1 },
-      { sku: "Y30733", quantity: 1 },
-      { sku: "Y30734", quantity: 1 },
-      { sku: "Y30719", quantity: 1 },
-    ],
-  },
-];
+const primaryCategoryChoices = ["模拟设备", "配套产品"];
+const productTypeChoices = ["主设备", "配套产品", "配套玩具"];
+const supplyMethodChoices = ["自有生产", "外采"];
 
 function ColourDot({ value }: { value: string }) {
   return (
@@ -209,9 +164,6 @@ const normalizedRelation = (relation: ProductRelation): ProductRelation => ({
   quantity: Math.max(1, Math.floor(Number(relation.quantity) || 1)),
 });
 
-const normalizedSku = (value: string) =>
-  value.trim().toUpperCase().match(/Y\d+/)?.[0] || value.trim().toUpperCase();
-
 const relationQuantityTotal = (relations: ProductRelation[]) =>
   relations.reduce(
     (total, relation) => total + Math.max(1, Math.floor(Number(relation.quantity) || 1)),
@@ -222,30 +174,39 @@ const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] 
   const overrideById = new Map(overrides.map((override) => [override.productId, override]));
   return products.map((product) => {
     const override = overrideById.get(product.id);
-    const category1 = override?.category1 || product.family;
+    const category1 =
+      override?.category1 ||
+      (product.family === "小玩具" ? "配套产品" : "模拟设备");
     const rawCategory2 = override?.category2 || product.category;
     const category2 = pairedArea(rawCategory2, product.name) || rawCategory2;
-    const category3 = override?.category3 || "未细分";
+    const category3 =
+      override?.category3 ||
+      (product.family === "小玩具" ? "配套玩具" : "主设备");
     return {
       id: product.id,
       image: override?.imageUrl || product.image,
       sku: product.sku,
-      productName: product.name,
+      productName: override?.name || product.name,
       category1,
       category2,
       category3,
       categoryPath: categoryPath(category1, category2, category3),
+      productType: category3,
       colorTag:
-        category1 === "小玩具"
+        category3 === "配套玩具"
           ? "不适用"
           : override?.colorTag || (product.image ? "待重新识别" : "无主图"),
       price:
         override?.price === undefined || override.price === null || override.price === ""
-          ? product.price
-          : Number(override.price),
+            ? product.price
+            : Number(override.price),
+      cost: override?.cost ?? product.factory,
+      specification: override?.specification ?? product.spec,
+      unit: override?.unit ?? product.unit,
+      supplyMethod: override?.supplyMethod || "",
       stock: override?.stock ?? null,
       note: product.note || product.priceNote,
-      name: product.name,
+      name: override?.name || product.name,
       en: product.en,
     };
   });
@@ -279,12 +240,9 @@ export function ProductGridManager({
   const [pairingMatrix, setPairingMatrix] = useState<
     Record<string, Record<string, number>>
   >({});
-  const [areaPairingRules, setAreaPairingRules] = useState<StoredAreaPairingRule[]>([]);
   const [pairingSearch, setPairingSearch] = useState("");
   const [pairingSaving, setPairingSaving] = useState(false);
   const [pairingClearing, setPairingClearing] = useState(false);
-  const [areaRuleSaving, setAreaRuleSaving] = useState(false);
-  const [areaRuleApplying, setAreaRuleApplying] = useState(false);
   const [pairingSavedMessage, setPairingSavedMessage] = useState("");
   const pairingPinnedRowsRef = useRef<HTMLDivElement>(null);
   const pairingMatrixWrapRef = useRef<HTMLDivElement>(null);
@@ -307,28 +265,16 @@ export function ProductGridManager({
     setRows(gridRows(data.products || [], data.overrides || []));
     setCategories(data.categories || []);
     setRelations((data.recommendations || []).map(normalizedRelation));
-    setAreaPairingRules(data.areaPairingRules || []);
-    setStatus(`${(data.products || []).length} 个 SKU · 双击分类或颜色即可修改`);
+    setStatus(`${(data.products || []).length} 个 SKU · 双击单元格即可修改`);
   };
 
   useEffect(() => {
     void load();
   }, []);
 
-  const categoryPaths = useMemo(
-    () =>
-      [...new Set([
-        ...rows.map((row) => row.categoryPath),
-        ...categories
-          .filter((category) => category.level === 3)
-          .map((category) => `${category.parentKey.replace("/", " / ")} / ${category.name}`),
-      ])].sort(),
-    [categories, rows],
-  );
-
   const batchCategory1Options = useMemo(
-    () => [...new Set(rows.map((row) => row.category1))].sort(),
-    [rows],
+    () => primaryCategoryChoices,
+    [],
   );
   const batchCategory2Options = useMemo(
     () =>
@@ -346,30 +292,14 @@ export function ProductGridManager({
     [batchCategory1, categories, rows],
   );
   const batchCategory3Options = useMemo(
-    () =>
-      [...new Set([
-        ...rows
-          .filter(
-            (row) =>
-              row.category1 === batchCategory1 &&
-              row.category2 === batchCategory2,
-          )
-          .map((row) => row.category3),
-        ...categories
-          .filter(
-            (category) =>
-              category.level === 3 &&
-              category.parentKey === `${batchCategory1}/${batchCategory2}`,
-          )
-          .map((category) => category.name),
-      ])].sort(),
-    [batchCategory1, batchCategory2, categories, rows],
+    () => productTypeChoices,
+    [],
   );
 
   const pairingToyAreas = useMemo(
     () => new Set(
       rows
-        .filter((row) => row.category1 === "小玩具")
+        .filter((row) => row.productType === "配套玩具")
         .map(pairingAreaForRow),
     ),
     [rows],
@@ -380,7 +310,7 @@ export function ProductGridManager({
         rows
           .filter(
             (row) =>
-              row.category1 !== "小玩具" &&
+              row.productType === "主设备" &&
               pairingToyAreas.has(pairingAreaForRow(row)),
           )
           .map(pairingAreaForRow),
@@ -391,7 +321,7 @@ export function ProductGridManager({
     () =>
       rows.filter(
         (row) =>
-          row.category1 !== "小玩具" &&
+          row.productType === "主设备" &&
           pairingToyAreas.has(pairingAreaForRow(row)) &&
           pairingAreaForRow(row) === pairingCategory,
       ),
@@ -411,7 +341,7 @@ export function ProductGridManager({
     () =>
       rows.filter(
         (row) =>
-          row.category1 === "小玩具" &&
+          row.productType === "配套玩具" &&
           pairingAreaForRow(row) === pairingCategory,
       ),
     [pairingCategory, rows],
@@ -431,11 +361,6 @@ export function ProductGridManager({
       ),
     [pairingQuantities, pairingTargetIds],
   );
-  const savedKitchenRules = useMemo(
-    () => areaPairingRules.find((rule) => rule.area === "厨房区"),
-    [areaPairingRules],
-  );
-
   useEffect(() => {
     if (pairingStandalone && !pairingCategory && simulationCategories.length)
       setPairingCategory(simulationCategories[0]);
@@ -456,132 +381,6 @@ export function ProductGridManager({
     setPairingMatrix(next);
   }, [pairingAreaSimulationRows, pairingToyRows, relations]);
 
-  const saveKitchenAreaRules = async () => {
-    setAreaRuleSaving(true);
-    setPairingSavedMessage("");
-    const response = await fetch("/api/catalog", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "areaPairingRules",
-        area: "厨房区",
-        rules: kitchenAreaPairingRules,
-      }),
-    });
-    if (!response.ok) {
-      setAreaRuleSaving(false);
-      setPairingSavedMessage("厨房统一规则保存失败，请重试。");
-      return;
-    }
-    const data = (await response.json()) as { rule?: StoredAreaPairingRule };
-    if (data.rule)
-      setAreaPairingRules((current) => [
-        ...current.filter((rule) => rule.area !== data.rule!.area),
-        data.rule!,
-      ]);
-    setAreaRuleSaving(false);
-    setPairingSavedMessage("厨房区统一配对规则已保存，全部厨房模拟设备共用此逻辑。");
-  };
-
-  const saveKitchenPairings = async (
-    targets: GridRow[],
-    successMessage: (sourceCount: number, targetCount: number) => string,
-  ) => {
-    setAreaRuleApplying(true);
-    setPairingSavedMessage("");
-    const sources = rows.filter(
-      (row) => row.category1 !== "小玩具" && pairingAreaForRow(row) === "厨房区",
-    );
-    if (!sources.length || !targets.length) {
-      setAreaRuleApplying(false);
-      setPairingSavedMessage("未找到可应用的厨房设备或玩具 SKU。");
-      return;
-    }
-    const relatedProducts = targets.map((target) => ({
-      relatedProductId: target.id,
-      quantity: 1,
-    }));
-    const results: Response[] = [];
-    for (let index = 0; index < sources.length; index += 4) {
-      const batch = await Promise.all(
-        sources.slice(index, index + 4).map((source) =>
-          fetch("/api/catalog", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "recommendations",
-              productId: source.id,
-              relatedProducts,
-            }),
-          }),
-        ),
-      );
-      results.push(...batch);
-      if (batch.some((response) => !response.ok)) break;
-    }
-    setAreaRuleApplying(false);
-    if (results.some((response) => !response.ok)) {
-      setPairingSavedMessage("厨房配对应用失败，请重试。");
-      return;
-    }
-    await load();
-    setPairingSavedMessage(successMessage(sources.length, targets.length));
-  };
-
-  const applyKitchenAreaRules = async () => {
-    const ruleSkus = new Set(
-      kitchenAreaPairingRules.flatMap((rule) =>
-        rule.items.map((item) => normalizedSku(item.sku)),
-      ),
-    );
-    await saveKitchenPairings(
-      rows.filter((row) => ruleSkus.has(normalizedSku(row.sku))),
-      (sourceCount, targetCount) =>
-        `已将 ${targetCount} 个明确规则玩具（每个 ×1）保存到 ${sourceCount} 台厨房模拟设备，共 ${sourceCount * targetCount} 条配对。`,
-    );
-  };
-
-  const applyAllKitchenToys = async () => {
-    await saveKitchenPairings(
-      pairingToyRows,
-      (sourceCount, targetCount) =>
-        `已将全部 ${targetCount} 个厨房玩具（每个 ×1）保存到 ${sourceCount} 台厨房模拟设备，共 ${sourceCount * targetCount} 条配对。`,
-    );
-  };
-
-  const clearAllKitchenPairings = async () => {
-    setAreaRuleApplying(true);
-    setPairingSavedMessage("");
-    const sources = rows.filter(
-      (row) => row.category1 !== "小玩具" && pairingAreaForRow(row) === "厨房区",
-    );
-    const results: Response[] = [];
-    for (let index = 0; index < sources.length; index += 4) {
-      const batch = await Promise.all(
-        sources.slice(index, index + 4).map((source) =>
-          fetch("/api/catalog", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "recommendations",
-              productId: source.id,
-              relatedProducts: [],
-            }),
-          }),
-        ),
-      );
-      results.push(...batch);
-      if (batch.some((response) => !response.ok)) break;
-    }
-    setAreaRuleApplying(false);
-    if (results.some((response) => !response.ok)) {
-      setPairingSavedMessage("厨房配对清空失败，请重试。");
-      return;
-    }
-    await load();
-    setPairingSavedMessage(`已清空 ${sources.length} 台厨房模拟设备的全部玩具配对。`);
-  };
-
   const closePairingManager = () => {
     window.history.back();
   };
@@ -600,7 +399,7 @@ export function ProductGridManager({
       Object.fromEntries(
         savedRelations.map((relation) => [
           relation.relatedProductId,
-          relation.quantity || 1,
+          Number(relation.quantity) || 1,
         ]),
       ),
     );
@@ -782,40 +581,33 @@ export function ProductGridManager({
   const saveChange = async (event: CellValueChangedEvent<GridRow>) => {
     if (!event.data || event.newValue === event.oldValue) return;
     const field = event.colDef.field;
-    let patch: Record<string, string>;
+    let patch: Record<string, unknown>;
     let updatedRow = event.data;
     let undoItem: UndoItem;
 
-    if (field === "categoryPath") {
-      const [category1, category2, category3 = "未细分"] = String(event.newValue)
-        .split(" / ");
+    if (field === "category1" || field === "category2" || field === "productType") {
+      const category1 = field === "category1" ? String(event.newValue) : event.data.category1;
+      const category2 = field === "category2" ? String(event.newValue).trim() : event.data.category2;
+      const category3 = field === "productType" ? String(event.newValue) : event.data.productType;
       patch = { category1, category2, category3 };
       updatedRow = {
         ...event.data,
         category1,
         category2,
         category3,
+        productType: category3,
         categoryPath: categoryPath(category1, category2, category3),
-        colorTag: category1 === "小玩具" ? "不适用" : event.data.colorTag,
+        colorTag: category3 === "配套玩具" ? "不适用" : event.data.colorTag,
       };
-      const [oldCategory1, oldCategory2, oldCategory3 = "未细分"] = String(
-        event.oldValue,
-      ).split(" / ");
       undoItem = {
         productId: event.data.id,
         sku: event.data.sku,
         patch: {
-          category1: oldCategory1,
-          category2: oldCategory2,
-          category3: oldCategory3,
+          category1: event.data.category1,
+          category2: event.data.category2,
+          category3: event.data.productType,
         },
-        restoreRow: {
-          ...event.data,
-          category1: oldCategory1,
-          category2: oldCategory2,
-          category3: oldCategory3,
-          categoryPath: categoryPath(oldCategory1, oldCategory2, oldCategory3),
-        },
+        restoreRow: event.data,
       };
     } else if (field === "colorTag") {
       patch = { colorTag: String(event.newValue) };
@@ -825,6 +617,38 @@ export function ProductGridManager({
         sku: event.data.sku,
         patch: { colorTag: String(event.oldValue) },
         restoreRow: { ...event.data, colorTag: String(event.oldValue) },
+      };
+    } else if (field === "productName") {
+      patch = { name: String(event.newValue).trim() };
+      updatedRow = { ...event.data, productName: String(event.newValue).trim(), name: String(event.newValue).trim() };
+      undoItem = {
+        productId: event.data.id,
+        sku: event.data.sku,
+        patch: { name: event.data.productName },
+        restoreRow: event.data,
+      };
+    } else if (field === "specification" || field === "unit" || field === "supplyMethod") {
+      const value = String(event.newValue).trim();
+      const patchField = field === "specification" ? "specification" : field;
+      patch = { [patchField]: value };
+      updatedRow = { ...event.data, [field]: value };
+      undoItem = {
+        productId: event.data.id,
+        sku: event.data.sku,
+        patch: { [patchField]: event.data[field] },
+        restoreRow: event.data,
+      };
+    } else if (field === "price" || field === "cost") {
+      const text = String(event.newValue).trim();
+      const value = text === "" ? null : Number(text);
+      if (value !== null && !Number.isFinite(value)) return;
+      patch = { [field]: value };
+      updatedRow = { ...event.data, [field]: value };
+      undoItem = {
+        productId: event.data.id,
+        sku: event.data.sku,
+        patch: { [field]: event.data[field] },
+        restoreRow: event.data,
       };
     } else {
       return;
@@ -899,8 +723,9 @@ export function ProductGridManager({
         category1,
         category2,
         category3,
+        productType: category3,
         categoryPath: categoryPath(category1, category2, category3),
-        colorTag: category1 === "小玩具" ? "不适用" : row.colorTag,
+        colorTag: category3 === "配套玩具" ? "不适用" : row.colorTag,
       },
     }));
     setStatus(`正在批量修改 ${updates.length} 个 SKU 的分类…`);
@@ -973,20 +798,65 @@ export function ProductGridManager({
             <span className="skuGridImageEmpty">暂无图</span>
           ),
       },
-      { headerName: "SKU", field: "productName", minWidth: 180, flex: 1 },
+      { headerName: "名称", field: "productName", minWidth: 180, flex: 1, editable: true },
       { headerName: "款号", field: "sku", minWidth: 126 },
       {
-        headerName: "分类（三级）",
-        field: "categoryPath",
-        minWidth: 280,
-        flex: 1,
+        headerName: "一级分类",
+        field: "category1",
+        minWidth: 120,
         editable: true,
-        cellRenderer: (params: ICellRendererParams<GridRow, string>) => (
-          <span className="gridCategoryPath">{params.value}</span>
-        ),
         cellEditor: PickerEditor,
         cellEditorPopup: true,
-        cellEditorParams: { values: categoryPaths },
+        cellEditorParams: { values: primaryCategoryChoices },
+      },
+      {
+        headerName: "二级分类",
+        field: "category2",
+        minWidth: 140,
+        editable: true,
+      },
+      {
+        headerName: "产品类型",
+        field: "productType",
+        minWidth: 130,
+        editable: true,
+        cellEditor: PickerEditor,
+        cellEditorPopup: true,
+        cellEditorParams: { values: productTypeChoices },
+      },
+      { headerName: "尺寸", field: "specification", minWidth: 160, editable: true },
+      { headerName: "单位", field: "unit", minWidth: 100, editable: true },
+      {
+        headerName: "成本（CNY）",
+        field: "cost",
+        minWidth: 130,
+        editable: true,
+        filter: "agNumberColumnFilter",
+        valueFormatter: (params) =>
+          params.value === null || params.value === undefined || params.value === ""
+            ? "待补"
+            : `¥${Number(params.value).toLocaleString("zh-CN")}`,
+      },
+      {
+        headerName: "售价（CNY）",
+        field: "price",
+        minWidth: 130,
+        editable: true,
+        filter: "agNumberColumnFilter",
+        valueFormatter: (params) =>
+          params.value === null || params.value === undefined
+            ? "—"
+            : `¥${Number(params.value).toLocaleString("zh-CN")}`,
+      },
+      {
+        headerName: "供应方式",
+        field: "supplyMethod",
+        minWidth: 120,
+        editable: true,
+        cellEditor: PickerEditor,
+        cellEditorPopup: true,
+        cellEditorParams: { values: supplyMethodChoices },
+        valueFormatter: (params) => params.value || "待补",
       },
       {
         headerName: "颜色",
@@ -1004,16 +874,6 @@ export function ProductGridManager({
         cellEditorParams: { values: colorChoices, showColour: true },
       },
       {
-        headerName: "价格（CNY）",
-        field: "price",
-        minWidth: 130,
-        filter: "agNumberColumnFilter",
-        valueFormatter: (params) =>
-          params.value === null || params.value === undefined
-            ? "—"
-            : `¥${Number(params.value).toLocaleString("zh-CN")}`,
-      },
-      {
         headerName: "备注",
         field: "note",
         minWidth: 220,
@@ -1021,7 +881,7 @@ export function ProductGridManager({
         tooltipField: "note",
       },
     ],
-    [categoryPaths],
+    [],
   );
 
   if (adminAccess !== "granted") {
@@ -1106,7 +966,7 @@ export function ProductGridManager({
         <section className="skuBatchBar" aria-label="批量操作">
           <b>已选择 {selectedRows.length} 个 SKU</b>
           <label>
-            产品大类
+            一级分类
             <select
               value={batchCategory1}
               onChange={(event) => {
@@ -1115,14 +975,14 @@ export function ProductGridManager({
                 setBatchCategory3("");
               }}
             >
-              <option value="">选择产品大类</option>
+              <option value="">选择一级分类</option>
               {batchCategory1Options.map((category) => (
                 <option key={category}>{category}</option>
               ))}
             </select>
           </label>
           <label>
-            区域分类
+            二级分类
             <select
               disabled={!batchCategory1}
               value={batchCategory2}
@@ -1131,20 +991,20 @@ export function ProductGridManager({
                 setBatchCategory3("");
               }}
             >
-              <option value="">选择区域分类</option>
+              <option value="">选择二级分类</option>
               {batchCategory2Options.map((category) => (
                 <option key={category}>{category}</option>
               ))}
             </select>
           </label>
           <label>
-            三级分类
+            产品类型
             <select
               disabled={!batchCategory2}
               value={batchCategory3}
               onChange={(event) => setBatchCategory3(event.target.value)}
             >
-              <option value="">选择三级分类</option>
+              <option value="">选择产品类型</option>
               {batchCategory3Options.map((category) => (
                 <option key={category}>{category}</option>
               ))}
