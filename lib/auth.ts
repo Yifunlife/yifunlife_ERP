@@ -47,11 +47,11 @@ const randomToken = () =>
   crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
 
 export const passwordError = (password: string) =>
-  password.length < 10 ? "密码至少需要 10 位。" : "";
+  password.length < 8 ? "密码至少需要 8 位。" : "";
 
 async function derivePasswordHash(password: string, salt: Uint8Array) {
   return crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: PASSWORD_ITERATIONS, hash: "SHA-256" },
+    { name: "PBKDF2", salt: new Uint8Array(salt).buffer, iterations: PASSWORD_ITERATIONS, hash: "SHA-256" },
     await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]),
     256,
   );
@@ -78,6 +78,7 @@ export async function ensureAdminUser() {
   const now = new Date().toISOString();
   await db.insert(appUsers).values({
     email: ADMIN_EMAIL,
+    username: ADMIN_EMAIL,
     name: "Yifun Life Administrator",
     ...record,
     role: "admin",

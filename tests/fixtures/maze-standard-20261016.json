@@ -1,0 +1,825 @@
+{
+  "rules": [],
+  "mappings": [
+    {
+      "sku": "FB0001-A1",
+      "family": "house",
+      "grade": 0,
+      "label": "标准款"
+    },
+    {
+      "sku": "FB0001-A2",
+      "family": "house",
+      "grade": 1,
+      "label": "一般异型"
+    },
+    {
+      "sku": "FB0001-A3",
+      "family": "house",
+      "grade": 2,
+      "label": "特异型"
+    },
+    {
+      "sku": "FB0002-B1",
+      "family": "house",
+      "grade": 0,
+      "label": "标准款"
+    },
+    {
+      "sku": "FB0002-B2",
+      "family": "house",
+      "grade": 1,
+      "label": "一般异型"
+    },
+    {
+      "sku": "FB0002-B3",
+      "family": "house",
+      "grade": 2,
+      "label": "特异型"
+    },
+    {
+      "sku": "FB0003-C1",
+      "family": "house",
+      "grade": 0,
+      "label": "标准款"
+    },
+    {
+      "sku": "FB0003-C2",
+      "family": "house",
+      "grade": 1,
+      "label": "一般异型"
+    },
+    {
+      "sku": "FB0003-C3",
+      "family": "house",
+      "grade": 2,
+      "label": "特异型"
+    },
+    {
+      "sku": "MP-02",
+      "family": "piece",
+      "grade": 0,
+      "label": "标准件"
+    },
+    {
+      "sku": "M201",
+      "family": "piece",
+      "grade": 0,
+      "label": "标准件"
+    }
+  ],
+  "saleRules": [],
+  "resources": [
+    {
+      "id": "standard-CL-GC-001",
+      "code": "CL-GC-001",
+      "kind": "material",
+      "category": "GC",
+      "name": "钢材/KG",
+      "spec": "",
+      "unit": "kg",
+      "price": 4.2
+    },
+    {
+      "id": "standard-CL-MB-001",
+      "code": "CL-MB-001",
+      "kind": "material",
+      "category": "MB",
+      "name": "9厘板/张",
+      "spec": "",
+      "unit": "张",
+      "price": 58
+    },
+    {
+      "id": "standard-CL-MB-002",
+      "code": "CL-MB-002",
+      "kind": "material",
+      "category": "MB",
+      "name": "15厘板/格",
+      "spec": "",
+      "unit": "格",
+      "price": 95
+    },
+    {
+      "id": "standard-CL-MB-003",
+      "code": "CL-MB-003",
+      "kind": "material",
+      "category": "MB",
+      "name": "5厘板/张",
+      "spec": "",
+      "unit": "张",
+      "price": 45
+    },
+    {
+      "id": "standard-CL-RB-001",
+      "code": "CL-RB-001",
+      "kind": "material",
+      "category": "RB",
+      "name": "皮革/平方",
+      "spec": "",
+      "unit": "㎡",
+      "price": 31
+    },
+    {
+      "id": "standard-CL-RB-002",
+      "code": "CL-RB-002",
+      "kind": "material",
+      "category": "RB",
+      "name": "珍珠棉/平方",
+      "spec": "",
+      "unit": "㎡",
+      "price": 6
+    },
+    {
+      "id": "standard-CL-RB-003",
+      "code": "CL-RB-003",
+      "kind": "material",
+      "category": "RB",
+      "name": "海绵/平方",
+      "spec": "",
+      "unit": "㎡",
+      "price": 6
+    },
+    {
+      "id": "standard-CL-SGB-001",
+      "code": "CL-SGB-001",
+      "kind": "material",
+      "category": "SGB",
+      "name": "石膏板/张",
+      "spec": "",
+      "unit": "张",
+      "price": 28
+    },
+    {
+      "id": "standard-RG-001",
+      "code": "RG-001",
+      "kind": "labor",
+      "name": "铁工",
+      "spec": "",
+      "unit": "人天",
+      "price": 300
+    },
+    {
+      "id": "standard-RG-002",
+      "code": "RG-002",
+      "kind": "labor",
+      "name": "封板木工",
+      "spec": "",
+      "unit": "人天",
+      "price": 316
+    },
+    {
+      "id": "standard-RG-003",
+      "code": "RG-003",
+      "kind": "labor",
+      "name": "踏面木工",
+      "spec": "",
+      "unit": "人天",
+      "price": 316
+    },
+    {
+      "id": "standard-RG-004",
+      "code": "RG-004",
+      "kind": "labor",
+      "name": "软包木工",
+      "spec": "",
+      "unit": "人天",
+      "price": 290,
+      "dailyOutput": 23.39
+    },
+    {
+      "id": "standard-RG-005",
+      "code": "RG-005",
+      "kind": "labor",
+      "name": "车缝&裁剪",
+      "spec": "",
+      "unit": "人天",
+      "price": 290
+    },
+    {
+      "id": "standard-RG-006",
+      "code": "RG-006",
+      "kind": "labor",
+      "name": "贴棉",
+      "spec": "",
+      "unit": "人天",
+      "price": 290,
+      "dailyOutput": 58
+    },
+    {
+      "id": "standard-RG-007",
+      "code": "RG-007",
+      "kind": "labor",
+      "name": "钉皮",
+      "spec": "",
+      "unit": "人天",
+      "price": 290,
+      "dailyOutput": 77.59
+    },
+    {
+      "id": "standard-RG-008",
+      "code": "RG-008",
+      "kind": "labor",
+      "name": "电工",
+      "spec": "",
+      "unit": "人天",
+      "price": 300
+    },
+    {
+      "id": "standard-RG-009",
+      "code": "RG-009",
+      "kind": "labor",
+      "name": "包装",
+      "spec": "",
+      "unit": "人天",
+      "price": 260
+    },
+    {
+      "id": "standard-RG-010",
+      "code": "RG-010",
+      "kind": "labor",
+      "name": "编号",
+      "spec": "",
+      "unit": "人天",
+      "price": 300
+    },
+    {
+      "id": "standard-RG-011",
+      "code": "RG-011",
+      "kind": "labor",
+      "name": "拆除",
+      "spec": "",
+      "unit": "人天",
+      "price": 300
+    },
+    {
+      "id": "maze-CL-MB-004",
+      "code": "CL-MB-004",
+      "kind": "material",
+      "category": "MB",
+      "name": "15厘阻燃板/平方",
+      "spec": "1.22*2.44*15",
+      "unit": "张",
+      "price": 110,
+      "areaPerUnit": 2.9768
+    },
+    {
+      "id": "maze-CL-RB-004",
+      "code": "CL-RB-004",
+      "kind": "material",
+      "category": "RB",
+      "name": "ATM2638系列/软包皮",
+      "spec": "1.38",
+      "unit": "米",
+      "price": 42,
+      "areaPerUnit": 1.38
+    },
+    {
+      "id": "maze-CL-RB-005",
+      "code": "CL-RB-005",
+      "kind": "material",
+      "category": "RB",
+      "name": "2CM非阻燃珍珠棉",
+      "spec": "2450*1200*20",
+      "unit": "张",
+      "price": 24,
+      "areaPerUnit": 2.94
+    },
+    {
+      "id": "maze-CL-RB-006",
+      "code": "CL-RB-006",
+      "kind": "material",
+      "category": "RB",
+      "name": "1CM非阻燃珍珠棉",
+      "spec": "2450*1200*10",
+      "unit": "张",
+      "price": 12,
+      "areaPerUnit": 2.94
+    },
+    {
+      "id": "maze-CL-RB-007",
+      "code": "CL-RB-007",
+      "kind": "material",
+      "category": "RB",
+      "name": "1CM阻燃海绵",
+      "spec": "4500*2000*10",
+      "unit": "张",
+      "price": 69.5,
+      "areaPerUnit": 9
+    },
+    {
+      "id": "maze-CL-MB-005",
+      "code": "CL-MB-005",
+      "kind": "material",
+      "category": "MB",
+      "name": "18厘阻燃板/平方",
+      "spec": "1.22*2.44*18",
+      "unit": "张",
+      "price": 133,
+      "areaPerUnit": 2.9768
+    },
+    {
+      "id": "maze-CL-RB-008",
+      "code": "CL-RB-008",
+      "kind": "material",
+      "category": "RB",
+      "name": "平台皮",
+      "spec": "",
+      "unit": "㎡",
+      "price": 12,
+      "areaPerUnit": 1
+    },
+    {
+      "id": "maze-CL-RB-009",
+      "code": "CL-RB-009",
+      "kind": "material",
+      "category": "RB",
+      "name": "3CM非阻燃珍珠棉",
+      "spec": "2450*1200*30",
+      "unit": "张",
+      "price": 36,
+      "areaPerUnit": 2.94
+    }
+  ],
+  "recipes": [
+    {
+      "sku": "FB0001-A1",
+      "name": "A类房子 · 标准款",
+      "houseClass": "A",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0001-A2",
+      "name": "A类房子 · 一般异型",
+      "houseClass": "A",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0001-A3",
+      "name": "A类房子 · 特异型",
+      "houseClass": "A",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0002-B1",
+      "name": "B类房子 · 标准款",
+      "houseClass": "B",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0002-B2",
+      "name": "B类房子 · 一般异型",
+      "houseClass": "B",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0002-B3",
+      "name": "B类房子 · 特异型",
+      "houseClass": "B",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0003-C1",
+      "name": "C类房子 · 标准款",
+      "houseClass": "C",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0003-C2",
+      "name": "C类房子 · 一般异型",
+      "houseClass": "C",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "FB0003-C3",
+      "name": "C类房子 · 特异型",
+      "houseClass": "C",
+      "lines": [],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "MP-02",
+      "name": "二步梯",
+      "basis": "piece",
+      "difficultyFactor": 1,
+      "lines": [
+        {
+          "id": "MP-02-row-7",
+          "resourceId": "maze-CL-MB-004",
+          "laborResourceId": "standard-RG-004",
+          "part": "wall",
+          "usage": 2.8,
+          "expression": "2.8",
+          "source": "迷宫标准软包类!F7 / G7",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "MP-02-row-8",
+          "resourceId": "maze-CL-RB-004",
+          "laborResourceId": "standard-RG-007",
+          "part": "wall",
+          "usage": 3,
+          "expression": "3",
+          "source": "迷宫标准软包类!F8 / G8",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "MP-02-row-9",
+          "resourceId": "maze-CL-RB-005",
+          "laborResourceId": "standard-RG-006",
+          "part": "wall",
+          "usage": 0.6,
+          "expression": "0.6",
+          "source": "迷宫标准软包类!F9 / G9",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "MP-02-row-10",
+          "resourceId": "maze-CL-RB-006",
+          "laborResourceId": "standard-RG-006",
+          "part": "wall",
+          "usage": 0.88,
+          "expression": "0.88",
+          "source": "迷宫标准软包类!F10 / G10",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "MP-02-row-11",
+          "resourceId": "maze-CL-RB-007",
+          "laborResourceId": "standard-RG-006",
+          "part": "wall",
+          "usage": 1.6,
+          "expression": "1.6",
+          "source": "迷宫标准软包类!F11 / G11",
+          "factor": 1,
+          "enabled": true
+        }
+      ],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    },
+    {
+      "sku": "M201",
+      "name": "梅花桩",
+      "basis": "piece",
+      "difficultyFactor": 1,
+      "lines": [
+        {
+          "id": "M201-row-12",
+          "resourceId": "maze-CL-MB-005",
+          "laborResourceId": "standard-RG-004",
+          "part": "wall",
+          "usage": 1.49,
+          "expression": "1.49",
+          "source": "迷宫标准软包类!F12 / G12",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "M201-row-13",
+          "resourceId": "maze-CL-MB-004",
+          "laborResourceId": "standard-RG-004",
+          "part": "wall",
+          "usage": 0.66,
+          "expression": "0.66",
+          "source": "迷宫标准软包类!F13 / G13",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "M201-row-14",
+          "resourceId": "maze-CL-RB-004",
+          "laborResourceId": "standard-RG-007",
+          "part": "wall",
+          "usage": 0.888552,
+          "expression": "0.21*0.21*4+3.14*0.21*0.27*4",
+          "source": "迷宫标准软包类!F14 / G14",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "M201-row-15",
+          "resourceId": "maze-CL-RB-008",
+          "laborResourceId": "standard-RG-007",
+          "part": "wall",
+          "usage": 1.8496,
+          "expression": "1.22*1.22+1.29*4*0.07",
+          "source": "迷宫标准软包类!F15 / G15",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "M201-row-16",
+          "resourceId": "maze-CL-RB-009",
+          "laborResourceId": "standard-RG-006",
+          "part": "wall",
+          "usage": 1.4884,
+          "expression": "1.22*1.22",
+          "source": "迷宫标准软包类!F16 / G16",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "M201-row-17",
+          "resourceId": "maze-CL-RB-006",
+          "laborResourceId": "standard-RG-006",
+          "part": "wall",
+          "usage": 0.6624000000000001,
+          "expression": "0.2*0.2*4+0.2*3.14*0.2*4",
+          "source": "迷宫标准软包类!F17 / G17",
+          "factor": 1,
+          "enabled": true
+        },
+        {
+          "id": "M201-row-18",
+          "resourceId": "maze-CL-RB-007",
+          "laborResourceId": "standard-RG-006",
+          "part": "wall",
+          "usage": 3.1024000000000003,
+          "expression": "0.2*0.2*4+0.2*3.14*0.2*4+1.22+1.22",
+          "source": "迷宫标准软包类!F18 / G18",
+          "factor": 1,
+          "enabled": true
+        }
+      ],
+      "salePrices": {
+        "wall": null,
+        "mezzanine": null,
+        "roof": null,
+        "glass": null
+      }
+    }
+  ],
+  "houseStandard": {
+    "lines": [
+      {
+        "id": "line-CL-GC-001",
+        "resourceId": "standard-CL-GC-001",
+        "part": "wall",
+        "usage": 8.735632183908047,
+        "expression": "1520/174",
+        "source": "正式A/B/C页D2；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-CL-MB-001",
+        "resourceId": "standard-CL-MB-001",
+        "part": "wall",
+        "usage": 0.632183908045977,
+        "expression": "110/174",
+        "source": "正式A/B/C页D3；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-CL-MB-002",
+        "resourceId": "standard-CL-MB-002",
+        "part": "wall",
+        "usage": 0.11494252873563218,
+        "expression": "20/174",
+        "source": "正式A/B/C页D4；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-CL-MB-003",
+        "resourceId": "standard-CL-MB-003",
+        "part": "wall",
+        "usage": 0.632183908045977,
+        "expression": "110/174",
+        "source": "正式A/B/C页D5；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-CL-RB-001",
+        "resourceId": "standard-CL-RB-001",
+        "part": "wall",
+        "usage": 2.1839080459770117,
+        "expression": "380/174",
+        "source": "正式A/B/C页D6；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-CL-RB-002",
+        "resourceId": "standard-CL-RB-002",
+        "part": "wall",
+        "usage": 1.839080459770115,
+        "expression": "320/174",
+        "source": "正式A/B/C页D7；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-CL-RB-003",
+        "resourceId": "standard-CL-RB-003",
+        "part": "wall",
+        "usage": 1.839080459770115,
+        "expression": "320/174",
+        "source": "正式A/B/C页D8；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-CL-SGB-001",
+        "resourceId": "standard-CL-SGB-001",
+        "part": "wall",
+        "usage": 0.632183908045977,
+        "expression": "110/174",
+        "source": "正式A/B/C页D9；测试页数量÷174㎡，与正式值一致",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-001",
+        "resourceId": "standard-RG-001",
+        "part": "wall",
+        "usage": 0.32183908045977,
+        "expression": "0.32183908045977",
+        "source": "A类房子!H2；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-002",
+        "resourceId": "standard-RG-002",
+        "part": "wall",
+        "usage": 0.305543430816237,
+        "expression": "0.305543430816237",
+        "source": "A类房子!H3；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-003",
+        "resourceId": "standard-RG-003",
+        "part": "wall",
+        "usage": 0.00818419903972063,
+        "expression": "0.00818419903972063",
+        "source": "A类房子!H4；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-004",
+        "resourceId": "standard-RG-004",
+        "part": "wall",
+        "usage": 0.0832342449464924,
+        "expression": "0.0832342449464924",
+        "source": "A类房子!H5；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-005",
+        "resourceId": "standard-RG-005",
+        "part": "wall",
+        "usage": 0.249702734839477,
+        "expression": "0.249702734839477",
+        "source": "A类房子!H6；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-006",
+        "resourceId": "standard-RG-006",
+        "part": "wall",
+        "usage": 0.101070154577883,
+        "expression": "0.101070154577883",
+        "source": "A类房子!H7；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-007",
+        "resourceId": "standard-RG-007",
+        "part": "wall",
+        "usage": 0.267538644470868,
+        "expression": "0.267538644470868",
+        "source": "A类房子!H8；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-008",
+        "resourceId": "standard-RG-008",
+        "part": "wall",
+        "usage": 0.0344827586206897,
+        "expression": "0.0344827586206897",
+        "source": "A类房子!H9；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-009",
+        "resourceId": "standard-RG-009",
+        "part": "wall",
+        "usage": 0.0517241379310346,
+        "expression": "0.0517241379310346",
+        "source": "A类房子!H10；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-010",
+        "resourceId": "standard-RG-010",
+        "part": "wall",
+        "usage": 0.0172413793103448,
+        "expression": "0.0172413793103448",
+        "source": "A类房子!H11；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      },
+      {
+        "id": "line-RG-011",
+        "resourceId": "standard-RG-011",
+        "part": "wall",
+        "usage": 0.0632183908045977,
+        "expression": "0.0632183908045977",
+        "source": "A类房子!H12；正式页给定值，未提供原始推导式",
+        "factor": 1,
+        "enabled": true
+      }
+    ],
+    "factors": [
+      1,
+      1.2,
+      1.8
+    ],
+    "managementRate": 0.1,
+    "usageDecimals": 3
+  },
+  "codeCounters": {
+    "material": 8,
+    "labor": 11,
+    "GC": 1,
+    "MB": 5,
+    "RB": 9,
+    "SGB": 1
+  },
+  "exchangeRate": 6.7,
+  "saleMultiplier": 2
+}

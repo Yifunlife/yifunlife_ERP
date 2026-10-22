@@ -25,7 +25,7 @@ export async function POST(request: Request) {
             : "账户系统初始化失败，请联系管理员",
     }, { status: 503 });
   }
-  const user = await getDb().select().from(appUsers).where(eq(appUsers.email, normalizeEmail(email || username || ""))).get();
+  const user = await getDb().select().from(appUsers).where(eq(appUsers.username, normalizeEmail(username || email || ""))).get();
   if (!user || !password || !(await passwordMatches(password, user.passwordHash, user.passwordSalt)))
     return Response.json({ error: "账户或密码不正确" }, { status: 401 });
   if (user.status === "pending")

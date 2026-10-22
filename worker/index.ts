@@ -1,6 +1,8 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { handleWorkplace } from "../lib/workplace";
+import { POST as uploadQuoteTemplate } from "../app/api/quote-template/route";
 
 interface Env {
   ASSETS: Fetcher;
@@ -29,6 +31,9 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if (["/api/workplace-sync", "/api/workplace-project"].includes(url.pathname)) return handleWorkplace(request);
+    // Multipart API uploads must not pass through the 1MB server-action parser.
+    if (url.pathname === "/api/quote-template" && request.method === "POST") return uploadQuoteTemplate(request);
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

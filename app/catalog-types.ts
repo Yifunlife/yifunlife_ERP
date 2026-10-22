@@ -9,6 +9,7 @@ export type CatalogProduct = {
   factory: number | null;
   priceNote: string;
   usd: number | null;
+  usdExchangeRate?: number;
   unit: string;
   spec: string;
   brand: string;

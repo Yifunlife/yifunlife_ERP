@@ -29,13 +29,25 @@ type Override = {
   specification?: string | null;
   unit?: string | null;
   cost?: number | null;
+  branchPrice?: number | null;
   supplyMethod?: string | null;
   stock?: number | null;
+  majorCategory?: string | null;
   category1?: string | null;
   category2?: string | null;
   category3?: string | null;
   colorTag?: string | null;
 };
+
+type ProductClassification = {
+  id: string;
+  productId: string;
+  level1: string;
+  level2: string;
+  level3: string;
+};
+
+type ProductTag = { productId: string; tag: string };
 
 type Category = {
   level: number;
@@ -50,18 +62,22 @@ type ProductRelation = {
 };
 
 type GridRow = {
+  rowId: string;
   id: string;
   image: string;
   sku: string;
   productName: string;
+  level1: string;
   category1: string;
   category2: string;
   category3: string;
   categoryPath: string;
   productType: string;
+  tags: string;
   colorTag: string;
   price: number | null;
   cost: number | null;
+  branchPrice: number | null;
   specification: string;
   unit: string;
   supplyMethod: string;
@@ -108,7 +124,7 @@ const colorSwatches: Record<string, string> = {
 };
 
 const primaryCategoryChoices = ["模拟设备", "配套产品"];
-const productTypeChoices = ["主设备", "配套产品", "配套玩具"];
+const productTypeChoices = ["主设备", "配套产品", "配套玩具", "广告类型", "地面/地胶"];
 const supplyMethodChoices = ["自有生产", "外采"];
 
 function ColourDot({ value }: { value: string }) {
@@ -153,11 +169,16 @@ const PickerEditor = forwardRef<{ getValue: () => string }, PickerEditorProps>(
 );
 PickerEditor.displayName = "PickerEditor";
 
-const categoryPath = (category1: string, category2: string, category3: string) =>
-  [category1, category2, category3].filter(Boolean).join(" / ");
+const categoryPath = (level1: string, level2: string, level3: string) =>
+  [level1, level2, level3].filter(Boolean).join(" / ");
 
 const pairingAreaForRow = (row: GridRow) =>
   pairedArea(row.category2, row.productName) || row.category2;
+
+const isPairingItem = (row: GridRow) =>
+  row.productType === "配套产品" || row.productType === "配套玩具";
+const isAccessoryProductName = (name: string) =>
+  /凳|椅|衣架|挂钩|购物车|购物篮/.test(name);
 
 const normalizedRelation = (relation: ProductRelation): ProductRelation => ({
   ...relation,
@@ -170,37 +191,73 @@ const relationQuantityTotal = (relations: ProductRelation[]) =>
     0,
   );
 
-const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] => {
+const splitTags = (value: string) =>
+  [...new Set(value.split(/[,，、]/).map((tag) => tag.trim()).filter(Boolean))];
+
+const gridRows = (
+  products: CatalogProduct[],
+  overrides: Override[],
+  classifications: ProductClassification[],
+  tags: ProductTag[],
+): GridRow[] => {
   const overrideById = new Map(overrides.map((override) => [override.productId, override]));
-  return products.map((product) => {
+  const classificationsByProduct = new Map<string, ProductClassification[]>();
+  classifications.forEach((record) => {
+    const current = classificationsByProduct.get(record.productId) || [];
+    current.push(record);
+    classificationsByProduct.set(record.productId, current);
+  });
+  const tagsByProduct = new Map<string, string[]>();
+  tags.forEach((record) => {
+    const current = tagsByProduct.get(record.productId) || [];
+    current.push(record.tag);
+    tagsByProduct.set(record.productId, current);
+  });
+  return products.flatMap((product) => {
     const override = overrideById.get(product.id);
-    const category1 =
+    const fallbackLevel2 =
       override?.category1 ||
       (product.family === "小玩具" ? "配套产品" : "模拟设备");
-    const rawCategory2 = override?.category2 || product.category;
-    const category2 = pairedArea(rawCategory2, product.name) || rawCategory2;
-    const category3 =
+    const productTags = tagsByProduct.get(product.id) || [
       override?.category3 ||
-      (product.family === "小玩具" ? "配套玩具" : "主设备");
-    return {
+      (product.family === "小玩具"
+        ? "配套玩具"
+        : isAccessoryProductName(override?.name || product.name)
+          ? "配套产品"
+          : "主设备"),
+    ];
+    const productType =
+      productTags.find((tag) => productTypeChoices.includes(tag)) || productTags[0] || "";
+    const records = classificationsByProduct.get(product.id) || [{
+      id: `classification-${product.id}`,
+      productId: product.id,
+      level1: override?.majorCategory || "生活场景 / Lifestyle Scene",
+      level2: fallbackLevel2,
+      level3: override?.category2 || product.category || "未分类",
+    }];
+    return records.map((record) => ({
+      rowId: record.id,
       id: product.id,
       image: override?.imageUrl || product.image,
       sku: product.sku,
       productName: override?.name || product.name,
-      category1,
-      category2,
-      category3,
-      categoryPath: categoryPath(category1, category2, category3),
-      productType: category3,
+      level1: record.level1,
+      category1: record.level2,
+      category2: record.level3,
+      category3: productType,
+      categoryPath: categoryPath(record.level1, record.level2, record.level3),
+      productType,
+      tags: productTags.join("、"),
       colorTag:
-        category3 === "配套玩具"
+        productType === "配套玩具"
           ? "不适用"
           : override?.colorTag || (product.image ? "待重新识别" : "无主图"),
       price:
         override?.price === undefined || override.price === null || override.price === ""
             ? product.price
             : Number(override.price),
-      cost: override?.cost ?? product.factory,
+      cost: override?.cost ?? null,
+      branchPrice: override?.branchPrice ?? null,
       specification: override?.specification ?? product.spec,
       unit: override?.unit ?? product.unit,
       supplyMethod: override?.supplyMethod || "",
@@ -208,7 +265,7 @@ const gridRows = (products: CatalogProduct[], overrides: Override[]): GridRow[] 
       note: product.note || product.priceNote,
       name: override?.name || product.name,
       en: product.en,
-    };
+    }));
   });
 };
 
@@ -226,9 +283,15 @@ export function ProductGridManager({
   const [status, setStatus] = useState("正在加载产品清单…");
   const [undoStack, setUndoStack] = useState<UndoChange[]>([]);
   const [selectedRows, setSelectedRows] = useState<GridRow[]>([]);
+  const [batchLevel1, setBatchLevel1] = useState("");
   const [batchCategory1, setBatchCategory1] = useState("");
   const [batchCategory2, setBatchCategory2] = useState("");
-  const [batchCategory3, setBatchCategory3] = useState("");
+  const [batchTags, setBatchTags] = useState("");
+  const [directoryFilter, setDirectoryFilter] = useState<{
+    level1?: string;
+    level2?: string;
+    level3?: string;
+  }>({});
   const [relations, setRelations] = useState<ProductRelation[]>([]);
   const pairingOpen = pairingStandalone;
   const [pairingCategory, setPairingCategory] = useState("");
@@ -262,44 +325,61 @@ export function ProductGridManager({
       return;
     }
     const data = await response.json();
-    setRows(gridRows(data.products || [], data.overrides || []));
+    setRows(gridRows(
+      data.products || [],
+      data.overrides || [],
+      data.classifications || [],
+      data.tags || [],
+    ));
     setCategories(data.categories || []);
     setRelations((data.recommendations || []).map(normalizedRelation));
-    setStatus(`${(data.products || []).length} 个 SKU · 双击单元格即可修改`);
+    setStatus(`${(data.products || []).length} 个 SKU · ${(data.classifications || []).length} 条分类记录`);
   };
 
   useEffect(() => {
     void load();
   }, []);
 
+  const batchLevel1Options = useMemo(
+    () => [...new Set(rows.map((row) => row.level1).filter(Boolean))].sort(),
+    [rows],
+  );
   const batchCategory1Options = useMemo(
-    () => primaryCategoryChoices,
-    [],
+    () => [...new Set([...primaryCategoryChoices, ...rows.map((row) => row.category1)])].sort(),
+    [rows],
   );
   const batchCategory2Options = useMemo(
     () =>
       [...new Set([
-        ...rows
-          .filter((row) => row.category1 === batchCategory1)
-          .map((row) => row.category2),
+        ...rows.map((row) => row.category2),
         ...categories
-          .filter(
-            (category) =>
-              category.level === 2 && category.parentKey === batchCategory1,
-          )
+          .filter((category) => category.level === 2)
           .map((category) => category.name),
       ])].sort(),
-    [batchCategory1, categories, rows],
+    [categories, rows],
   );
-  const batchCategory3Options = useMemo(
-    () => productTypeChoices,
-    [],
+  const directoryTree = useMemo(() => {
+    const tree = new Map<string, Map<string, Set<string>>>();
+    rows.forEach((row) => {
+      if (!tree.has(row.level1)) tree.set(row.level1, new Map());
+      const second = tree.get(row.level1)!;
+      if (!second.has(row.category1)) second.set(row.category1, new Set());
+      second.get(row.category1)!.add(row.category2);
+    });
+    return tree;
+  }, [rows]);
+  const displayedRows = useMemo(
+    () => rows.filter((row) =>
+      (!directoryFilter.level1 || row.level1 === directoryFilter.level1) &&
+      (!directoryFilter.level2 || row.category1 === directoryFilter.level2) &&
+      (!directoryFilter.level3 || row.category2 === directoryFilter.level3)),
+    [directoryFilter, rows],
   );
 
   const pairingToyAreas = useMemo(
     () => new Set(
       rows
-        .filter((row) => row.productType === "配套玩具")
+        .filter(isPairingItem)
         .map(pairingAreaForRow),
     ),
     [rows],
@@ -341,7 +421,7 @@ export function ProductGridManager({
     () =>
       rows.filter(
         (row) =>
-          row.productType === "配套玩具" &&
+          isPairingItem(row) &&
           pairingAreaForRow(row) === pairingCategory,
       ),
     [pairingCategory, rows],
@@ -382,7 +462,7 @@ export function ProductGridManager({
   }, [pairingAreaSimulationRows, pairingToyRows, relations]);
 
   const closePairingManager = () => {
-    window.history.back();
+    window.location.assign("/");
   };
 
   const selectPairingSource = (productId: string) => {
@@ -500,7 +580,7 @@ export function ProductGridManager({
       0,
     );
     setPairingSavedMessage(
-      `已保存 ${sources.length} 台模拟设备的配对表，共 ${total} 件配套玩具。`,
+      `已保存 ${sources.length} 台模拟设备的配对表，共 ${total} 件配套项目。`,
     );
   };
 
@@ -578,38 +658,84 @@ export function ProductGridManager({
     );
   };
 
+  const persistProductStructure = async (
+    productId: string,
+    nextRows: GridRow[],
+    tagsText: string,
+  ) =>
+    fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "classifications",
+        productId,
+        classifications: nextRows
+          .filter((row) => row.level1 && row.category1 && row.category2)
+          .map((row) => ({
+            id: row.rowId,
+            level1: row.level1,
+            level2: row.category1,
+            level3: row.category2,
+          })),
+        tags: splitTags(tagsText),
+      }),
+    });
+
   const saveChange = async (event: CellValueChangedEvent<GridRow>) => {
     if (!event.data || event.newValue === event.oldValue) return;
     const field = event.colDef.field;
+    if (field === "level1" || field === "category1" || field === "category2" || field === "tags") {
+      const previousRows = rows.filter((row) => row.id === event.data.id);
+      const newValue = String(event.newValue || "").trim();
+      const nextRows = previousRows.map((row) => {
+        if (field === "tags")
+          return {
+            ...row,
+            tags: splitTags(newValue).join("、"),
+            productType:
+              splitTags(newValue).find((tag) => productTypeChoices.includes(tag)) || "",
+          };
+        if (row.rowId !== event.data.rowId) return row;
+        const next = { ...row, [field]: newValue };
+        return {
+          ...next,
+          categoryPath: categoryPath(next.level1, next.category1, next.category2),
+        };
+      });
+      if (!nextRows.some((row) => row.level1 && row.category1 && row.category2)) {
+        setStatus(`${event.data.sku} 至少需要一条完整分类记录。`);
+        setRows((current) => [
+          ...current.filter((row) => row.id !== event.data.id),
+          ...previousRows,
+        ]);
+        return;
+      }
+      setRows((current) => [
+        ...current.filter((row) => row.id !== event.data.id),
+        ...nextRows,
+      ]);
+      setStatus(`正在保存 ${event.data.sku} 的分类记录…`);
+      const response = await persistProductStructure(
+        event.data.id,
+        nextRows,
+        field === "tags" ? newValue : nextRows[0]?.tags || "",
+      );
+      if (!response.ok) {
+        setRows((current) => [
+          ...current.filter((row) => row.id !== event.data.id),
+          ...previousRows,
+        ]);
+        setStatus(`未能保存 ${event.data.sku} 的分类，已恢复原值。`);
+        return;
+      }
+      setStatus(`已保存 ${event.data.sku} 的分类与标签`);
+      return;
+    }
     let patch: Record<string, unknown>;
     let updatedRow = event.data;
     let undoItem: UndoItem;
 
-    if (field === "category1" || field === "category2" || field === "productType") {
-      const category1 = field === "category1" ? String(event.newValue) : event.data.category1;
-      const category2 = field === "category2" ? String(event.newValue).trim() : event.data.category2;
-      const category3 = field === "productType" ? String(event.newValue) : event.data.productType;
-      patch = { category1, category2, category3 };
-      updatedRow = {
-        ...event.data,
-        category1,
-        category2,
-        category3,
-        productType: category3,
-        categoryPath: categoryPath(category1, category2, category3),
-        colorTag: category3 === "配套玩具" ? "不适用" : event.data.colorTag,
-      };
-      undoItem = {
-        productId: event.data.id,
-        sku: event.data.sku,
-        patch: {
-          category1: event.data.category1,
-          category2: event.data.category2,
-          category3: event.data.productType,
-        },
-        restoreRow: event.data,
-      };
-    } else if (field === "colorTag") {
+    if (field === "colorTag") {
       patch = { colorTag: String(event.newValue) };
       updatedRow = { ...event.data, colorTag: String(event.newValue) };
       undoItem = {
@@ -638,7 +764,7 @@ export function ProductGridManager({
         patch: { [patchField]: event.data[field] },
         restoreRow: event.data,
       };
-    } else if (field === "price" || field === "cost") {
+    } else if (field === "price" || field === "cost" || field === "branchPrice") {
       const text = String(event.newValue).trim();
       const value = text === "" ? null : Number(text);
       if (value !== null && !Number.isFinite(value)) return;
@@ -655,7 +781,9 @@ export function ProductGridManager({
     }
 
     setRows((current) =>
-      current.map((row) => (row.id === event.data.id ? updatedRow : row)),
+      current.map((row) =>
+        row.id === event.data.id ? { ...row, ...updatedRow, rowId: row.rowId } : row,
+      ),
     );
     setStatus(`正在保存 ${event.data.sku}…`);
     const response = await fetch("/api/catalog", {
@@ -672,7 +800,9 @@ export function ProductGridManager({
     } else {
       setRows((current) =>
         current.map((row) =>
-          row.id === event.data.id ? undoItem.restoreRow : row,
+          row.id === event.data.id
+            ? { ...row, ...undoItem.restoreRow, rowId: row.rowId }
+            : row,
         ),
       );
       setStatus(`未能保存 ${event.data.sku}，已恢复原值。`);
@@ -704,71 +834,82 @@ export function ProductGridManager({
   };
 
   const applyBatchCategory = async () => {
-    if (
-      !batchCategory1 ||
-      !batchCategory2 ||
-      !batchCategory3 ||
-      !selectedRows.length
-    )
+    if (!selectedRows.length) return;
+    if (!batchLevel1 && !batchCategory1 && !batchCategory2 && !batchTags)
       return;
-    const category1 = batchCategory1;
-    const category2 = batchCategory2;
-    const category3 = batchCategory3;
-    const updates = selectedRows.map((row) => ({
-      productId: row.id,
-      patch: { category1, category2, category3 },
-      restoreRow: row,
-      updatedRow: {
+    const selectedIds = new Set(selectedRows.map((row) => row.rowId));
+    const updatedRows = rows.map((row) => {
+      if (!selectedIds.has(row.rowId)) return row;
+      const nextTags = batchTags ? splitTags(batchTags).join("、") : row.tags;
+      const next = {
         ...row,
-        category1,
-        category2,
-        category3,
-        productType: category3,
-        categoryPath: categoryPath(category1, category2, category3),
-        colorTag: category3 === "配套玩具" ? "不适用" : row.colorTag,
-      },
-    }));
-    setStatus(`正在批量修改 ${updates.length} 个 SKU 的分类…`);
-    for (let index = 0; index < updates.length; index += 20) {
-      const results = await Promise.all(
-        updates.slice(index, index + 20).map((update) =>
-          fetch("/api/catalog", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productId: update.productId, patch: update.patch }),
-          }),
-        ),
-      );
-      if (results.some((response) => !response.ok)) {
-        setStatus("部分 SKU 未能修改，未保存的项目请重试。");
+        level1: batchLevel1 || row.level1,
+        category1: batchCategory1 || row.category1,
+        category2: batchCategory2 || row.category2,
+        tags: nextTags,
+        productType:
+          splitTags(nextTags).find((tag) => productTypeChoices.includes(tag)) || row.productType,
+      };
+      return {
+        ...next,
+        categoryPath: categoryPath(next.level1, next.category1, next.category2),
+      };
+    });
+    const productIds = [...new Set(selectedRows.map((row) => row.id))];
+    setStatus(`正在批量修改 ${selectedRows.length} 条分类记录…`);
+    for (const productId of productIds) {
+      const productRows = updatedRows.filter((row) => row.id === productId);
+      const response = await persistProductStructure(productId, productRows, productRows[0]?.tags || "");
+      if (!response.ok) {
+        setStatus("部分分类记录未能保存，请重试。");
+        await load();
         return;
       }
     }
-    setRows((current) =>
-      current.map(
-        (row) => updates.find((update) => update.productId === row.id)?.updatedRow || row,
-      ),
-    );
-    setUndoStack((current) => [
-      ...current,
-      {
-        label: `${updates.length} 个 SKU 的批量分类`,
-        items: updates.map((update) => ({
-          productId: update.productId,
-          sku: update.restoreRow.sku,
-          patch: {
-            category1: update.restoreRow.category1,
-            category2: update.restoreRow.category2,
-            category3: update.restoreRow.category3,
-          },
-          restoreRow: update.restoreRow,
-        })),
-      },
-    ]);
+    setRows(updatedRows);
+    setBatchLevel1("");
     setBatchCategory1("");
     setBatchCategory2("");
-    setBatchCategory3("");
-    setStatus(`已批量修改 ${updates.length} 个 SKU 的分类`);
+    setBatchTags("");
+    setStatus(`已批量修改 ${selectedRows.length} 条分类记录`);
+  };
+
+  const addClassificationRecord = () => {
+    const source = selectedRows[0];
+    if (!source) return;
+    const rowId = crypto.randomUUID();
+    setRows((current) => [
+      ...current,
+      {
+        ...source,
+        rowId,
+        category2: "",
+        categoryPath: categoryPath(source.level1, source.category1, ""),
+      },
+    ]);
+    setStatus(`已为 ${source.sku} 新增空白分类记录，请填写 3级分类后保存。`);
+  };
+
+  const deleteClassificationRecords = async () => {
+    if (!selectedRows.length) return;
+    const selectedIds = new Set(selectedRows.map((row) => row.rowId));
+    const productIds = [...new Set(selectedRows.map((row) => row.id))];
+    for (const productId of productIds) {
+      const existing = rows.filter((row) => row.id === productId);
+      const remaining = existing.filter((row) => !selectedIds.has(row.rowId));
+      if (!remaining.length) {
+        setStatus(`${existing[0]?.sku || "该 SKU"} 至少需要保留一条分类记录。`);
+        return;
+      }
+      const response = await persistProductStructure(productId, remaining, remaining[0].tags);
+      if (!response.ok) {
+        setStatus("删除分类记录失败，请重试。");
+        return;
+      }
+    }
+    setRows((current) => current.filter((row) => !selectedIds.has(row.rowId)));
+    setSelectedRows([]);
+    setStatus(`已删除 ${selectedIds.size} 条分类记录，SKU 主资料仍保留。`);
   };
 
   const columnDefs = useMemo<ColDef<GridRow>[]>(
@@ -801,7 +942,16 @@ export function ProductGridManager({
       { headerName: "名称", field: "productName", minWidth: 180, flex: 1, editable: true },
       { headerName: "款号", field: "sku", minWidth: 126 },
       {
-        headerName: "一级分类",
+        headerName: "1级分类",
+        field: "level1",
+        minWidth: 210,
+        editable: true,
+        cellEditor: PickerEditor,
+        cellEditorPopup: true,
+        cellEditorParams: { values: batchLevel1Options },
+      },
+      {
+        headerName: "2级分类",
         field: "category1",
         minWidth: 120,
         editable: true,
@@ -810,19 +960,16 @@ export function ProductGridManager({
         cellEditorParams: { values: primaryCategoryChoices },
       },
       {
-        headerName: "二级分类",
+        headerName: "3级分类",
         field: "category2",
         minWidth: 140,
         editable: true,
       },
       {
-        headerName: "产品类型",
-        field: "productType",
-        minWidth: 130,
+        headerName: "标签",
+        field: "tags",
+        minWidth: 180,
         editable: true,
-        cellEditor: PickerEditor,
-        cellEditorPopup: true,
-        cellEditorParams: { values: productTypeChoices },
       },
       { headerName: "尺寸", field: "specification", minWidth: 160, editable: true },
       { headerName: "单位", field: "unit", minWidth: 100, editable: true },
@@ -836,6 +983,17 @@ export function ProductGridManager({
           params.value === null || params.value === undefined || params.value === ""
             ? "待补"
             : `¥${Number(params.value).toLocaleString("zh-CN")}`,
+      },
+      {
+        headerName: "分公司价（USD）",
+        field: "branchPrice",
+        minWidth: 150,
+        editable: true,
+        filter: "agNumberColumnFilter",
+        valueFormatter: (params) =>
+          params.value === null || params.value === undefined || params.value === ""
+            ? "待补"
+            : `US$${Number(params.value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       },
       {
         headerName: "售价（CNY）",
@@ -881,7 +1039,7 @@ export function ProductGridManager({
         tooltipField: "note",
       },
     ],
-    [],
+    [batchLevel1Options],
   );
 
   if (adminAccess !== "granted") {
@@ -907,6 +1065,8 @@ export function ProductGridManager({
 
   return (
     <main className={`skuGridPage ${pairingStandalone ? "pairingStandalone" : ""}`}>
+      {!pairingStandalone && (
+        <>
       <header className="skuGridHeader">
         <div className="skuGridIdentity">
           <a className="workspaceBrand" href="/" aria-label="返回主页">
@@ -940,11 +1100,54 @@ export function ProductGridManager({
             placeholder="输入关键词搜索全部 SKU"
           />
         </label>
-        <small>点击列表标题可排序；标题下的筛选图标可进行列筛选。</small>
+        <small>左侧按 1、2、3 级折叠查看；表格中每一行代表一条分类记录。</small>
       </section>
-      <section className="ag-theme-quartz skuGridTable">
+      <section className="skuClassificationLayout">
+        <aside className="classificationTree" aria-label="1、2、3级分类目录">
+          <button
+            className={!directoryFilter.level1 ? "active" : ""}
+            onClick={() => setDirectoryFilter({})}
+            type="button"
+          >
+            全部分类记录 <span>{rows.length}</span>
+          </button>
+          {[...directoryTree.entries()].map(([level1, level2Map]) => (
+            <details open key={level1}>
+              <summary>
+                <span>{level1}</span>
+                <small>{[...level2Map.values()].reduce((sum, values) => sum + values.size, 0)}</small>
+              </summary>
+              {[...level2Map.entries()].map(([level2, level3Set]) => (
+                <details key={`${level1}:${level2}`}>
+                  <summary>
+                    <span>{level2}</span>
+                    <small>{level3Set.size}</small>
+                  </summary>
+                  {[...level3Set].sort().map((level3) => (
+                    <button
+                      className={
+                        directoryFilter.level1 === level1 &&
+                        directoryFilter.level2 === level2 &&
+                        directoryFilter.level3 === level3
+                          ? "active"
+                          : ""
+                      }
+                      key={`${level1}:${level2}:${level3}`}
+                      onClick={() => setDirectoryFilter({ level1, level2, level3 })}
+                      type="button"
+                    >
+                      {level3}
+                      <span>{rows.filter((row) => row.level1 === level1 && row.category1 === level2 && row.category2 === level3).length}</span>
+                    </button>
+                  ))}
+                </details>
+              ))}
+            </details>
+          ))}
+        </aside>
+        <div className="ag-theme-quartz skuGridTable">
         <AgGridReact<GridRow>
-          rowData={rows}
+          rowData={displayedRows}
           columnDefs={columnDefs}
           defaultColDef={{ sortable: true, filter: true, resizable: true }}
           quickFilterText={search}
@@ -958,66 +1161,67 @@ export function ProductGridManager({
           onSelectionChanged={(event: SelectionChangedEvent<GridRow>) =>
             setSelectedRows(event.api.getSelectedRows())
           }
-          getRowId={(params) => params.data.id}
+          getRowId={(params) => params.data.rowId}
           rowHeight={64}
         />
+        </div>
       </section>
       {!!selectedRows.length && (
         <section className="skuBatchBar" aria-label="批量操作">
-          <b>已选择 {selectedRows.length} 个 SKU</b>
+          <b>已选择 {selectedRows.length} 条记录</b>
           <label>
-            一级分类
+            1级分类
+            <select value={batchLevel1} onChange={(event) => setBatchLevel1(event.target.value)}>
+              <option value="">不修改1级分类</option>
+              {batchLevel1Options.map((category) => <option key={category}>{category}</option>)}
+            </select>
+          </label>
+          <label>
+            2级分类
             <select
               value={batchCategory1}
-              onChange={(event) => {
-                setBatchCategory1(event.target.value);
-                setBatchCategory2("");
-                setBatchCategory3("");
-              }}
+              onChange={(event) => setBatchCategory1(event.target.value)}
             >
-              <option value="">选择一级分类</option>
+              <option value="">不修改2级分类</option>
               {batchCategory1Options.map((category) => (
                 <option key={category}>{category}</option>
               ))}
             </select>
           </label>
           <label>
-            二级分类
+            3级分类
             <select
-              disabled={!batchCategory1}
               value={batchCategory2}
-              onChange={(event) => {
-                setBatchCategory2(event.target.value);
-                setBatchCategory3("");
-              }}
+              onChange={(event) => setBatchCategory2(event.target.value)}
             >
-              <option value="">选择二级分类</option>
+              <option value="">不修改3级分类</option>
               {batchCategory2Options.map((category) => (
                 <option key={category}>{category}</option>
               ))}
             </select>
           </label>
           <label>
-            产品类型
-            <select
-              disabled={!batchCategory2}
-              value={batchCategory3}
-              onChange={(event) => setBatchCategory3(event.target.value)}
-            >
-              <option value="">选择产品类型</option>
-              {batchCategory3Options.map((category) => (
-                <option key={category}>{category}</option>
-              ))}
-            </select>
+            标签
+            <input
+              value={batchTags}
+              onChange={(event) => setBatchTags(event.target.value)}
+              placeholder="多个标签用逗号分隔"
+            />
           </label>
+          <button className="outline" onClick={addClassificationRecord} type="button">＋ 新增分类记录</button>
+          <button className="outline" onClick={() => void deleteClassificationRecords()} type="button">删除分类记录</button>
           <button
             className="primary"
-            disabled={!batchCategory1 || !batchCategory2 || !batchCategory3}
+            disabled={
+              !batchLevel1 && !batchCategory1 && !batchCategory2 && !batchTags
+            }
             onClick={() => void applyBatchCategory()}
           >
-            应用分类
+            应用所选分类
           </button>
         </section>
+      )}
+        </>
       )}
       {pairingOpen && (
         <div className="pairingOverlay">
@@ -1036,7 +1240,7 @@ export function ProductGridManager({
                 <a className="outline" href="/product-list" target="_blank" rel="noreferrer">
                   产品清单管理
                 </a>
-                <button onClick={closePairingManager} aria-label="返回产品清单">
+                <button onClick={closePairingManager} aria-label="返回报价系统">
                   ×
                 </button>
               </div>
@@ -1068,7 +1272,7 @@ export function ProductGridManager({
                   type="search"
                 />
               </label>
-              <p>竖排为模拟区主设备，横排为同区域配套玩具；交叉格填写该玩具的绑定数量。</p>
+              <p>竖排为模拟区主设备，横排为同区域配套产品与玩具；交叉格填写绑定数量。</p>
             </div>
             <div className="pairingMatrixLayout">
               <aside className="pairingPinnedColumn" aria-label="模拟区主设备">
@@ -1127,7 +1331,7 @@ export function ProductGridManager({
                           <div className="pairingToyHeader">
                             {toy.image && <img src={toy.image} alt="" />}
                             <b>{toy.sku}</b>
-                            <i>库存 / Stock：{toy.stock === null ? "待维护" : toy.stock}</i>
+                            <i>{toy.productType} · 库存 / Stock：{toy.stock === null ? "待维护" : toy.stock}</i>
                             <small>{toy.productName}</small>
                           </div>
                         </th>
@@ -1164,7 +1368,7 @@ export function ProductGridManager({
             <footer className="pairingFoot">
               <span>
                 {pairingSavedMessage ||
-                  `竖排为 ${pairingAreaSimulationRows.length} 个模拟区主设备，横排为 ${pairingToyRows.length} 个配套玩具；填写数量后保存。`}
+                  `竖排为 ${pairingAreaSimulationRows.length} 个模拟区主设备，横排为 ${pairingToyRows.length} 个配套产品与玩具；填写数量后保存。`}
               </span>
               <div className="pairingFootActions">
                 <button

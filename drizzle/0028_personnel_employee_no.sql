@@ -1,0 +1,1 @@
+ALTER TABLE app_users ADD COLUMN employee_no TEXT NOT NULL DEFAULT '';

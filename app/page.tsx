@@ -1,12 +1,18 @@
 "use client";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import PasswordField from "./password-field";
 import * as XLSX from "xlsx";
 import {
   strFromU8,
   strToU8,
   unzipSync,
   zipSync,
-} from "../node_modules/.pnpm/fflate@0.7.5/node_modules/fflate/esm/browser.js";
+} from "fflate";
+import { costingInputFromRow, type QuoteCosting } from "../lib/costing-import";
+import { usdFromCny } from "../lib/currency";
+import { applyQuoteRevisions, excludedFromQuote, revisionLabels, type QuoteRevision } from "../lib/quote-revisions";
+import { quotationTotals } from "../lib/quotation";
+import { embedQuoteImages, prepareQuoteTemplateImages } from "../lib/quote-excel-images";
 import type { CatalogProduct } from "./catalog-types";
 import { pairedArea, pairedAreasForMajor } from "../lib/area-pairing";
 type MajorCategory =
@@ -18,7 +24,8 @@ type MajorCategory =
   | "车生活 / Car Life"
   | "拼装手工 / Assemble by Hand"
   | "机械传动 / Playground Scenes"
-  | "多媒体互动 / Multimedia Interactivity";
+  | "多媒体互动 / Multimedia Interactivity"
+  | "大童类 / Older Children";
 type NavigationMajor = MajorCategory | "农牧生活 / 动物世界";
 type NavigationGroup = "all" | "simulation" | "toys";
 type Override = {
@@ -27,6 +34,11 @@ type Override = {
   price?: string | null;
   imageUrl?: string | null;
   volume?: string | null;
+  specification?: string | null;
+  unit?: string | null;
+  cost?: number | null;
+  branchPrice?: number | null;
+  supplyMethod?: string | null;
   stock?: number | null;
   majorCategory?: MajorCategory | null;
   category1?: string | null;
@@ -42,19 +54,96 @@ type Category = {
   parentKey: string;
   name: string;
 };
+type ProductClassification = {
+  id: string;
+  productId: string;
+  level1: string;
+  level2: string;
+  level3: string;
+};
+type ProductTag = { productId: string; tag: string };
 type Product = CatalogProduct & {
+  revision?: QuoteRevision;
+  quoteCosting?: QuoteCosting;
   volume: string;
+  cost: number | null;
+  branchPrice: number | null;
+  supplyMethod: string | null;
   stock: number | null;
   majorCategory: MajorCategory;
   category1: string;
   category2: string;
   category3: string;
+  classifications: ProductClassification[];
+  tags: string[];
+  viewKey?: string;
   colorTag: string;
   hasScreen: boolean;
   isRecommended: boolean;
   relatedIds: string[];
+  catalogProductId?: string;
   importArea?: string;
   importSourceRow?: number;
+  importBlueColumns?: number[];
+  importSequence?: string;
+  importSourceQuantity?: number | null;
+  importSection?: number;
+};
+
+const quotationProductOrder = (product: Product) => {
+  if (!product.sku.trim()) return 0;
+  const productType = product.tags.find((tag) =>
+    ["主设备", "配套产品", "配套玩具", "广告类型", "地面/地胶"].includes(tag),
+  ) || product.category3;
+  if (productType === "配套产品") return 2;
+  if (productType === "配套玩具") return 3;
+  if (productType === "广告类型") return 4;
+  if (productType === "地面/地胶") return 5;
+  return 1;
+};
+
+const compareQuotationItems = (
+  left: { product: Product },
+  right: { product: Product },
+) => {
+  const leftSourceRow = left.product.importSourceRow;
+  const rightSourceRow = right.product.importSourceRow;
+  if (leftSourceRow !== undefined && rightSourceRow !== undefined) {
+    return leftSourceRow - rightSourceRow;
+  }
+  const priority = quotationProductOrder(left.product) - quotationProductOrder(right.product);
+  if (priority) return priority;
+  return left.product.sku.localeCompare(right.product.sku);
+};
+const isToy = (product: Product) =>
+  product.tags.includes("配套玩具") || product.category3 === "配套玩具";
+const isAccessoryProductName = (name: string) =>
+  /凳|椅|衣架|挂钩|购物车|购物篮/.test(name);
+const isPairedItem = (product: Product) =>
+  product.tags.includes("配套产品") || product.category3 === "配套产品" || isToy(product);
+const isFutureArea = (area: string) => area.includes("未来");
+const pairingBaseArea = (area: string) => area.replace("（英文版）", "");
+const groupedNavigationArea = (area: string, navigationGroup?: NavigationGroup) => {
+  const baseArea = pairingBaseArea(area);
+  if (baseArea === "厨房区" || baseArea === "未来厨房区") return "厨房区";
+  if (baseArea === "超市区" || baseArea === "未来超市区") return "超市区";
+  if (
+    navigationGroup === "toys" &&
+    ["种植区", "果蔬区", "未来果蔬区", "未来种植区"].includes(baseArea)
+  ) return "种植区";
+  return area;
+};
+const retailTypeDisplayName = (type: string) =>
+  type === "(定制LOGO+0.27/双/定码定色/单码单色1000起，250双清箱)"
+    ? "防滑袜"
+    : type;
+const groupedAreaDisplayPriority = (
+  area: string,
+  selectedArea: string,
+  navigationGroup: NavigationGroup,
+) => {
+  if (groupedNavigationArea(area, navigationGroup) !== selectedArea) return 2;
+  return isFutureArea(pairingBaseArea(area)) ? 0 : 1;
 };
 type ProductRelation = {
   productId: string;
@@ -63,6 +152,7 @@ type ProductRelation = {
 };
 type PairingSuggestion = {
   source: Product;
+  mode: "catalog" | "cart";
   relatedItems: Array<{
     product: Product;
     quantity: number;
@@ -74,6 +164,8 @@ type PairingRemovalPrompt = {
   relatedItems: Array<{ product: Product; quantity: number }>;
 };
 type QuoteImportPreview = {
+  fees?: QuoteHistorySnapshot["fees"];
+  includeTax?: boolean;
   fileName: string;
   rows: Array<{ product: Product; quantity: number }>;
   matched: Array<{ product: Product; quantity: number }>;
@@ -85,21 +177,49 @@ type QuoteImportPreview = {
   salesName: string;
 };
 type QuoteImportPriceMode = "factory" | "vip" | "usd";
+const importedQuoteHeaders = [
+  ["序号", "No."], ["款号", "Item Number"], ["产品名称", "Product Name"],
+  ["图片展示", "Product Name"], ["玩具品牌", "Toy Brands"],
+  ["规格/尺寸", "Specifications /Dimensions"], ["单位", "Unit"], ["数量", "Quantity"],
+  ["成本单价", "RMB"], ["成本价", "RMB"], ["单价", "RMB"], ["合计金额", "RMB"],
+  ["美元单价", "Unit Price (USD)"], ["美元合计total", "(USD)"],
+  ["区域小计", "Subtotal (USD)"], ["备注", "Notes", "客户知晓"],
+  ["材质/工艺做法", "Materials / Workmanship", "仅内部知晓 / Internal Use Only"], ["体积", "Volume"],
+];
 type PriceMode = QuoteImportPriceMode;
 type QuoteImportColumns = {
+  sequence: number;
+  sku: number;
+  name: number;
+  image: number;
+  brand: number;
+  specification: number;
+  unit: number;
   quantity: number;
   cnyUnit: number;
   cnyAmount: number;
   usdUnit: number;
   usdAmount: number;
   areaSubtotal: number;
+  color: number;
+  note: number;
+  volume: number;
+  material?: number;
 };
 type QuoteImportTemplate = {
-  source: ArrayBuffer;
+  headers?: string[][];
+  title?: string;
+  footerNotes?: string[];
+  feeNotes?: Partial<Record<"packaging" | "formaldehyde" | "shipping" | "installation" | "subtotal" | "tax" | "total", string>>;
+  feeLabels?: Partial<Record<"packaging" | "formaldehyde" | "shipping" | "installation" | "subtotal" | "tax" | "total", string>>;
+  source?: ArrayBuffer;
+  id?: string;
   fileName: string;
   headerRow: number;
   columns: QuoteImportColumns;
+  insertBeforeRow?: number;
   totalRow?: number;
+  feeRows?: Partial<Record<"packaging" | "formaldehyde" | "shipping" | "installation" | "designDeduction" | "subtotal" | "tax", number>>;
   metadata: {
     designer?: { row: number; column: number };
     sales?: { row: number; column: number };
@@ -112,13 +232,75 @@ type AuthAccount = {
   role: string;
   expiresAt: string;
 };
-type ManagedUser = {
-  email: string;
-  name: string;
-  role: string;
-  status: "pending" | "active" | "suspended";
-  createdAt: string;
+type QuotationHistoryRecord = {
+  id: string;
+  contractNo: string;
+  projectName: string;
+  createdBy?: string;
+  generatedAt: string;
+  lineageId?: string | null;
+  voidedAt?: string | null;
+  finalAmount?: number | null;
+  finalCurrency?: string | null;
+  hasSnapshot?: boolean;
+  snapshot?: QuoteHistorySnapshot | null;
 };
+type QuoteHistoryMode = "new" | "view" | "edit" | "export";
+type HistoryExportFormat = "pdf" | "excel";
+type QuoteHistorySnapshot = {
+  version: 1;
+  workspaceProjectId?: string;
+  importTemplate?: Omit<QuoteImportTemplate, "source">;
+  products: Product[];
+  cart: Record<string, number>;
+  cartPairings: Record<string, Record<string, number>>;
+  importedProducts: Product[];
+  importedAreaOrder: string[];
+  priceMode: PriceMode;
+  projectName: string;
+  contractNo: string;
+  designerName: string;
+  salesName: string;
+  companyAddress: string;
+  installationIncludesTravel: boolean;
+  includeTax: boolean;
+  showDesignDeduction: boolean;
+  fees: {
+    packaging: number;
+    formaldehyde: number;
+    shipping: number;
+    installation: number;
+    designDeduction: number;
+  };
+};
+type ToyMatchingDraftSnapshot = Pick<
+  QuoteHistorySnapshot,
+  | "importTemplate"
+  | "fees"
+  | "includeTax"
+  | "showDesignDeduction"
+  | "companyAddress"
+  | "installationIncludesTravel"
+  | "cart"
+  | "cartPairings"
+  | "importedProducts"
+  | "importedAreaOrder"
+  | "priceMode"
+  | "workspaceProjectId"
+  | "projectName"
+  | "contractNo"
+  | "designerName"
+  | "salesName"
+> & { version: 1; importedListName?: string };
+type ToyMatchingDraft = {
+  id: string;
+  name: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  snapshot?: ToyMatchingDraftSnapshot;
+};
+const activeQuotationKey = (email: string) => `yifun-active-quotation-v2:${email.toLowerCase()}`;
 type KitchenGroupSource = "main" | "addons" | "manual";
 type KitchenSelectionMode = "single" | "multiple" | "repeatable";
 type KitchenPackageGroup = {
@@ -154,6 +336,7 @@ const majorCategories: MajorCategory[] = [
   "拼装手工 / Assemble by Hand",
   "机械传动 / Playground Scenes",
   "多媒体互动 / Multimedia Interactivity",
+  "大童类 / Older Children",
 ];
 const navigationMajors: NavigationMajor[] = [
   "职业体验 / Career Experience",
@@ -163,6 +346,7 @@ const navigationMajors: NavigationMajor[] = [
   "拼装手工 / Assemble by Hand",
   "机械传动 / Playground Scenes",
   "多媒体互动 / Multimedia Interactivity",
+  "大童类 / Older Children",
   "零售（游玩必备） / Retail",
 ];
 const unpairedNavigationMajors = new Set<NavigationMajor>([
@@ -170,6 +354,10 @@ const unpairedNavigationMajors = new Set<NavigationMajor>([
   "多媒体互动 / Multimedia Interactivity",
   "零售（游玩必备） / Retail",
 ]);
+const majorCategoryDisplayName = (major: string) =>
+  major === "多媒体互动 / Multimedia Interactivity"
+    ? "数字运动类 / Digital Sports"
+    : major;
 const navigationMajorMembers = (major: NavigationMajor): MajorCategory[] =>
   major === "农牧生活 / 动物世界"
     ? ["农牧生活 / Agro-pastoral Life", "动物世界 / Animal World"]
@@ -300,17 +488,18 @@ const unitEnglish: Record<string, string> = {
   套: "Set", 件: "Piece", 个: "Piece", 只: "Piece", 张: "Piece", 台: "Unit", 组: "Set",
   对: "Pair", 箱: "Carton", 把: "Piece", 片: "Piece", 米: "m", 平方米: "m²",
 };
-const unitLabel = (unit: string) => ({
-  zh: unit || "—",
-  en: unitEnglish[unit] || (unit ? "Unit" : "—"),
-});
+const unitLabel = (unit: string) => {
+  if (!/[\u4e00-\u9fff]/.test(unit)) return {zh: unit || "—", en: ""};
+  const {zh, en} = splitBilingual(unit);
+  return {zh: zh || "—", en: en || unitEnglish[unit] || (unit ? "Unit" : "—")};
+};
 const isSpaceTheme = (name: string, en: string) => /太空|space/i.test(`${name} ${en}`);
 const screenWords = /屏|screen|投影|多媒体|互动|vr|电视|监视/i;
-const money = (value: number | null, currency: "CNY" | "USD") => {
+const money = (value: number | null, currency: "CNY" | "USD", decimals = currency === "CNY" ? 0 : 2) => {
   if (value === null) return "待确认";
   const amount = new Intl.NumberFormat(currency === "CNY" ? "zh-CN" : "en-US", {
-    minimumFractionDigits: currency === "CNY" ? 0 : 2,
-    maximumFractionDigits: currency === "CNY" ? 0 : 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(value);
   return currency === "CNY" ? `CNY ¥${amount}` : `USD $${amount}`;
 };
@@ -1151,7 +1340,7 @@ const quoteArea = (p: Product) => {
     return "其他产品 / Other Products";
   return `${p.category2} / Experience Area`;
 };
-const hospitalToyNavigationGroups = {
+const hospitalToyNavigationGroups: Record<"常规医院" | "未来医院", string[]> = {
   "常规医院": ["医院区", "医院区（英文版）"],
   "未来医院": ["未来医院区", "未来医院区（英文版）"],
 } as const;
@@ -1172,12 +1361,13 @@ const hospitalPairingGroupLabels: Record<
 const hospitalToySourceCategories = new Set(
   Object.values(hospitalToyNavigationGroups).flat(),
 );
-const importedSkuCodes = (value: unknown) =>
-  String(value || "")
-    .toUpperCase()
-    .match(/Y\d+(?:-[A-Z0-9]+)?/g) || [];
+const importedSkuCodes = (value: unknown) => {
+  const text = String(value || "").trim().toUpperCase();
+  if (/^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$/.test(text)) return [text];
+  return text.match(/(?:FB|Y)\d+(?:-[A-Z0-9]+)?/g) || [];
+};
 const importCellText = (value: unknown) =>
-  String(value || "")
+  String(value ?? "")
     .replace(/\s+/g, " ")
     .trim();
 const importCellNumber = (value: unknown) => {
@@ -1192,7 +1382,7 @@ const findImportMeta = (rows: unknown[][], headerIndex: number, pattern: RegExp)
   for (let rowIndex = 0; rowIndex < headerIndex; rowIndex += 1) {
     const row = rows[rowIndex] || [];
     for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-      const label = importCellText(row[columnIndex]);
+      const label = importCellText(String(row[columnIndex] ?? "").split("\n")[0]);
       if (!pattern.test(label)) continue;
       const inline = label.split(/[：:]/).slice(1).join(":").trim();
       if (inline) return inline;
@@ -1234,7 +1424,7 @@ const inferImportProjectName = (rows: unknown[][], headerIndex: number) => {
   const title = rows
     .slice(0, headerIndex)
     .flat()
-    .map(importCellText)
+    .map(value => importCellText(String(value ?? "").split("\n")[0]))
     .find((cell) => /quotation|报价/i.test(cell));
   if (!title) return "";
   const withoutQuotation = title.replace(/&?\s*(quotation|报价单).*/i, "");
@@ -1247,11 +1437,11 @@ const inferImportProjectName = (rows: unknown[][], headerIndex: number) => {
 const imageMimeType = (path: string) =>
   /\.jpe?g$/i.test(path) ? "image/jpeg" : /\.gif$/i.test(path) ? "image/gif" : "image/png";
 const extractWorkbookImages = (data: ArrayBuffer) => {
-  const images = new Map<string, string>();
+  const images = new Map<string, Blob>();
   try {
     const archive = XLSX.CFB.read(new Uint8Array(data), { type: "array" });
     const fileBySuffix = (suffix: string) => {
-      const index = archive.FullPaths.findIndex((path) => path.endsWith(suffix));
+      const index = archive.FullPaths.findIndex((path: string) => path.endsWith(suffix));
       return index >= 0 ? archive.FileIndex[index]?.content : undefined;
     };
     const cellImages = fileBySuffix("xl/cellimages.xml");
@@ -1266,15 +1456,71 @@ const extractWorkbookImages = (data: ArrayBuffer) => {
       const path = relationMap.get(match[2]);
       if (!path) continue;
       const image = fileBySuffix(`xl/${path.replace(/^\.\//, "")}`);
-      if (image) images.set(match[1], URL.createObjectURL(new Blob([image as BlobPart], { type: imageMimeType(path) })));
+      if (image) images.set(match[1], new Blob([image as BlobPart], { type: imageMimeType(path) }));
     }
   } catch {
     // .xls and .csv files do not contain the .xlsx image package.
   }
   return images;
 };
+const skuImageKey = (sku: string) => sku.trim().toUpperCase().replace(/\s+/g, "");
 const xmlText = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// WPS requires cells in column order, including cells restored into older templates.
+const normalizeTemplateCellOrder = (xml: string) =>
+  xml.replace(/<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g, (row) => {
+    const cellPattern = /<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g;
+    const cells = [...row.matchAll(cellPattern)].map(([cell]) => cell);
+    const column = (cell: string) => XLSX.utils.decode_cell(cell.match(/\br="([A-Z]+\d+)"/)![1]).c;
+    cells.sort((a, b) => column(a) - column(b));
+    let index = 0;
+    return row.replace(cellPattern, () => cells[index++]);
+  });
+const formatQuoteCurrencyCells = (files: Record<string, Uint8Array>, xml: string, headerRow: number, columns: number[]) => {
+  if (files["xl/styles.xml"]) {
+    let styles = strFromU8(files["xl/styles.xml"]).replace(/<numFmt\b[^>]*\/>/g, tag => /[$￥¥]/.test(tag) ? tag.replace(/#,##0(?:\.0+)?/g, "#,##0.00") : tag);
+    const group = styles.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/);
+    if (group) {
+      const formats = [...group[1].matchAll(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g)].map(([xf]) => xf);
+      const cnyColumns = new Set(columns.filter(column => column >= 0));
+      xml = xml.replace(/<c\b[^>]*\/>|<c\b[^>]*>[\s\S]*?<\/c>/g, cell => {
+        const ref = cell.match(/\br="([A-Z]+)(\d+)"/);
+        if (!ref || Number(ref[2]) <= headerRow || !cnyColumns.has(XLSX.utils.decode_col(ref[1])) || /\bt="(?:s|inlineStr|str)"/.test(cell) || !/<v>[-\d.]+<\/v>/.test(cell)) return cell;
+        const original = formats[Number(cell.match(/\bs="(\d+)"/)?.[1] || 0)];
+        if (!original) return cell;
+        const next = original.replace(/\bnumFmtId="\d+"/, 'numFmtId="4"').replace(/\bapplyNumberFormat="[^"]*"/, 'applyNumberFormat="1"');
+        let index = formats.indexOf(next);
+        if (index < 0) {index = formats.length; formats.push(next);}
+        return cell.replace(/<c\b([^>]*)>/, (_, attrs: string) => `<c${attrs.replace(/\s+s="[^"]*"/, "")} s="${index}">`);
+      });
+      styles = styles.replace(group[0], `<cellXfs count="${formats.length}">${formats.join("")}</cellXfs>`);
+    }
+    files["xl/styles.xml"] = strToU8(styles);
+  }
+  return xml;
+};
+// Older exports recreated some price cells without their formatting.
+const restoreTemplatePriceStyles = (
+  xml: string,
+  rows: Set<number>,
+  pairs: Array<[number, number]>,
+) => xml.replace(/<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g, (row) => {
+  if (!rows.has(Number(row.match(/\br="(\d+)"/)?.[1]))) return row;
+  const styles = new Map<number, string>();
+  for (const [cell] of row.matchAll(/<c\b[^>]*>/g)) {
+    const ref = cell.match(/\br="([A-Z]+\d+)"/)?.[1];
+    const style = cell.match(/\bs="(\d+)"/)?.[1];
+    if (ref && style) styles.set(XLSX.utils.decode_cell(ref).c, style);
+  }
+  return row.replace(/<c\b[^>]*>/g, (cell) => {
+    if (/\bs="/.test(cell)) return cell;
+    const ref = cell.match(/\br="([A-Z]+\d+)"/)?.[1];
+    const column = ref ? XLSX.utils.decode_cell(ref).c : -1;
+    const sibling = pairs.find(([a, b]) => a >= 0 && b >= 0 && (column === a || column === b));
+    const style = sibling && styles.get(sibling[0] === column ? sibling[1] : sibling[0]);
+    return style ? cell.replace(/(\/?>)$/, ` s="${style}"$1`) : cell;
+  });
+});
 const updateTemplateCell = (
   xml: string,
   cellRef: string,
@@ -1284,7 +1530,7 @@ const updateTemplateCell = (
   const rowPattern = new RegExp(`(<row\\b[^>]*\\br="${rowNumber}"[^>]*>)([\\s\\S]*?)(</row>)`);
   return xml.replace(rowPattern, (_row, rowStart, rowContent, rowEnd) => {
     const cellPattern = new RegExp(
-      `<c\\b([^>]*\\br="${cellRef}"[^>]*)(?:\\/>|>[\\s\\S]*?<\\/c>)`,
+      `<c\\b([^>]*\\br="${cellRef}"[^>]*?)(?:\\/>|>[\\s\\S]*?<\\/c>)`,
     );
     const nextCell = (attributes: string, existing = "") => {
       const cleanAttributes = attributes
@@ -1310,7 +1556,7 @@ const updateTemplateFormula = (
   const rowPattern = new RegExp(`(<row\\b[^>]*\\br="${rowNumber}"[^>]*>)([\\s\\S]*?)(</row>)`);
   return xml.replace(rowPattern, (_row, rowStart, rowContent, rowEnd) => {
     const cellPattern = new RegExp(
-      `<c\\b([^>]*\\br="${cellRef}"[^>]*)(?:\\/>|>[\\s\\S]*?<\\/c>)`,
+      `<c\\b([^>]*\\br="${cellRef}"[^>]*?)(?:\\/>|>[\\s\\S]*?<\\/c>)`,
     );
     const nextCell = (attributes: string) => {
       const cleanAttributes = attributes
@@ -1323,9 +1569,87 @@ const updateTemplateFormula = (
     return `${rowStart}${rowContent}${nextCell(` r="${cellRef}"`)}${rowEnd}`;
   });
 };
+const templateRow = (xml: string, sourceRow: number, targetRow: number) =>
+  xml
+    .replace(new RegExp(`(<row\\b[^>]*\\br=")${sourceRow}("[^>]*>)`), `$1${targetRow}$2`)
+    .replace(new RegExp(`\\br="([A-Z]+)${sourceRow}"`, "g"), `r="$1${targetRow}"`);
+const setTemplateHiddenColumns = (xml: string, hiddenColumns: Set<number>) =>
+  xml.replace(/<cols>([\s\S]*?)<\/cols>/, (_columns, body: string) => {
+    const definitions = [...body.matchAll(/<col\b([^>]*)\/>/g)].map((match) => {
+      const attributes = match[1];
+      const min = Number(attributes.match(/\bmin="(\d+)"/)?.[1] || 0);
+      const max = Number(attributes.match(/\bmax="(\d+)"/)?.[1] || min);
+      return { min, max, attributes };
+    });
+    const attributesFor = (column: number) => {
+      const source = definitions.find((definition) =>
+        column >= definition.min && column <= definition.max,
+      )?.attributes || "";
+      return source
+        .replace(/\s+min="[^"]*"/g, "")
+        .replace(/\s+max="[^"]*"/g, "")
+        .replace(/\s+hidden="[^"]*"/g, "");
+    };
+    const visibleColumns = Array.from({ length: 19 }, (_, index) => {
+      const column = index + 1;
+      return `<col min="${column}" max="${column}"${attributesFor(column)}${hiddenColumns.has(column) ? ' hidden="1"' : ""}/>`;
+    });
+    const remainingColumns = definitions
+      .filter((definition) => definition.max > 19)
+      .map((definition) => `<col${definition.attributes}/>`);
+    return `<cols>${[...visibleColumns, ...remainingColumns].join("")}</cols>`;
+  });
+const updateTemplateRowCell = (
+  rowXml: string,
+  row: number,
+  column: number,
+  value: string | number,
+) =>
+  updateTemplateCell(
+    rowXml,
+    XLSX.utils.encode_cell({ r: row - 1, c: column }),
+    value,
+  );
+const updateTemplateRowFormula = (
+  rowXml: string,
+  row: number,
+  column: number,
+  formula: string,
+  value: number,
+) =>
+  updateTemplateFormula(
+    rowXml,
+    XLSX.utils.encode_cell({ r: row - 1, c: column }),
+    formula,
+    value,
+  );
+const updateTemplateRowTextFormula = (
+  rowXml: string,
+  row: number,
+  column: number,
+  formula: string,
+) => {
+  const cellRef = XLSX.utils.encode_cell({ r: row - 1, c: column });
+  const cellPattern = new RegExp(
+    `<c\\b([^>]*\\br="${cellRef}"[^>]*?)(?:\\/>|>[\\s\\S]*?<\\/c>)`,
+  );
+  const formulaCell = (attributes: string) => {
+    const cleanAttributes = attributes
+      .replace(/\s+t="[^"]*"/g, "")
+      .replace(/\/\s*$/, "");
+    const value = xmlText(formula);
+    return `<c${cleanAttributes} t="str"><f>${value.replace(/^=/, "")}</f><v>${value}</v></c>`;
+  };
+  return cellPattern.test(rowXml)
+    ? rowXml.replace(cellPattern, (_cell, attributes: string) => formulaCell(attributes))
+    : rowXml.replace(
+        /<\/row>$/,
+        `${formulaCell(` r="${cellRef}"`)}</row>`,
+      );
+};
 const downloadExcelFile = (data: Uint8Array | ArrayBuffer, fileName: string) => {
   const url = URL.createObjectURL(
-    new Blob([data], {
+    new Blob([data instanceof Uint8Array ? new Uint8Array(data).buffer : data], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
   );
@@ -1335,9 +1659,17 @@ const downloadExcelFile = (data: Uint8Array | ArrayBuffer, fileName: string) => 
   link.click();
   URL.revokeObjectURL(url);
 };
-function Visual({ p, mini = false }: { p: Product; mini?: boolean }) {
+function Visual({
+  p,
+  mini = false,
+  eager = false,
+}: {
+  p: Product;
+  mini?: boolean;
+  eager?: boolean;
+}) {
   return p.image ? (
-    <img src={p.image} alt={mini ? "" : p.name} loading="lazy" />
+    <img src={p.image} alt={mini ? "" : p.name} loading={eager ? "eager" : "lazy"} />
   ) : (
     <span className="productFallback">{p.category2.slice(0, 4)}</span>
   );
@@ -1368,6 +1700,10 @@ function PrintBilingual({ zh, en }: { zh: string; en: string }) {
   );
 }
 const splitBilingual = (value: string) => {
+  const lines = value.split(/\n+/);
+  const english = lines.filter(line => /[A-Za-z]/.test(line) && !/[\u4e00-\u9fff]/.test(line));
+  if (lines.length > 1 && english.length && /[\u4e00-\u9fff]/.test(value))
+    return {zh: lines.filter(line => !english.includes(line)).join("\n"), en: english.join("\n")};
   const [zh = "", ...englishParts] = value.split(/\s*\/\s*/);
   return { zh, en: englishParts.join(" / ") };
 };
@@ -1382,7 +1718,28 @@ const englishRemark = (value: string) => {
   if (toyCount) return `Includes ${toyCount[1]} toys`;
   if (/^不含工具$/.test(remark)) return "Tools not included";
   if (/^如图$/.test(remark)) return "As shown";
-  return "English translation pending";
+  const terms: Array<[RegExp, string]> = [
+    [/不含/g, "Excludes "],
+    [/含有|包含|含/g, "Includes "],
+    [/带有|配有|带/g, "with "],
+    [/三代/g, "third-generation "],
+    [/触屏|触摸屏/g, "touchscreen"],
+    [/打印小票/g, "receipt printer"],
+    [/显示屏/g, "display"],
+    [/玩具/g, "toys"],
+    [/套装/g, "set"],
+    [/配件/g, "accessories"],
+    [/工具/g, "tools"],
+    [/颜色/g, "colour"],
+    [/可选/g, "optional"],
+    [/定制/g, "customised"],
+    [/个/g, " pieces"],
+  ];
+  const translated = terms.reduce(
+    (result, [pattern, replacement]) => result.replace(pattern, replacement),
+    remark,
+  ).replace(/\s+/g, " ").trim();
+  return /[\u4e00-\u9fff]/.test(translated) ? "Refer to Chinese remarks" : translated;
 };
 const printValue = (value: string | number | null | undefined) =>
   value === null || value === undefined || value === "" ? "\u00a0" : value;
@@ -1498,6 +1855,8 @@ function autoColor(src: string): Promise<string> {
 export default function Home() {
   const [overrides, setOverrides] = useState<Override[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [productClassifications, setProductClassifications] = useState<ProductClassification[]>([]);
+  const [productTags, setProductTags] = useState<ProductTag[]>([]);
   const [relations, setRelations] = useState<ProductRelation[]>([]);
   const [kitchenPackageRecords, setKitchenPackageRecords] = useState<
     KitchenPackageRecord[]
@@ -1528,12 +1887,16 @@ export default function Home() {
   const [loginNotice, setLoginNotice] = useState("");
   const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
   const isAdmin = authAccount?.role === "admin";
-  const canViewStaff = isAdmin || authAccount?.role === "management";
-  const [staffOpen, setStaffOpen] = useState(false);
+  const canViewQuoteCost = ["admin", "ceo", "cost_accountant"].includes(authAccount?.role || "");
+  const [workplaceEntryId] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("workplaceProject") || "");
+  const [workspaceProjectId, setWorkspaceProjectId] = useState(workplaceEntryId);
+  const [workplaceReady, setWorkplaceReady] = useState(!workplaceEntryId);
+  const [workplaceNotice, setWorkplaceNotice] = useState("");
+  const activeQuotationStorageKey = authAccount ? activeQuotationKey(authAccount.email) + (workplaceEntryId ? ":project:" + workplaceEntryId : "") : "";
+  const canViewStaff = isAdmin || authAccount?.role === "management" || authAccount?.role === "ceo";
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
-  const [staffUsers, setStaffUsers] = useState<ManagedUser[]>([]);
+  const [mobileCategoriesOpen, setMobileCategoriesOpen] = useState(false);
   const [pendingStaffCount, setPendingStaffCount] = useState(0);
-  const [staffError, setStaffError] = useState("");
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [activeMajor, setActiveMajor] = useState<NavigationMajor>(
     navigationMajors[0],
@@ -1553,6 +1916,9 @@ export default function Home() {
       navigationMajors.flatMap((major) => [
         `${major}:simulation`,
         `${major}:toys`,
+        ...(major === "大童类 / Older Children"
+          ? [`${major}:拓展迷宫`, `${major}:滑梯`]
+          : []),
       ]),
     ),
   );
@@ -1572,8 +1938,12 @@ export default function Home() {
   const [cartPairings, setCartPairings] = useState<
     Record<string, Record<string, number>>
   >({});
+  const [selectedCartItemKeys, setSelectedCartItemKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [pairingSuggestion, setPairingSuggestion] =
     useState<PairingSuggestion | null>(null);
+  const [pairingBatchQuantity, setPairingBatchQuantity] = useState("");
   const [collapsedHospitalPairingGroups, setCollapsedHospitalPairingGroups] =
     useState<Set<HospitalPairingGroup>>(() => new Set());
   const [pairingRemovalPrompt, setPairingRemovalPrompt] =
@@ -1586,19 +1956,41 @@ export default function Home() {
   const [quoteImportDragging, setQuoteImportDragging] = useState(false);
   const [importedProducts, setImportedProducts] = useState<Product[]>([]);
   const [importedAreaOrder, setImportedAreaOrder] = useState<string[]>([]);
+  const [importedQuotePairingOpen, setImportedQuotePairingOpen] = useState(false);
+  const [selectedImportedProductId, setSelectedImportedProductId] = useState<string | null>(null);
+  const [expandedImportedRelations, setExpandedImportedRelations] = useState<Set<string>>(new Set());
+  const [imagePreviewProduct, setImagePreviewProduct] = useState<Product | null>(null);
+  const [toyMatchingDraftId, setToyMatchingDraftId] = useState("");
+  const [toyMatchingDrafts, setToyMatchingDrafts] = useState<ToyMatchingDraft[]>([]);
+  const [toyMatchingOverview, setToyMatchingOverview] = useState(false);
+  const [toyMatchingImportedListName, setToyMatchingImportedListName] = useState("");
+  const [toyMatchingDraftSaving, setToyMatchingDraftSaving] = useState(false);
+  const [matchingSkuPickerOpen, setMatchingSkuPickerOpen] = useState(false);
+  const [matchingSkuQuery, setMatchingSkuQuery] = useState("");
+  const [restoredQuoteProducts, setRestoredQuoteProducts] = useState<Product[]>([]);
   const quoteImportTemplateRef = useRef<QuoteImportTemplate | null>(null);
   const [quoteImportPriceMode, setQuoteImportPriceMode] =
     useState<QuoteImportPriceMode>("vip");
   const [editor, setEditor] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Product | null>(null);
+  const [tagDraftText, setTagDraftText] = useState("");
   const [relatedSearch, setRelatedSearch] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
+  const [quotePreparing, setQuotePreparing] = useState(false);
   const [quoteActiveTab, setQuoteActiveTab] = useState("summary");
   const [quoteExpandedAreas, setQuoteExpandedAreas] = useState<Set<string>>(
     () => new Set(),
   );
   const [quoteProject, setQuoteProject] = useState("");
+  const [quoteContractNo, setQuoteContractNo] = useState("");
+  const [recordedQuoteHistoryId, setRecordedQuoteHistoryId] = useState("");
+  const [quoteHistoryLineageId, setQuoteHistoryLineageId] = useState("");
+  const [quoteHistoryNotice, setQuoteHistoryNotice] = useState("");
+  const [quoteHistoryMode, setQuoteHistoryMode] = useState<QuoteHistoryMode>("new");
+  const [pendingHistoryExport, setPendingHistoryExport] =
+    useState<HistoryExportFormat | null>(null);
+  const [quoteHistorySaving, setQuoteHistorySaving] = useState(false);
   const [designerName, setDesignerName] = useState("");
   const [salesName, setSalesName] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
@@ -1613,6 +2005,19 @@ export default function Home() {
     installation: 0,
     designDeduction: 0,
   });
+  const [activeQuotationRestored, setActiveQuotationRestored] = useState(false);
+  useEffect(() => {
+    if (auth !== "signedIn" || !activeQuotationRestored) return;
+    if (!workspaceProjectId) { setWorkplaceReady(true); setWorkplaceNotice(""); return; }
+    let canceled = false;
+    setWorkplaceReady(false);
+    setWorkplaceNotice("正在核对 Workplace 项目…");
+    fetch("/api/workplace-project?id=" + encodeURIComponent(workspaceProjectId))
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || "项目连接失败"); return data.project; })
+      .then(project => { if (canceled) return; if (quoteHistoryMode === "new") setQuoteProject(project.name); setWorkplaceReady(true); setWorkplaceNotice("已关联 Workplace：" + project.customerName + " · " + project.name); })
+      .catch(error => { if (!canceled) setWorkplaceNotice(error.message); });
+    return () => { canceled = true; };
+  }, [auth, activeQuotationRestored, workspaceProjectId, quoteHistoryMode]);
   const colorScanInFlight = useRef(new Set<string>());
   const colorScannedThisRun = useRef(new Set<string>());
   const rescanAllColours =
@@ -1635,6 +2040,15 @@ export default function Home() {
       .then((r) => r.json())
       .then((d) => {
         if (d.authenticated) {
+          const query = new URLSearchParams(window.location.search);
+          if (
+            d.role === "ceo" &&
+            !query.has("catalog") &&
+            !query.has("quotationHistory") && !query.has("workplaceProject")
+          ) {
+            window.location.replace("/ceo-dashboard");
+            return;
+          }
           setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt });
           setAuth("signedIn");
         } else {
@@ -1653,11 +2067,145 @@ export default function Home() {
           setStoredCatalogProducts(d.products || []);
           setOverrides(d.overrides);
           setCategories(d.categories);
+          setProductClassifications(d.classifications || []);
+          setProductTags(d.tags || []);
           setRelations(d.recommendations);
           setKitchenPackageRecords(d.packages || []);
         }
       })
       .catch(() => undefined);
+  }, [auth]);
+  useEffect(() => {
+    if (auth !== "signedIn" || !activeQuotationStorageKey || activeQuotationRestored) return;
+    try {
+      const saved = window.localStorage.getItem(activeQuotationStorageKey);
+      const snapshot = saved ? JSON.parse(saved) as Partial<QuoteHistorySnapshot> : null;
+      if (snapshot?.version === 1) {
+        setWorkspaceProjectId(snapshot.workspaceProjectId || workplaceEntryId);
+        quoteImportTemplateRef.current = snapshot.importTemplate || null;
+        setCart(snapshot.cart || {});
+        setCartPairings(snapshot.cartPairings || {});
+        setImportedProducts(snapshot.importedProducts || []);
+        setRestoredQuoteProducts(snapshot.products || []);
+        setImportedAreaOrder(snapshot.importedAreaOrder || []);
+        setPriceMode(["factory", "vip", "usd"].includes(snapshot.priceMode || "") ? snapshot.priceMode as PriceMode : "vip");
+        setQuoteProject(snapshot.projectName || "");
+        setQuoteContractNo(snapshot.contractNo || "");
+        setDesignerName(snapshot.designerName || "");
+        setSalesName(snapshot.salesName || "");
+        setCompanyAddress(snapshot.companyAddress || "");
+        setInstallationIncludesTravel(snapshot.installationIncludesTravel !== false);
+        setIncludeTax(snapshot.includeTax !== false);
+        setShowDesignDeduction(Boolean(snapshot.showDesignDeduction));
+        setFees({
+          packaging: Number(snapshot.fees?.packaging) || 0,
+          formaldehyde: Number(snapshot.fees?.formaldehyde) || 0,
+          shipping: Number(snapshot.fees?.shipping) || 0,
+          installation: Number(snapshot.fees?.installation) || 0,
+          designDeduction: Number(snapshot.fees?.designDeduction) || 0,
+        });
+      }
+    } catch {
+      window.localStorage.removeItem(activeQuotationStorageKey);
+    } finally {
+      setActiveQuotationRestored(true);
+    }
+  }, [activeQuotationRestored, activeQuotationStorageKey, auth]);
+  useEffect(() => {
+    if (
+      auth !== "signedIn" ||
+      !activeQuotationRestored ||
+      quoteHistoryMode !== "new" ||
+      recordedQuoteHistoryId
+    )
+      return;
+    if (!Object.keys(cart).length && !importedProducts.length) {
+      window.localStorage.removeItem(activeQuotationStorageKey);
+      return;
+    }
+    const snapshot: QuoteHistorySnapshot = {
+      version: 1,
+      importTemplate: storedQuoteTemplate(),
+      products: restoredQuoteProducts,
+      cart,
+      cartPairings,
+      importedProducts,
+      importedAreaOrder,
+      priceMode,
+      workspaceProjectId: workspaceProjectId || undefined,
+    projectName: quoteProject,
+      contractNo: quoteContractNo,
+      designerName,
+      salesName,
+      companyAddress,
+      installationIncludesTravel,
+      includeTax,
+      showDesignDeduction,
+      fees,
+    };
+    try {
+      window.localStorage.setItem(activeQuotationStorageKey, JSON.stringify(snapshot));
+    } catch {
+      setQuoteImportError("浏览器空间不足，请保存草稿后再关闭页面。");
+    }
+  }, [
+    activeQuotationRestored,
+    activeQuotationStorageKey,
+    auth,
+    cart,
+    cartPairings,
+    companyAddress,
+    designerName,
+    fees,
+    importedAreaOrder,
+    importedProducts,
+    restoredQuoteProducts,
+    includeTax,
+    installationIncludesTravel,
+    priceMode,
+    quoteContractNo,
+    quoteHistoryMode,
+    quoteProject,
+    workspaceProjectId,
+    recordedQuoteHistoryId,
+    salesName,
+    showDesignDeduction,
+  ]);
+  useEffect(() => {
+    if (!employeeMenuOpen && !filtersOpen) return;
+    const closeFloatingPanels = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest("[data-employee-menu-surface]"))
+        setEmployeeMenuOpen(false);
+      if (!target.closest("[data-filter-surface]"))
+        setFiltersOpen(false);
+    };
+    document.addEventListener("pointerdown", closeFloatingPanels);
+    return () => document.removeEventListener("pointerdown", closeFloatingPanels);
+  }, [employeeMenuOpen, filtersOpen]);
+  useEffect(() => {
+    if (auth !== "signedIn") return;
+    const historyParams = new URLSearchParams(window.location.search);
+    const historyId = historyParams.get("quotationHistory");
+    if (!historyId) return;
+    const mode = historyParams.get("mode") === "edit"
+      ? "edit"
+      : historyParams.get("mode") === "export"
+        ? "export"
+        : "view";
+    const exportFormat = historyParams.get("format") === "pdf"
+      ? "pdf"
+      : historyParams.get("format") === "excel"
+        ? "excel"
+        : null;
+    fetch(`/api/quotation-history?id=${encodeURIComponent(historyId)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { quotation?: QuotationHistoryRecord } | null) => {
+        if (data?.quotation) void restoreQuotation(data.quotation, mode, exportFormat);
+        else window.alert("报价记录不存在，或你没有查看权限。");
+      })
+      .catch(() => window.alert("读取报价历史失败，请稍后重试。"));
   }, [auth]);
   useEffect(() => {
     if (
@@ -1728,12 +2276,35 @@ export default function Home() {
       storedCatalogProducts.map((p) => {
         const o = overrides.find((x) => x.productId === p.id);
         const image = o?.imageUrl || p.image;
-        const category1 = o?.category1 || p.family;
         const name = o?.name || p.name;
-        const rawCategory2 = o?.category2 || p.category;
-        const category2 = /^Y407(?:1[6-9]|2\d|3[01])$/.test(p.sku)
-          ? "恐龙区"
-          : pairedArea(rawCategory2, name) || rawCategory2;
+        const classifications = productClassifications.filter(
+          (record) => record.productId === p.id,
+        );
+        const primaryClassification = classifications[0];
+        const category1 = primaryClassification?.level2 ||
+          o?.category1 || (p.family === "小玩具" ? "配套产品" : "模拟设备");
+        const rawCategory2 = primaryClassification?.level3 || o?.category2 || p.category;
+        const category2 = pairedArea(rawCategory2, name) || rawCategory2;
+        const tags = productTags
+          .filter((record) => record.productId === p.id)
+          .map((record) => record.tag);
+        const semanticTag =
+          tags.find((tag) => ["主设备", "配套产品", "配套玩具", "广告类型", "地面/地胶"].includes(tag)) ||
+          o?.category3 ||
+          (p.family === "小玩具"
+            ? "配套玩具"
+            : isAccessoryProductName(name)
+              ? "配套产品"
+              : "主设备");
+        const normalizedClassifications = classifications.length
+          ? classifications
+          : [{
+              id: `classification-${p.id}`,
+              productId: p.id,
+              level1: o?.majorCategory || getMajorCategory(p),
+              level2: category1,
+              level3: rawCategory2,
+            }];
         return {
           ...p,
           name,
@@ -1741,17 +2312,25 @@ export default function Home() {
             o?.price === undefined || o.price === null || o.price === ""
               ? p.price
               : Number(o.price),
+          usd: p.usdExchangeRate === undefined ? p.usd : usdFromCny(p.factory, p.usdExchangeRate),
           image,
+          spec: o?.specification ?? p.spec,
+          unit: o?.unit ?? p.unit,
           volume: o?.volume || "",
+          cost: o?.cost ?? null,
+          branchPrice: o?.branchPrice ?? null,
+          supplyMethod: o?.supplyMethod ?? null,
           stock: o?.stock ?? null,
-          majorCategory: o?.majorCategory || getMajorCategory(p),
+          majorCategory: (primaryClassification?.level1 || o?.majorCategory || getMajorCategory(p)) as MajorCategory,
           category1,
           category2,
-          category3: o?.category3 || "未细分",
+          category3: semanticTag,
+          classifications: normalizedClassifications,
+          tags: tags.length ? tags : [semanticTag],
           colorTag:
             isSpaceTheme(name, p.en)
               ? "银色"
-              : category1 === "小玩具"
+              : semanticTag === "配套玩具"
               ? "不适用"
               : category1 === "模拟设备" && category2 === "消防区设备"
                   ? "红"
@@ -1769,7 +2348,18 @@ export default function Home() {
             .map((r) => r.relatedProductId),
         };
       }),
-    [overrides, relations, storedCatalogProducts],
+    [overrides, productClassifications, productTags, relations, storedCatalogProducts],
+  );
+  const productViews = useMemo<Product[]>(
+    () => products.flatMap((product) =>
+      product.classifications.map((record) => ({
+        ...product,
+        viewKey: `${product.id}:${record.id}`,
+        majorCategory: record.level1 as MajorCategory,
+        category1: record.level2,
+        category2: pairedArea(record.level3, product.name) || record.level3,
+      }))),
+    [products],
   );
   useEffect(() => {
     const slots = 12 - colorScanInFlight.current.size;
@@ -1806,23 +2396,26 @@ export default function Home() {
         });
       });
   }, [products, rescanAllColours]);
-  const majorProducts = products.filter((p) =>
+  const currency: "CNY" | "USD" = priceMode === "usd" ? "USD" : "CNY";
+  const majorProducts = productViews.filter((p) =>
     navigationMajorMembers(activeMajor).includes(p.majorCategory),
   );
   const hasGlobalQuery = query.trim().length > 0;
   const isLifestyleMajor = activeMajor === "生活场景 / Lifestyle Scene";
+  const isSeniorCatalog = activeMajor === "大童类 / Older Children";
+  const isRetailCatalog = activeMajor === "零售（游玩必备） / Retail";
   const isKitchenView =
     isLifestyleMajor && category === "厨房专区";
-  const kitchenProducts = products.filter(
+  const kitchenProducts = productViews.filter(
     (p) =>
       p.majorCategory === "生活场景 / Lifestyle Scene" &&
       /厨房/.test(p.category2),
   );
   const kitchenMainProducts = kitchenProducts.filter(
-    (p) => p.category1 !== "小玩具",
+    (p) => p.category1 === "模拟设备",
   );
   const kitchenAddonProducts = kitchenProducts.filter(
-    (p) => p.category1 === "小玩具",
+    (p) => p.category1 === "配套产品",
   );
   const savedKitchenPackages = kitchenPackageRecords.flatMap((record) => {
     try {
@@ -1850,7 +2443,7 @@ export default function Home() {
     : undefined;
   const visible = [...(
     hasGlobalQuery
-      ? products
+      ? productViews
       : isKitchenView
       ? kitchenMode === "main"
         ? kitchenMainProducts
@@ -1861,18 +2454,23 @@ export default function Home() {
   )]
     .filter(
     (p) =>
+      (hasGlobalQuery || !isSeniorCatalog || !selectedCategoryKey.startsWith("senior:") || p.category1 === selectedCategoryKey.slice(7)) &&
       (hasGlobalQuery || category === "全部产品" ||
         (hospitalToyNavigationActive
           ? (hospitalToyCategories
               ? hospitalToyCategories.includes(p.category2)
               : hospitalToySourceCategories.has(p.category2))
-          : p.category2 === category)) &&
+          : navigationGroup === "simulation" || navigationGroup === "toys"
+            ? groupedNavigationArea(p.category2, navigationGroup) === category
+            : p.category2 === category)) &&
       (hasGlobalQuery || hospitalToyNavigationActive || !category3Filter || p.category3 === category3Filter) &&
       (hasGlobalQuery || navigationGroup === "all" ||
-        (navigationGroup === "simulation" && p.category1 !== "小玩具") ||
-        (navigationGroup === "toys" && p.category1 === "小玩具")) &&
+        (navigationGroup === "simulation" &&
+          (p.category1 === "模拟设备" ||
+            (p.category1 === "配套产品" && !isToy(p)))) ||
+        (navigationGroup === "toys" && isToy(p))) &&
       (!hasGlobalQuery ||
-        `${p.sku}${p.name}${p.en}${p.majorCategory}${p.category1}${p.category2}${p.category3}`
+        `${p.sku}${p.name}${p.en}${p.majorCategory}${majorCategoryDisplayName(p.majorCategory)}${p.category1}${p.category2}${p.category3}`
           .toLowerCase()
           .includes(query.trim().toLowerCase())) &&
       (colorFilter === "全部颜色" || p.colorTag === colorFilter) &&
@@ -1881,31 +2479,59 @@ export default function Home() {
     )
     .sort(
       (a, b) =>
-        Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具"),
+        Number(isPairedItem(a)) - Number(isPairedItem(b)),
     );
   const grouped = Object.entries(
     visible.reduce<Record<string, Product[]>>((a, p) => {
+      const navigationArea = groupedNavigationArea(p.category2, navigationGroup);
       const groupName = hospitalToyNavigationActive
         ? category3Filter ||
           (hospitalToyNavigationGroups["常规医院"].includes(p.category2)
             ? "常规医院"
             : "未来医院")
-        : p.category2;
+        : navigationGroup === "toys" && navigationArea === "种植区"
+          ? navigationArea
+        : isRetailCatalog
+          ? retailTypeDisplayName(p.category2)
+          : p.category2;
       (a[groupName] ||= []).push(p);
       return a;
     }, {}),
+  ).sort(([leftArea], [rightArea]) =>
+    navigationGroup === "simulation" || navigationGroup === "toys"
+      ? groupedAreaDisplayPriority(leftArea, category, navigationGroup) -
+        groupedAreaDisplayPriority(rightArea, category, navigationGroup)
+      : 0,
   );
   const catalogTitle =
     query
       ? `“${query}” 的结果`
       : category === "全部产品" && navigationGroup === "simulation"
-        ? "模拟区"
-        : category === "全部产品" && navigationGroup === "toys"
+        ? "主设备"
+      : category === "全部产品" && navigationGroup === "toys"
           ? "配套玩具"
           : category3Filter
             ? `${category} · ${category3Filter}`
-            : category;
-  const quoteProducts = [...products, ...importedProducts];
+            : isRetailCatalog
+              ? retailTypeDisplayName(category)
+              : category;
+  const quoteProducts = [
+    ...new Map(
+      [...products, ...importedProducts, ...restoredQuoteProducts].map((product) => [
+        product.id,
+        product,
+      ]),
+    ).values(),
+  ];
+  const reviseProduct = (product: Product, field: string, before: string, after: string, status: QuoteRevision["status"] = "modified") => {
+    setRestoredQuoteProducts(current => {
+      const latest = current.find(item => item.id === product.id) || product;
+      const revision: QuoteRevision = {status: status === "modified" && latest.revision?.status === "added" ? "added" : status, changes: [...(latest.revision?.changes || []), {field, before, after, at: new Date().toISOString()}]};
+      return [...current.filter(item => item.id !== product.id), {...latest, revision}];
+    });
+  };
+  const setRevisionStatus = (product: Product, status: QuoteRevision["status"]) => reviseProduct(product, "状态", product.revision ? revisionLabels[product.revision.status] : "原表项目", revisionLabels[status], status);
+  const billableQuantity = (product: Product, quantity: number) => excludedFromQuote(product) ? 0 : quantity;
   const cartItems = quoteProducts
     .filter((p) => Object.hasOwn(cart, p.id))
     .map((p) => ({ ...p, qty: cart[p.id] }))
@@ -1913,30 +2539,30 @@ export default function Home() {
       (a, b) =>
         (a.importSourceRow !== undefined && b.importSourceRow !== undefined
           ? a.importSourceRow - b.importSourceRow
-          : Number(a.category1 === "小玩具") - Number(b.category1 === "小玩具") ||
+          : Number(isPairedItem(a)) - Number(isPairedItem(b)) ||
             a.sku.localeCompare(b.sku)),
     );
-  // Keep zero-quantity items visible in the cart, but never put them on a quotation.
-  const quoteCartItems = cartItems.filter((item) => item.qty > 0);
-  const currency: "CNY" | "USD" = priceMode === "usd" ? "USD" : "CNY";
+  // Imported zero-quantity rows stay visible to preserve the source form.
+  const quoteCartItems = cartItems.filter((item) => item.qty > 0 || item.importSourceRow !== undefined);
+  const requestPriceModeChange = (nextPriceMode: PriceMode) => setPriceMode(nextPriceMode);
   const displayPrice = (p: Product) => {
     if (priceMode === "usd") return p.usd;
     if (priceMode === "factory")
-      return p.category1 === "小玩具" ? p.price : p.factory;
+      return isToy(p) ? p.price : p.factory;
     return p.price;
   };
   const displayPriceLabel = (p: Product) =>
     priceMode === "factory"
-      ? p.category1 === "小玩具"
-        ? "国内 VIP 价（小玩具）"
+      ? isToy(p)
+        ? "连锁品牌价（小玩具）"
         : "出厂价"
       : priceMode === "vip"
-        ? "国内 VIP 价"
+        ? "连锁品牌价"
         : "美金价格";
   const importCurrency = quoteImportPriceMode === "usd" ? "USD" : "CNY";
   const importUnitPrice = (product: Product) =>
     quoteImportPriceMode === "factory"
-      ? product.category1 === "小玩具"
+      ? isToy(product)
         ? product.price
         : product.factory
       : quoteImportPriceMode === "vip"
@@ -1951,7 +2577,7 @@ export default function Home() {
       : `CNY ¥${price.toLocaleString("zh-CN")}`;
   };
   const subtotal = quoteCartItems.reduce(
-    (n, p) => n + (displayPrice(p) || 0) * p.qty,
+    (n, p) => n + (displayPrice(p) || 0) * billableQuantity(p, p.qty),
     0,
   );
   const cartHierarchyItems: Array<{
@@ -2015,14 +2641,17 @@ export default function Home() {
   const quoteGroups = Object.entries(
     cartHierarchyItems.reduce<Record<string, typeof cartHierarchyItems>>(
       (a, item) => {
-        (a[item.area] ||= []).push(item);
+        (a[`${item.area}\u001f${item.product.importSection ?? ""}`] ||= []).push(item);
         return a;
       },
       {},
     ),
   )
-    .map(([area, items]) => [area, items] as const)
-    .sort(([left], [right]) => {
+    .map(([, items]) => [items[0].area, [...items].sort(compareQuotationItems)] as const)
+    .sort(([left, leftItems], [right, rightItems]) => {
+      const leftRow = leftItems[0]?.product.importSourceRow;
+      const rightRow = rightItems[0]?.product.importSourceRow;
+      if (leftRow !== undefined && rightRow !== undefined) return leftRow - rightRow;
       const otherArea = "其他产品 / Other Products";
       if (left === otherArea || right === otherArea)
         return Number(left === otherArea) - Number(right === otherArea);
@@ -2036,6 +2665,41 @@ export default function Home() {
       return 0;
     });
   const quoteItemsInOrder = quoteGroups.flatMap(([, items]) => items);
+  const importedProductIds = new Set(importedProducts.map((product) => product.id));
+  const importedPairingItems = importedProducts
+    .filter((product) => importedProductIds.has(product.id) && (cart[product.id] || 0) > 0)
+    .map((product) => ({ product, quantity: cart[product.id] || 0 }));
+  const importedProductAssociations = new Map(
+    importedPairingItems.map(({ product }) => {
+      const catalogProductId =
+        product.catalogProductId ||
+        products.find((candidate) => candidate.sku === product.sku)?.id ||
+        product.id;
+      const quantities = new Map<string, number>();
+      relations
+        .filter((relation) => relation.productId === catalogProductId)
+        .forEach((relation) =>
+          quantities.set(
+            relation.relatedProductId,
+            Math.max(1, relation.quantity || 1),
+          ),
+        );
+      Object.entries(cartPairings[product.id] || {}).forEach(
+        ([relatedProductId, quantity]) => {
+          if (quantity > 0) quantities.set(relatedProductId, quantity);
+        },
+      );
+      return [
+        product.id,
+        [...quantities].flatMap(([relatedProductId, quantity]) => {
+          const relatedProduct =
+            products.find((candidate) => candidate.id === relatedProductId) ||
+            importedProducts.find((candidate) => candidate.id === relatedProductId);
+          return relatedProduct ? [{ product: relatedProduct, quantity }] : [];
+        }),
+      ] as const;
+    }),
+  );
   const quoteVisibleGroups =
     quoteActiveTab === "summary"
       ? []
@@ -2047,7 +2711,7 @@ export default function Home() {
   ) =>
     items.reduce(
       (total, item) =>
-        total + item.quantity * (displayPrice(item.product) || 0),
+        total + billableQuantity(item.product, item.quantity) * (displayPrice(item.product) || 0),
       0,
     );
   const toggleQuoteArea = (area: string) => {
@@ -2058,63 +2722,100 @@ export default function Home() {
       return next;
     });
   };
-  const preTax =
-    subtotal +
-    fees.packaging +
-    fees.formaldehyde +
-    fees.shipping +
-    fees.installation;
-  const tax = currency === "CNY" && includeTax ? preTax * 0.13 : 0;
-  const totalWithTax =
-    preTax + tax - (showDesignDeduction ? fees.designDeduction : 0);
-  const add = (id: string) => {
-    const source = products.find((product) => product.id === id);
-    if (!source) return;
-    if (source.category1 === "小玩具") {
-      setCart((x) => ({ ...x, [id]: (x[id] || 0) + 1 }));
-      return;
-    }
-    const pairedItems = relations
-      .filter((relation) => relation.productId === id)
-      .flatMap((relation) => {
-        const product = products.find(
-          (candidate) => candidate.id === relation.relatedProductId,
+  const { preTax, tax, totalWithTax } = quotationTotals(subtotal, currency, fees, includeTax, showDesignDeduction);
+  const openPairingSelection = (
+    source: Product,
+    mode: PairingSuggestion["mode"],
+  ) => {
+    const id = source.id;
+    const catalogSource = source.catalogProductId
+      ? products.find((candidate) => candidate.id === source.catalogProductId)
+      : products.find((candidate) => candidate.id === source.id || candidate.sku === source.sku);
+    const sourceArea = pairedArea(catalogSource?.category2 || source.category2, source.name);
+    const sourceIsFuture = isFutureArea(sourceArea);
+    const pairingCandidates = productViews;
+    const matchesSourceArea = (product: Product) =>
+      pairingBaseArea(pairedArea(product.category2, product.name)) ===
+      pairingBaseArea(sourceArea);
+    const isCompatiblePairingItem = (product: Product) =>
+      (mode === "cart" ? isToy(product) : isPairedItem(product)) &&
+      matchesSourceArea(product) &&
+      (!sourceIsFuture || !isToy(product) || isFutureArea(product.category2));
+    const existingPairings = cartPairings[id] || {};
+    const relationByProductId = new Map(
+      relations
+        .filter((relation) => relation.productId === (catalogSource?.id || id))
+        .map((relation) => [relation.relatedProductId, relation]),
+    );
+    const pairedProductIds = new Set([
+      ...relationByProductId.keys(),
+      ...(mode === "cart" ? Object.keys(existingPairings) : []),
+    ]);
+    const pairedItems = [...pairedProductIds]
+      .flatMap((relatedProductId) => {
+        const relation = relationByProductId.get(relatedProductId);
+        const product = pairingCandidates.find(
+          (candidate) => candidate.id === relatedProductId,
         );
-        return product
+        return product && isCompatiblePairingItem(product)
           ? [{
               product,
-              quantity: Math.max(1, relation.quantity || 1),
+              quantity: mode === "cart"
+                ? existingPairings[product.id] || Math.max(1, relation?.quantity || 1)
+                : Math.max(1, relation?.quantity || 1),
               isBound: true,
             }]
           : [];
     });
     const pairedIds = new Set(pairedItems.map(({ product }) => product.id));
-    const sourceArea = pairedArea(source.category2, source.name);
-    const isHospitalSource = sourceArea === "医院区";
     const areaOptions = sourceArea
-      ? products
+      ? pairingCandidates
           .filter(
             (product) =>
-              product.category1 === "小玩具" &&
+              isCompatiblePairingItem(product) &&
               !pairedIds.has(product.id) &&
-              (isHospitalSource
-                ? Object.values(hospitalPairingGroups)
-                    .flat()
-                    .includes(product.category2 as never)
-                : pairedArea(product.category2, product.name) === sourceArea),
+              product.id !== source.id,
           )
-          .map((product) => ({ product, quantity: 0, isBound: false }))
+          .filter(
+            (product, index, all) =>
+              all.findIndex((candidate) => candidate.id === product.id) === index,
+          )
+          .map((product) => ({
+            product,
+            quantity: mode === "cart" ? existingPairings[product.id] || 0 : 0,
+            isBound: false,
+          }))
       : [];
     const relatedItems = [...pairedItems, ...areaOptions];
     setCollapsedHospitalPairingGroups(new Set());
-    setPairingSuggestion({ source, relatedItems });
+    setPairingBatchQuantity("");
+    setPairingSuggestion({ source, mode, relatedItems });
+  };
+  const add = (source: Product) => {
+    const id = source.id;
+    if (!cart[source.id]) setRevisionStatus(source, "added");
+    else reviseProduct(source, "数量", String(cart[source.id]), String(cart[source.id] + 1));
+    if (isPairedItem(source)) {
+      setCart((x) => ({ ...x, [id]: (x[id] || 0) + 1 }));
+      return;
+    }
+    openPairingSelection(source, "catalog");
   };
   const clearQuotation = () => {
     setCart({});
     setQuoteQuantityDrafts({});
     setCartPairings({});
+    setSelectedCartItemKeys(new Set());
     setImportedProducts([]);
     setImportedAreaOrder([]);
+    setToyMatchingDraftId("");
+    setSelectedImportedProductId(null);
+    setExpandedImportedRelations(new Set());
+    setImagePreviewProduct(null);
+    setImportedQuotePairingOpen(false);
+    setRestoredQuoteProducts([]);
+    setRecordedQuoteHistoryId("");
+    setQuoteHistoryLineageId("");
     quoteImportTemplateRef.current = null;
     setPairingSuggestion(null);
     setPairingRemovalPrompt(null);
@@ -2124,6 +2825,8 @@ export default function Home() {
     const selectedItems = pairingSuggestion.relatedItems.filter(
       ({ quantity }) => quantity > 0,
     );
+    if (!cart[pairingSuggestion.source.id]) setRevisionStatus(pairingSuggestion.source, "added");
+    selectedItems.forEach(({product}) => { if (!cart[product.id]) setRevisionStatus(product, "added"); });
     setCart((current) => {
       const next = {
         ...current,
@@ -2150,10 +2853,55 @@ export default function Home() {
   const addSourceOnly = () => {
     if (!pairingSuggestion) return;
     const sourceId = pairingSuggestion.source.id;
+    if (!cart[sourceId]) setRevisionStatus(pairingSuggestion.source, "added");
+    else reviseProduct(pairingSuggestion.source, "数量", String(cart[sourceId]), String(cart[sourceId] + 1));
     setCart((current) => ({
       ...current,
       [sourceId]: (current[sourceId] || 0) + 1,
     }));
+    setPairingSuggestion(null);
+  };
+  const saveCartToyPairing = () => {
+    if (!pairingSuggestion || pairingSuggestion.mode !== "cart") return;
+    const sourceId = pairingSuggestion.source.id;
+    const previousPairings = cartPairings[sourceId] || {};
+    const selectedToys = pairingSuggestion.relatedItems.filter(
+      ({ quantity }) => quantity > 0,
+    );
+    const toyIds = new Set(
+      [
+        ...Object.keys(previousPairings),
+        ...pairingSuggestion.relatedItems.map(({ product }) => product.id),
+      ],
+    );
+    const nextToyQuantities = new Map(
+      pairingSuggestion.relatedItems.map(({ product, quantity }) => [product.id, quantity]),
+    );
+    setCart((current) => {
+      const next = { ...current };
+      toyIds.forEach((productId) => {
+        const change = (nextToyQuantities.get(productId) || 0) - (previousPairings[productId] || 0);
+        if (change)
+          next[productId] = Math.max(0, (next[productId] || 0) + change);
+      });
+      return next;
+    });
+    setCartPairings((current) => {
+      const children = Object.fromEntries(
+        Object.entries(current[sourceId] || {}).filter(
+          ([childId]) => !toyIds.has(childId),
+        ),
+      );
+      selectedToys.forEach(({ product, quantity }) => {
+        children[product.id] = quantity;
+      });
+      const next = { ...current };
+      if (Object.keys(children).length) next[sourceId] = children;
+      else delete next[sourceId];
+      return next;
+    });
+    setCartOpen(false);
+    setImportedQuotePairingOpen(true);
     setPairingSuggestion(null);
   };
   const setSuggestedPairingQuantity = (id: string, quantity: number) => {
@@ -2165,6 +2913,48 @@ export default function Home() {
               item.product.id === id
                 ? { ...item, quantity: Math.max(0, Math.floor(quantity || 0)) }
                 : item,
+            ),
+          }
+        : null,
+    );
+  };
+  const setOptionalPairingSelection = (id: string, selected: boolean) => {
+    setPairingSuggestion((current) =>
+      current
+        ? {
+            ...current,
+            relatedItems: current.relatedItems.map((item) =>
+              item.product.id === id
+                ? { ...item, quantity: selected ? Math.max(1, item.quantity) : 0 }
+                : item,
+            ),
+          }
+        : null,
+    );
+  };
+  const setAllOptionalPairingSelections = (selected: boolean) => {
+    setPairingSuggestion((current) =>
+      current
+        ? {
+            ...current,
+            relatedItems: current.relatedItems.map((item) =>
+              item.isBound
+                ? item
+                : { ...item, quantity: selected ? Math.max(1, item.quantity) : 0 },
+            ),
+          }
+        : null,
+    );
+  };
+  const applyOptionalPairingBatchQuantity = () => {
+    if (!/^[1-9]\d*$/.test(pairingBatchQuantity)) return;
+    const quantity = Number(pairingBatchQuantity);
+    setPairingSuggestion((current) =>
+      current
+        ? {
+            ...current,
+            relatedItems: current.relatedItems.map((item) =>
+              !item.isBound && item.quantity > 0 ? { ...item, quantity } : item,
             ),
           }
         : null,
@@ -2197,7 +2987,13 @@ export default function Home() {
     nextQuantity: number,
     parentId?: string,
   ) => {
-    const quantity = Math.max(0, Math.floor(nextQuantity || 0));
+    const quantity = Math.max(0, quoteProducts.find(p => p.id === productId)?.quoteCosting ? (nextQuantity || 0) : Math.floor(nextQuantity || 0));
+    const product = quoteProducts.find(item => item.id === productId);
+    const previous = parentId ? cartPairings[parentId]?.[productId] || 0 : cart[productId] || 0;
+    if (product && previous !== quantity) {
+      if (!quantity) { setRevisionStatus(product, "deleted"); return; }
+      reviseProduct(product, "数量", String(previous), String(quantity));
+    }
     if (!parentId) {
       setCart((current) => ({ ...current, [productId]: quantity }));
       return;
@@ -2214,83 +3010,151 @@ export default function Home() {
       [productId]: Math.max(0, (current[productId] || 0) + change),
     }));
   };
+  const setImportedAssociationQuantity = (
+    parentId: string,
+    childId: string,
+    quantity: number,
+  ) => {
+    const nextQuantity = Math.max(1, Math.floor(quantity || 1));
+    const currentQuantity = cartPairings[parentId]?.[childId] || 0;
+    const change = nextQuantity - currentQuantity;
+    setCartPairings((current) => ({
+      ...current,
+      [parentId]: { ...(current[parentId] || {}), [childId]: nextQuantity },
+    }));
+    if (change)
+      setCart((current) => ({
+        ...current,
+        [childId]: Math.max(0, (current[childId] || 0) + change),
+      }));
+  };
   const quoteQuantityKey = (productId: string, parentId?: string) =>
     `${parentId || "root"}:${productId}`;
+  const removeCartItems = (itemKeys: Set<string>) => {
+    const selected = cartHierarchyItems.filter(item => itemKeys.has(quoteQuantityKey(item.product.id, item.parentId)));
+    const parents = new Set(selected.filter(item => !item.parentId).map(item => item.product.id));
+    cartHierarchyItems.filter(item => selected.includes(item) || item.parentId && parents.has(item.parentId)).forEach(item => setRevisionStatus(item.product, "deleted"));
+    setSelectedCartItemKeys(new Set());
+  };
+  const toggleCartItemSelection = (itemKey: string, selected: boolean) => {
+    setSelectedCartItemKeys((current) => {
+      const next = new Set(current);
+      if (selected) next.add(itemKey);
+      else next.delete(itemKey);
+      return next;
+    });
+  };
   const renderQuoteItemRow = (
     item: (typeof cartHierarchyItems)[number],
     serial: number,
   ) => {
     const { product: p, quantity, parentId } = item;
-    const unitPrice = displayPrice(p);
-    const amount = unitPrice === null ? null : unitPrice * quantity;
+    const cnyPrice = priceMode === "usd" ? p.price : displayPrice(p);
+    const usdPrice = p.usd ?? null;
+    const cost = canViewQuoteCost ? p.cost : null;
     const quantityKey = quoteQuantityKey(p.id, parentId);
     return (
       <tr
-        className={`${parentId ? "quoteChildRow" : "quoteParentRow"}${quantity === 0 ? " quoteZeroQuantity" : ""}`}
+        className={`revision-${p.revision?.status || "none"} ${parentId ? "quoteChildRow" : "quoteParentRow"}${quantity === 0 ? " quoteZeroQuantity" : ""}`}
         key={`${parentId || "root"}-${p.id}`}
       >
-        <td>{serial}</td>
-        <td className="quoteSku">{p.sku || "—"}</td>
-        <td>
+        <td>{p.importSequence ?? serial}</td>
+        <td className="quoteSku">
+          <label className="quoteSkuSelect">
+            <input
+              aria-label={`选择 ${p.sku || p.name}`}
+              checked={selectedCartItemKeys.has(quantityKey)}
+              onChange={(event) => toggleCartItemSelection(quantityKey, event.target.checked)}
+              type="checkbox"
+            />
+            <span>{p.sku || "—"}</span>
+          </label>
+        </td>
+        <td className={p.revision?.status === "modified" && p.importBlueColumns?.includes(2) ? "revisionModifiedCell" : ""}>
           {parentId && <span className="quoteRelationLabel">关联产品 / Paired item</span>}
           <b>{p.name}</b>
           <small className={needsEnglishTranslation(p) ? "missingEnglish" : ""}>
             {englishProductName(p)}
           </small>
         </td>
-        <td>
+        <td className={p.revision?.status === "modified" && p.importBlueColumns?.includes(3) ? "revisionModifiedCell" : ""}>
           <div className="quoteImage">
             <Visual p={p} mini />
           </div>
         </td>
-        <td>{p.brand || "YIFUN"}</td>
-        <td>{p.spec || "—"}</td>
+        <td className={p.revision?.status === "modified" && p.importBlueColumns?.includes(4) ? "revisionModifiedCell" : ""}>{p.brand || "YIFUN"}</td>
+        <td className={p.revision?.changes.some(change => change.field === "规格/尺寸") ? "revisionModifiedCell" : ""}><textarea rows={Math.max(2, (p.spec || "").split("\n").reduce((count, line) => count + Math.max(1, Math.ceil(line.length / 20)), 0))} aria-label={`${p.sku || p.name} 规格/尺寸`} className="quoteRevisionSpec" key={`${p.id}:${p.spec}`} defaultValue={p.spec || ""} onBlur={async event => {
+          const field = event.target;
+          let value = field.value;
+          if (value === (p.spec || "")) return;
+          try {value = (await bilingualQuoteProducts([{...p, spec: value}]))[0].spec || "";}
+          catch (error) {field.value = p.spec || ""; window.alert(error instanceof Error ? error.message : "规格翻译未完成，请重试"); return;}
+          reviseProduct(p, "规格/尺寸", p.spec || "", value);
+          setRestoredQuoteProducts(current => current.map(item => item.id === p.id ? {...item, spec: value} : item));
+        }} /></td>
         <td>
           <QuoteBilingual {...unitLabel(p.unit)} />
         </td>
-        <td>
-          <input
-            aria-label={`${p.sku || p.name} 数量`}
-            className="quoteQtyInput"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            type="text"
-            value={quoteQuantityDrafts[quantityKey] ?? String(quantity)}
-            onChange={(event) => {
-              const value = event.target.value;
-              if (!/^\d*$/.test(value)) return;
-              setQuoteQuantityDrafts((current) => ({
-                ...current,
-                [quantityKey]: value,
-              }));
-              if (value !== "")
-                setQuoteItemQuantity(p.id, Number(value), parentId);
-            }}
-            onBlur={() => {
-              const value = quoteQuantityDrafts[quantityKey];
-              if (value === undefined) return;
-              if (value !== "")
-                setQuoteItemQuantity(p.id, Number(value), parentId);
-              setQuoteQuantityDrafts((current) => {
-                const next = { ...current };
-                delete next[quantityKey];
-                return next;
-              });
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-          />
+        <td className={p.revision?.changes.some(change => change.field === "数量") ? "revisionModifiedCell" : ""}>
+          <div className="quoteQuantityEditor">
+            <input
+              aria-label={`${p.sku || p.name} 数量`}
+              className="quoteQtyInput"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              type="text"
+              value={quoteQuantityDrafts[quantityKey] ?? (p.importSourceQuantity === null && quantity === 1 ? "" : String(quantity))}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (!/^\d*$/.test(value)) return;
+                setQuoteQuantityDrafts((current) => ({
+                  ...current,
+                  [quantityKey]: value,
+                }));
+                if (value !== "")
+                  setQuoteItemQuantity(p.id, Number(value), parentId);
+              }}
+              onBlur={() => {
+                const value = quoteQuantityDrafts[quantityKey];
+                if (value === undefined) return;
+                if (value !== "")
+                  setQuoteItemQuantity(p.id, Number(value), parentId);
+                setQuoteQuantityDrafts((current) => {
+                  const next = { ...current };
+                  delete next[quantityKey];
+                  return next;
+                });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+            />
+            <button
+              aria-label={`删除 ${p.sku || p.name}`}
+              className="quoteDeleteButton"
+              onClick={() => removeCartItems(new Set([quantityKey]))}
+              type="button"
+            >
+              删除
+            </button>
+          </div>
         </td>
-        <td>{money(unitPrice, currency)}</td>
-        <td>{money(amount, currency)}</td>
+        <td>{canViewQuoteCost ? money(cost, "CNY", 2) : "—"}</td>
+        <td>{canViewQuoteCost ? money(cost == null ? null : cost * billableQuantity(p, quantity), "CNY", 2) : "—"}</td>
+        <td>{money(cnyPrice, "CNY", 2)}</td>
+        <td>{money(cnyPrice == null ? null : cnyPrice * billableQuantity(p, quantity), "CNY", 2)}</td>
+        <td>{money(usdPrice, "USD", 2)}</td>
+        <td>{money(usdPrice == null ? null : usdPrice * billableQuantity(p, quantity), "USD", 2)}</td>
+        <td></td>
         <td>
-          <QuoteBilingual {...colourLabel(p.colorTag)} />
+          <QuoteBilingual zh={splitBilingual(p.note || "").zh || "—"} en={englishRemark(p.note)} />
+          <select className="quoteRevisionStatus" aria-label={`${p.sku || p.name} 修订状态`} value={p.revision?.status || ""} onChange={event => {if(event.target.value) setRevisionStatus(p, event.target.value as QuoteRevision["status"]);}}>
+            <option value="" disabled>修订状态</option>{Object.entries(revisionLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          {p.revision && <details className="quoteRevisionLog"><summary>{revisionLabels[p.revision.status]} · 修改记录</summary>{p.revision.changes.map((change,index) => <div key={index}>{change.field}：{change.before || "空白"} → {change.after || "空白"}<small>{new Date(change.at).toLocaleString("zh-CN")}</small></div>)}</details>}
         </td>
+        <td className="sourceFormNote">{p.material || "—"}</td>
         <td>{p.volume || "—"}</td>
-        <td>
-          <QuoteBilingual zh={p.note || "—"} en={englishRemark(p.note)} />
-        </td>
       </tr>
     );
   };
@@ -2309,7 +3173,7 @@ export default function Home() {
       <div className="quotePrintItem" key={`print-${item.parentId || "root"}-${p.id}`}>
         <span className="quotePrintNo">{serial}</span>
         <div className="quotePrintImage">
-          <Visual p={p} mini />
+          <Visual p={p} mini eager />
         </div>
         <PrintBilingual zh={p.name} en={englishName} />
         <span>{printValue(p.brand || "YIFUN")}</span>
@@ -2344,12 +3208,12 @@ export default function Home() {
             },
           )
         : [];
-      if (product && product.category1 !== "小玩具" && relatedItems.length) {
+      if (product && !isPairedItem(product) && relatedItems.length) {
         setPairingRemovalPrompt({ device: product, relatedItems });
         return;
       }
     }
-    if (product?.category1 === "小玩具") {
+    if (product && isPairedItem(product)) {
       const pairedQuantity = Object.values(cartPairings).reduce(
         (total, children) => total + (children[id] || 0),
         0,
@@ -2385,13 +3249,135 @@ export default function Home() {
     });
     setPairingRemovalPrompt(null);
   };
+  const uploadQuoteTemplate = async (file: File): Promise<{ id: string }> => {
+    if (file.size > 200 * 1024 * 1024) throw new Error("转换后的报价模板不能超过 200MB");
+    const readResult = async (response: Response) => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "模板上传失败，请重新导入");
+      return result;
+    };
+    if (file.size <= 8 * 1024 * 1024) {
+      const form = new FormData();
+      form.set("file", file);
+      const result = await readResult(await fetch("/api/quote-template", { method: "POST", body: form }));
+      if (!result.id) throw new Error("模板保存失败，请重新导入");
+      return result;
+    }
+    const upload = await readResult(await fetch("/api/quote-template/upload", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: file.name, size: file.size }),
+    }));
+    const endpoint = `/api/quote-template/upload?id=${encodeURIComponent(upload.id)}`;
+    try {
+      const parts: Array<{ partNumber: number; etag: string }> = [];
+      for (let offset = 0; offset < file.size; offset += upload.partSize) {
+        const part = parts.length + 1;
+        parts.push(await readResult(await fetch(`${endpoint}&part=${part}`, { method: "PUT", body: file.slice(offset, offset + upload.partSize) })));
+      }
+      return await readResult(await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parts }) }));
+    } catch (error) {
+      await fetch(endpoint, { method: "DELETE" }).catch(() => {});
+      throw error;
+    }
+  };
+  const translateQuoteWorkbook = async (source: ArrayBuffer): Promise<ArrayBuffer> => {
+    const book = XLSX.read(source, {type: "array", cellStyles: true});
+    const files = unzipSync(new Uint8Array(source));
+    const changes: Array<{path: string; ref: string; text: string; english?: string}> = [];
+    book.SheetNames.forEach((name, index) => {
+      if (name === "修改记录") return;
+      const sheet = book.Sheets[name];
+      const path = `xl/worksheets/sheet${index + 1}.xml`;
+      if (!files[path]) return;
+      const headerRow = Object.entries(sheet).find(([ref, cell]) => !ref.startsWith("!") && /款号|item\s*number|^sku$/i.test(String(cell.v || "")))?.[0].match(/\d+$/)?.[0];
+      Object.entries(sheet).forEach(([ref, cell]) => {
+        if (ref.startsWith("!") || cell.f || cell.t !== "s" || (ref.match(/\d+$/)?.[0] === headerRow && !/材质.*工艺/.test(String(cell.v || "")))) return;
+        const text = String(cell.v || "").trim();
+        const hasEnglishLine = text.split(/\n+/).some(line => /[A-Za-z]{2,}/.test(line) && !/[\u4e00-\u9fff]/.test(line));
+        const hasEnglishSuffix = /\/[ \t]*[A-Za-z][^\u4e00-\u9fff]*$/.test(text);
+        if (!/[\u4e00-\u9fff]/.test(text) || hasEnglishLine || hasEnglishSuffix || /[A-Za-z]{2,}[ \t]+[A-Za-z]{2,}/.test(text)) return;
+        const row = ref.match(/\d+$/)?.[0];
+        const sku = String(sheet[`B${row}`]?.v || "").trim().toUpperCase();
+        const catalog = ref.startsWith("C") ? products.find(product => product.sku.toUpperCase() === sku) : undefined;
+        const english = catalog?.en && !/[\u4e00-\u9fff]/.test(catalog.en) ? catalog.en : undefined;
+        changes.push({path, ref, text, english});
+      });
+    });
+    if (!changes.length) return source;
+    const texts = [...new Set(changes.filter(change => !change.english).map(change => change.text))];
+    const translated = new Map<string, string>();
+    for (let offset = 0; offset < texts.length; offset += 24) {
+      const batch = texts.slice(offset, offset + 24);
+      const response = await fetch("/api/quote-translate", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts: batch})});
+      const result = await response.json();
+      if (!response.ok || !Array.isArray(result.translations) || result.translations.length !== batch.length) throw new Error(result.error || "自动翻译未完成，请重新导入");
+      batch.forEach((text, index) => translated.set(text, result.translations[index]));
+    }
+    const sheets = new Map<string, string>();
+    const heights = new Map<string, Map<number, number>>();
+    changes.forEach(change => {
+      const english = change.english || translated.get(change.text);
+      if (!english) throw new Error("自动翻译未完成，请重新导入");
+      const xml = sheets.get(change.path) || strFromU8(files[change.path]);
+      const bilingual = `${change.text}\n${english}`;
+      sheets.set(change.path, updateTemplateCell(xml, change.ref, bilingual));
+      const sheetIndex = Number(change.path.match(/sheet(\d+)/)?.[1]) - 1;
+      const sheet = book.Sheets[book.SheetNames[sheetIndex]];
+      const position = XLSX.utils.decode_cell(change.ref);
+      const merged = sheet["!merges"]?.find(range => range.s.r === position.r && range.s.c === position.c);
+      let width = 0;
+      for (let column = position.c; column <= (merged?.e.c ?? position.c); column++) width += (sheet["!cols"]?.[column]?.wpx || 80) * .75;
+      const capacity = Math.max(4, (width - 8) / 6);
+      const lines = bilingual.split("\n").reduce((count, line) => count + Math.max(1, Math.ceil([...line].reduce((length, char) => length + (/[\u4e00-\u9fff]/.test(char) ? 2 : 1), 0) / capacity * 1.15)), 0);
+      const rowSpan = (merged?.e.r ?? position.r) - position.r + 1;
+      const current = Array.from({length: rowSpan}, (_, index) => sheet["!rows"]?.[position.r + index]?.hpt || 15).reduce((sum, height) => sum + height, 0);
+      const required = lines * 17 + 8;
+      if (position.c < 18 && required > current) {
+        const rows = heights.get(change.path) || new Map<number, number>();
+        rows.set(position.r + 1, Math.max(rows.get(position.r + 1) || 0, (sheet["!rows"]?.[position.r]?.hpt || 15) + required - current));
+        heights.set(change.path, rows);
+      }
+    });
+    sheets.forEach((xml, path) => {
+      heights.get(path)?.forEach((height, row) => {
+        xml = xml.replace(new RegExp(`<row\\b(?=[^>]*\\br="${row}")[^>]*>`), tag => tag.replace(/\s(?:ht|customHeight)="[^"]*"/g, "").replace(/>$/, ` ht="${Math.ceil(height)}" customHeight="1">`));
+      });
+      files[path] = strToU8(normalizeTemplateCellOrder(xml));
+    });
+    return zipSync(files, {level: 6}).buffer as ArrayBuffer;
+  };
+  const bilingualQuoteProducts = async (items: Product[]): Promise<Product[]> => {
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ["款号 Item Number", "产品名称 Product Name", "规格 Specifications", "单位 Unit", "品牌 Brand", "备注 Notes", "材质 Materials"],
+      ...items.map(product => [product.sku, [product.name, needsEnglishTranslation(product) ? "" : englishProductName(product)].filter(Boolean).join("\n"), product.spec, product.unit, product.brand, product.note, product.material]),
+    ]);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Quote");
+    const translated = XLSX.read(await translateQuoteWorkbook(XLSX.write(book, {type: "array", bookType: "xlsx"})), {type: "array"}).Sheets.Quote;
+    return items.map((product, index) => {
+      const row = index + 2;
+      const name = splitBilingual(String(translated[`B${row}`]?.v || ""));
+      return {...product, name: name.zh, en: name.en || product.en, spec: String(translated[`C${row}`]?.v || ""), unit: String(translated[`D${row}`]?.v || ""), brand: String(translated[`E${row}`]?.v || ""), note: String(translated[`F${row}`]?.v || ""), material: String(translated[`G${row}`]?.v || "")};
+    });
+  };
   const readQuoteImport = async (file: File) => {
     setQuoteImporting(true);
     setQuoteImportError("");
     setQuoteImportPreview(null);
     try {
-      const source = await file.arrayBuffer();
-      const workbook = XLSX.read(source, { type: "array" });
+      if (!/\.xlsx?$/i.test(file.name)) throw new Error("请选择 .xls 或 .xlsx 格式的 Excel 文件");
+      if (file.size > 200 * 1024 * 1024) throw new Error("导入文件不能超过 200MB");
+      const originalSource = await file.arrayBuffer();
+      let workbook = XLSX.read(originalSource, { type: "array", cellStyles: true });
+      const isLegacyExcel = /\.xls$/i.test(file.name);
+      let source: ArrayBuffer = isLegacyExcel
+        ? XLSX.write(workbook, { type: "array", bookType: "xlsx", cellStyles: true })
+        : originalSource;
+      source = await translateQuoteWorkbook(source);
+      workbook = XLSX.read(source, {type: "array", cellStyles: true});
+      const templateFile = new File([source], file.name.replace(/\.xls$/i, ".xlsx"), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const revisionRecords = workbook.Sheets["修改记录"] ? XLSX.utils.sheet_to_json(workbook.Sheets["修改记录"], {header: 1}) as unknown[][] : [];
+      const importedRevisions = new Map<number, QuoteRevision>();
+      revisionRecords.slice(1).forEach(row => { try { const revision = JSON.parse(String(row[8] || "")) as QuoteRevision; if (revision.status in revisionLabels && Array.isArray(revision.changes)) importedRevisions.set(Number(row[0]), revision); } catch {} });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error("未找到可读取的工作表");
       const worksheetStartRow = XLSX.utils.decode_range(
@@ -2424,6 +3410,7 @@ export default function Home() {
       const areaSubtotalColumn = findImportColumn(header, /区域小计|subtotal/i);
       const colorColumn = findImportColumn(header, /颜色|colour|color/i);
       const noteColumn = findImportColumn(header, /备注|notes?|remarks?/i);
+      const materialColumn = findImportColumn(header, /材质|工艺|material/i);
       const volumeColumn = findImportColumn(header, /体积|volume/i);
       const selectedUnitColumn =
         quoteImportPriceMode === "usd" ? usdUnitColumn : cnyUnitColumn;
@@ -2437,16 +3424,51 @@ export default function Home() {
         products.map((product) => [product.sku.toUpperCase(), product]),
       );
       const importRows: Array<{ product: Product; quantity: number }> = [];
+      const sequenceColumn = findImportColumn(header, /序号|^no\.?$/i);
       const matched: Array<{ product: Product; quantity: number }> = [];
       const imported: Array<{ product: Product; quantity: number }> = [];
       const unmatchedSkus = new Set<string>();
       const workbookImages = extractWorkbookImages(source);
+      const importedImageUrls = new Map<string, string>();
+      await Promise.all(
+        [...workbookImages.entries()].map(async ([imageId, image]) => {
+          const form = new FormData();
+          form.set("file", image, `${imageId}.${image.type === "image/jpeg" ? "jpg" : "png"}`);
+          try {
+            const response = await fetch("/api/quote-import-image", { method: "POST", body: form });
+            const result = response.ok ? await response.json() as { imageUrl?: string } : null;
+            if (result?.imageUrl) {
+              importedImageUrls.set(imageId, result.imageUrl);
+              return;
+            }
+          } catch {
+            // Keep the image available for this import if an upload is interrupted.
+          }
+          importedImageUrls.set(imageId, URL.createObjectURL(image));
+        }),
+      );
       let sourceRows = 0;
       let currentArea = "导入项目 / Imported items";
+      let currentSection = 0;
+      const firstSummaryRow = rows.findIndex((row, index) => index > headerIndex && /包装费|除甲醛|运输费|安装费|小计|税额|总计|合计金额/i.test(importCellText(row[nameColumn])));
       rows.slice(headerIndex + 1).forEach((row, rowOffset) => {
+        if (firstSummaryRow >= 0 && headerIndex + rowOffset + 1 >= firstSummaryRow) return;
+        const sourceRow = worksheetStartRow + headerIndex + rowOffset + 1;
+        // Merged section labels and template instructions are not product rows.
+        const section = worksheet["!merges"]?.find(merge => merge.s.r === sourceRow && merge.s.c <= skuColumn && merge.e.c >= nameColumn);
+        if (section) {
+          const label = importCellText(worksheet[XLSX.utils.encode_cell(section.s)]?.v);
+          if (label && section.s.c === skuColumn) {
+            currentArea = label;
+            currentSection = sourceRow;
+          }
+          return;
+        }
         const skus = importedSkuCodes(row[skuColumn]);
         const rawQuantity = importCellNumber(row[quantityColumn]);
-        const sourceName = importCellText(row[nameColumn]);
+        const nameLines = String(row[nameColumn] ?? "").trim().split(/\n+/);
+        const sourceEnglish = nameLines.filter(line => /[A-Za-z]/.test(line) && !/[\u4e00-\u9fff]/.test(line)).join(" ");
+        const sourceName = nameLines.filter(line => /[\u4e00-\u9fff]/.test(line)).join("\n") || importCellText(row[nameColumn]);
         const isSummaryRow = /包装费|除甲醛|运输费|安装费|小计|税额|总计|合计金额/i.test(
           sourceName,
         );
@@ -2463,11 +3485,12 @@ export default function Home() {
           return;
         }
         sourceRows += 1;
-        const quantity = rawQuantity !== null && rawQuantity > 0 ? rawQuantity : 1;
+        if (rawQuantity !== null && rawQuantity < 0) throw new Error("产品数量不能小于 0");
+        const quantity = rawQuantity === null ? 1 : rawQuantity;
         const sourceImageId = importCellText(row[imageColumn]).match(/(ID_[A-F0-9]+)/i)?.[1];
         const sourceImageValue = importCellText(row[imageColumn]);
         const importedImage =
-          (sourceImageId ? workbookImages.get(sourceImageId) : "") ||
+          (sourceImageId ? importedImageUrls.get(sourceImageId) : "") ||
           (/^https?:\/\//i.test(sourceImageValue) ? sourceImageValue : "");
         const sourceUnitPrice = (unitColumn: number, amountColumn: number) => {
           const unitPrice = unitColumn >= 0 ? importCellNumber(row[unitColumn]) : null;
@@ -2481,30 +3504,54 @@ export default function Home() {
           id: `imported-${headerIndex + rowOffset + 1}-${sku || "no-sku"}`,
           sku,
           name: sourceName || catalog?.name || sku || "未命名导入项目",
-          en: catalog?.en || "",
-          category: currentArea,
+          en: sourceEnglish || catalog?.en || "",
+          category: catalog?.category || currentArea,
           family: catalog?.family || ("大型设备" as const),
           price: catalog?.price ?? cnyUnitPrice,
+          factory: catalog?.factory ?? (quoteImportPriceMode === "factory" ? cnyUnitPrice : null),
           priceNote: "来自导入报价表",
           usd: catalog?.usd ?? usdUnitPrice,
-          unit: importCellText(row[unitColumn]) || catalog?.unit,
-          spec: importCellText(row[specificationColumn]) || catalog?.spec,
-          brand: importCellText(row[brandColumn]) || catalog?.brand || "YIFUN",
-          material: catalog?.material || "",
-          note: importCellText(row[noteColumn]) || catalog?.note,
+          unit: unitColumn >= 0 ? String(row[unitColumn] ?? "").trim() : catalog?.unit || "",
+          spec: specificationColumn >= 0 ? String(row[specificationColumn] ?? "").trim() : catalog?.spec || "",
+          brand: brandColumn >= 0 ? String(row[brandColumn] ?? "").trim() : catalog?.brand || "YIFUN",
+          material: materialColumn >= 0 ? String(row[materialColumn] ?? "").trim() : catalog?.material || "",
+          note: noteColumn >= 0 ? String(row[noteColumn] ?? "").trim() : catalog?.note || "",
           image: importedImage || catalog?.image || "",
-          volume: importCellText(row[volumeColumn]) || catalog?.volume,
+          volume: volumeColumn >= 0 ? String(row[volumeColumn] ?? "").trim() : catalog?.volume || "",
+          cost: catalog?.cost ?? null,
+          branchPrice: catalog?.branchPrice ?? null,
+          supplyMethod: catalog?.supplyMethod ?? null,
           stock: catalog?.stock ?? null,
           majorCategory: catalog?.majorCategory || ("生活场景 / Lifestyle Scene" as MajorCategory),
           category1: catalog?.category1 || "自定义产品",
-          category2: currentArea,
+          category2: catalog?.category2 || currentArea,
           category3: catalog?.category3 || "自定义产品",
+          classifications: catalog?.classifications || [],
+          tags: catalog?.tags || [catalog?.category3 || "自定义产品"],
           colorTag: importCellText(row[colorColumn]) || catalog?.colorTag || "待确认",
           hasScreen: catalog?.hasScreen || false,
           isRecommended: catalog?.isRecommended || false,
           relatedIds: [],
+          catalogProductId: catalog?.id,
           importArea: currentArea,
           importSourceRow: worksheetStartRow + headerIndex + rowOffset + 2,
+          importBlueColumns: Array.from({length: 18}, (_, column) => column).filter(column => {
+            const cell = worksheet[XLSX.utils.encode_cell({r: sourceRow, c: column})];
+            return (cell?.s as {fgColor?: {rgb?: string}} | undefined)?.fgColor?.rgb?.slice(-6).toUpperCase() === "00B0F0";
+          }),
+          revision: importedRevisions.get(sourceRow + 1) || (() => {
+            const columns = [nameColumn, skuColumn, quantityColumn, specificationColumn].filter(column => column >= 0);
+            const statuses: Record<string, QuoteRevision["status"]> = {FF0000: "deleted", "92D050": "added", "00B0F0": "modified", FFFF00: "customer"};
+            for (const column of columns) {
+              const cell = worksheet[XLSX.utils.encode_cell({r: sourceRow, c: column})];
+              const rgb = (cell?.s as {fgColor?: {rgb?: string}} | undefined)?.fgColor?.rgb?.slice(-6).toUpperCase();
+              if (rgb && statuses[rgb]) return {status: statuses[rgb], changes: [{field: "状态", before: "原表颜色标记", after: revisionLabels[statuses[rgb]], at: new Date().toISOString()}]};
+            }
+            return undefined;
+          })(),
+          importSourceQuantity: rawQuantity,
+          importSequence: sequenceColumn >= 0 ? importCellText(row[sequenceColumn]) : undefined,
+          importSection: currentSection,
         });
         (skus.length ? skus : [""]).forEach((sku) => {
           const product = productBySku.get(sku);
@@ -2522,12 +3569,43 @@ export default function Home() {
       });
       if (!sourceRows)
         throw new Error("表单中没有可导入的产品行");
+      const costingBatchId = crypto.randomUUID();
+      // Calculate against the backend rules before displaying imported prices.
+      for (let offset = 0; offset < importRows.length; offset += 500) {
+        const batch = importRows.slice(offset, offset + 500);
+        const response = await fetch("/api/quote-costing", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ importBatch: { id: costingBatchId, name: file.name }, items: batch.map(({ product, quantity }) => ({
+            id: product.id, quoteQuantity: quantity,
+            input: costingInputFromRow(header, rows[(product.importSourceRow || 1) - worksheetStartRow - 1], product, quantity, findImportMeta(rows, headerIndex, /项目名称|project\s*name/i) || inferImportProjectName(rows, headerIndex)),
+          })) }),
+        });
+        const calculated = await response.json();
+        if (!response.ok || !Array.isArray(calculated.results)) throw new Error(calculated.error || "自动核算失败，请重新导入清单");
+        for (const item of calculated.results) {
+          if (!item.matched) continue;
+          const product = batch.find(row => row.product.id === item.id)?.product;
+          if (!product) continue;
+          product.quoteCosting = item.costing;
+          product.price = item.costing.saleUnit;
+          product.factory = item.costing.saleSource === "catalog" ? item.costing.factorySaleUnit ?? null : item.costing.saleUnit;
+          product.usd = item.costing.usdSaleUnit ?? null;
+          product.cost = item.cost ?? null;
+        }
+      }
       const totalRowIndex = rows.findIndex(
         (row, rowIndex) =>
           rowIndex > headerIndex &&
-          /总计.*含税|total.*tax/i.test(importCellText(row[nameColumn])),
+          /总计|grand\s*total|^total\b/i.test(importCellText(row[nameColumn])) && !/小计|subtotal/i.test(importCellText(row[nameColumn])),
       );
+      const templateResult = await uploadQuoteTemplate(templateFile);
+      const importedFee = (pattern: RegExp) => {
+        const row = rows.find((row, index) => index > headerIndex && pattern.test(importCellText(row[nameColumn])));
+        return row ? importCellNumber(row[selectedAmountColumn]) : null;
+      };
       setQuoteImportPreview({
+        fees: { packaging: importedFee(/包装费/i) || 0, formaldehyde: importedFee(/除甲醛/i) || 0, shipping: importedFee(/运输费/i) || 0, installation: importedFee(/安装费/i) || 0, designDeduction: importedFee(/设计费/i) || 0 },
+        includeTax: importedFee(/^税额|^tax/i) === null ? true : Number(importedFee(/^税额|^tax/i)) > 0,
         fileName: file.name,
         rows: importRows,
         matched,
@@ -2541,17 +3619,68 @@ export default function Home() {
         salesName: findImportMeta(rows, headerIndex, /商务|业务员|sales/i),
       });
       quoteImportTemplateRef.current = {
+        headers: header.length >= 18 ? rows[headerIndex].slice(0, 18).map(cell => String(cell ?? "").trim().split(/\n+/)) : undefined,
+        feeLabels: Object.fromEntries(([
+          ["packaging", /包装费/i], ["formaldehyde", /除甲醛/i], ["shipping", /运输费/i],
+          ["installation", /安装费/i], ["subtotal", /小计.*不含税|subtotal.*tax/i], ["tax", /^税额|^tax/i], ["total", /总计|^total/i],
+        ] as const).flatMap(([key, pattern]) => {
+          const row = rows.find((row, index) => index > headerIndex && pattern.test(importCellText(row[nameColumn])));
+          return row ? [[key, importCellText(row[nameColumn])]] : [];
+        })),
+        feeNotes: Object.fromEntries(([
+          ["packaging", /包装费/i], ["formaldehyde", /除甲醛/i], ["shipping", /运输费/i],
+          ["installation", /安装费/i], ["subtotal", /小计.*不含税|subtotal.*tax/i], ["tax", /^税额|^tax/i], ["total", /总计|^total/i],
+        ] as const).flatMap(([key, pattern]) => {
+          const row = rows.find((row, index) => index > headerIndex && pattern.test(importCellText(row[nameColumn])));
+          return row ? [[key, row.flatMap((cell, column) => column !== nameColumn && typeof cell === "string" && /[\u4e00-\u9fffA-Za-z]/.test(cell) && !/^=/.test(cell) ? [cell.trim()] : []).join("\n")]] : [];
+        })),
+        title: rows.slice(0, headerIndex).flat().map(importCellText).find(value => /报价清单|quotation/i.test(value)),
+        footerNotes: totalRowIndex < 0 ? [] : rows.slice(totalRowIndex + 1).flatMap(row => {
+          const text = String(row[0] ?? "").trim();
+          return text && !/合计金额/.test(text) && !/^\d+$/.test(text) ? [text] : [];
+        }),
         source,
-        fileName: file.name,
+        id: templateResult.id,
+        feeRows: Object.fromEntries([
+          ["packaging", /包装费/i], ["formaldehyde", /除甲醛/i], ["shipping", /运输费/i],
+          ["installation", /安装费/i], ["designDeduction", /设计费/i], ["subtotal", /小计.*不含税|subtotal.*tax/i], ["tax", /^税额|^tax/i],
+        ].flatMap(([key, pattern]) => {
+          const index = rows.findIndex((row, rowIndex) => rowIndex > headerIndex && (pattern as RegExp).test(importCellText(row[nameColumn])));
+          return index < 0 ? [] : [[key, worksheetStartRow + index + 1]];
+        })),
+        fileName: templateFile.name,
         headerRow: worksheetStartRow + headerIndex + 1,
         columns: {
+          sequence: findImportColumn(header, /序号|^no\.?$/i),
+          sku: skuColumn,
+          name: nameColumn,
+          image: imageColumn,
+          brand: brandColumn,
+          specification: specificationColumn,
+          unit: unitColumn,
           quantity: quantityColumn,
           cnyUnit: cnyUnitColumn,
           cnyAmount: cnyAmountColumn,
           usdUnit: usdUnitColumn,
           usdAmount: usdAmountColumn,
           areaSubtotal: areaSubtotalColumn,
+          color: colorColumn,
+          note: noteColumn,
+          volume: volumeColumn,
+          material: materialColumn,
         },
+        insertBeforeRow: (() => {
+          const summaryRowIndex = rows.findIndex(
+            (row, rowIndex) =>
+              rowIndex > headerIndex &&
+              /包装费|除甲醛|运输费|安装费|小计|税额|总计|合计金额/i.test(
+                importCellText(row[nameColumn]),
+              ),
+          );
+          return summaryRowIndex >= 0
+            ? worksheetStartRow + summaryRowIndex + 1
+            : undefined;
+        })(),
         totalRow:
           totalRowIndex >= 0
             ? worksheetStartRow + totalRowIndex + 1
@@ -2584,13 +3713,16 @@ export default function Home() {
   const applyQuoteImport = () => {
     if (!quoteImportPreview || !quoteImportPreview.rows.length) return;
     setPriceMode(quoteImportPriceMode);
+    if (quoteImportPreview.fees) setFees(quoteImportPreview.fees);
+    setIncludeTax(quoteImportPreview.includeTax !== false);
+    setShowDesignDeduction(Boolean(quoteImportPreview.fees?.designDeduction));
     const importedRows = quoteImportPreview.rows;
     const catalogProductBySku = new Map(
       products.map((product) => [product.sku.toUpperCase(), product]),
     );
     const importedToyBySku = new Map(
       importedRows
-        .filter(({ product }) => product.category1 === "小玩具")
+        .filter(({ product }) => isToy(product))
         .map(({ product }) => [product.sku.toUpperCase(), product]),
     );
     const nextCart = Object.fromEntries(
@@ -2604,7 +3736,7 @@ export default function Home() {
         : [];
       if (
         !catalogProduct ||
-        catalogProduct.category1 === "小玩具" ||
+        isToy(catalogProduct) ||
         !pairedRelations.length
       )
         return;
@@ -2624,6 +3756,10 @@ export default function Home() {
         });
     });
     setImportedProducts(importedRows.map(({ product }) => product));
+    setSelectedImportedProductId(importedRows[0]?.product.id || null);
+    setExpandedImportedRelations(
+      importedRows[0]?.product.id ? new Set([importedRows[0].product.id]) : new Set(),
+    );
     setImportedAreaOrder(
       [...new Set(
         importedRows
@@ -2636,22 +3772,335 @@ export default function Home() {
     if (quoteImportPreview.salesName) setSalesName(quoteImportPreview.salesName);
     setCartPairings(nextPairings);
     setCart(nextCart);
+    setToyMatchingDraftId("");
+    setToyMatchingImportedListName(quoteImportPreview.fileName);
+    setToyMatchingOverview(false);
+    void loadToyMatchingDrafts();
     setQuoteImportOpen(false);
-    setCartOpen(true);
+    setCartOpen(false);
+    setImportedQuotePairingOpen(true);
   };
-  const exportImportedQuoteTemplate = () => {
+  function storedQuoteTemplate() {
+    if (!quoteImportTemplateRef.current) return undefined;
+    const template = { ...quoteImportTemplateRef.current };
+    delete template.source;
+    return template;
+  }
+  const toyMatchingDraftSnapshot = (): ToyMatchingDraftSnapshot => ({
+    version: 1,
+    importTemplate: storedQuoteTemplate(),
+    cart,
+    cartPairings,
+    importedProducts,
+    importedAreaOrder,
+    priceMode,
+    workspaceProjectId: workspaceProjectId || undefined,
+    projectName: quoteProject,
+    contractNo: quoteContractNo,
+    designerName,
+    salesName,
+    importedListName: toyMatchingImportedListName,
+    fees, includeTax, showDesignDeduction, companyAddress, installationIncludesTravel,
+  });
+  const loadToyMatchingDrafts = async () => {
+    const response = await fetch("/api/toy-matching-drafts");
+    const data = (await response.json()) as { drafts?: ToyMatchingDraft[] };
+    if (response.ok) setToyMatchingDrafts(data.drafts || []);
+  };
+  const saveToyMatchingDraft = async () => {
+    if (!importedProducts.length) {
+      window.alert("请先导入或添加 SKU，再保存玩具匹配草稿。");
+      return;
+    }
+    setToyMatchingDraftSaving(true);
+    try {
+      const name = toyMatchingImportedListName.trim() || "未命名导入清单";
+      const response = await fetch("/api/toy-matching-drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: toyMatchingDraftId || undefined,
+          name,
+          snapshot: toyMatchingDraftSnapshot(),
+        }),
+      });
+      const data = (await response.json()) as { draft?: ToyMatchingDraft; error?: string };
+      if (!response.ok || !data.draft) throw new Error(data.error || "保存失败");
+      setToyMatchingDraftId(data.draft.id);
+      await loadToyMatchingDrafts();
+      setToyMatchingOverview(true);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "草稿保存失败，请重试。");
+    } finally {
+      setToyMatchingDraftSaving(false);
+    }
+  };
+  const deleteToyMatchingDraft = async (draft: ToyMatchingDraft) => {
+    if (!window.confirm(`确定删除“${draft.name}”吗？此操作无法恢复。`)) return;
+    try {
+      const response = await fetch(`/api/toy-matching-drafts?id=${encodeURIComponent(draft.id)}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "删除失败");
+      if (toyMatchingDraftId === draft.id) setToyMatchingDraftId("");
+      await loadToyMatchingDrafts();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "草稿删除失败，请重试。");
+    }
+  };
+  const restoreToyMatchingDraft = async (draft: ToyMatchingDraft) => {
+    try {
+      const response = await fetch(`/api/toy-matching-drafts?id=${encodeURIComponent(draft.id)}`);
+      const data = (await response.json()) as { draft?: ToyMatchingDraft; error?: string };
+      const snapshot = data.draft?.snapshot;
+      if (!response.ok || !data.draft || !snapshot) throw new Error(data.error || "读取草稿失败");
+      setWorkspaceProjectId(snapshot.workspaceProjectId || "");
+      quoteImportTemplateRef.current = snapshot.importTemplate || null;
+      setFees({
+        packaging: Number(snapshot.fees?.packaging) || 0,
+        formaldehyde: Number(snapshot.fees?.formaldehyde) || 0,
+        shipping: Number(snapshot.fees?.shipping) || 0,
+        installation: Number(snapshot.fees?.installation) || 0,
+        designDeduction: Number(snapshot.fees?.designDeduction) || 0,
+      });
+      setIncludeTax(snapshot.includeTax !== false);
+      setShowDesignDeduction(Boolean(snapshot.showDesignDeduction));
+      setCompanyAddress(snapshot.companyAddress || "");
+      setInstallationIncludesTravel(snapshot.installationIncludesTravel !== false);
+      setQuoteQuantityDrafts({});
+      setCart(snapshot.cart || {});
+      setCartPairings(snapshot.cartPairings || {});
+      setImportedProducts(snapshot.importedProducts || []);
+      setImportedAreaOrder(snapshot.importedAreaOrder || []);
+      setRestoredQuoteProducts([]);
+      setPriceMode(["factory", "vip", "usd"].includes(snapshot.priceMode) ? snapshot.priceMode : "vip");
+      setQuoteProject(snapshot.projectName || "");
+      setQuoteContractNo(snapshot.contractNo || "");
+      setDesignerName(snapshot.designerName || "");
+      setSalesName(snapshot.salesName || "");
+      setToyMatchingImportedListName(snapshot.importedListName || draft.name);
+      setToyMatchingDraftId(data.draft.id);
+      setSelectedImportedProductId(snapshot.importedProducts?.[0]?.id || null);
+      setExpandedImportedRelations(
+        snapshot.importedProducts?.[0]?.id ? new Set([snapshot.importedProducts[0].id]) : new Set(),
+      );
+      setToyMatchingOverview(false);
+      setImportedQuotePairingOpen(true);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "草稿读取失败，请重试。");
+    }
+  };
+  const openToyMatchingWorkspace = () => {
+    void loadToyMatchingDrafts();
+    setToyMatchingOverview(true);
+    setImportedQuotePairingOpen(true);
+    setCartOpen(false);
+  };
+  const addCatalogProductToToyMatching = (catalogProduct: Product) => {
+    const existing = importedProducts.find(
+      (product) => product.catalogProductId === catalogProduct.id || product.sku === catalogProduct.sku,
+    );
+    if (existing) {
+      setCart((current) => ({ ...current, [existing.id]: (current[existing.id] || 0) + 1 }));
+      setSelectedImportedProductId(existing.id);
+    } else {
+      const product: Product = {
+        ...catalogProduct,
+        id: `imported-manual-${crypto.randomUUID()}`,
+        catalogProductId: catalogProduct.id,
+        revision: {status: "added", changes: [{field: "状态", before: "", after: revisionLabels.added, at: new Date().toISOString()}]},
+        importArea: catalogProduct.category2,
+      };
+      setImportedProducts((current) => [...current, product]);
+      setImportedAreaOrder((current) =>
+        current.includes(product.importArea || product.category2)
+          ? current
+          : [...current, product.importArea || product.category2],
+      );
+      setCart((current) => ({ ...current, [product.id]: 1 }));
+      setSelectedImportedProductId(product.id);
+    }
+    setMatchingSkuPickerOpen(false);
+    setMatchingSkuQuery("");
+  };
+  const matchingSkuCandidates = products
+    .filter((product) => {
+      const term = matchingSkuQuery.trim().toLowerCase();
+      return !term || [product.sku, product.name, product.en, product.category2]
+        .join(" ")
+        .toLowerCase()
+        .includes(term);
+    })
+    .slice(0, 80);
+  const quoteDateStamp = () => {
+    const date = new Date();
+    return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+  };
+  const quoteExportFileName = () =>
+    `${quoteProject.trim().replace(/[\\/:*?"<>|]/g, "-")}_${quoteDateStamp()}`;
+  const quotationHistorySnapshot = (): QuoteHistorySnapshot => ({
+    version: 1,
+    importTemplate: storedQuoteTemplate(),
+    products: quoteProducts.filter((product) => Object.hasOwn(cart, product.id)),
+    cart,
+    cartPairings,
+    importedProducts: importedProducts.map(product => quoteProducts.find(item => item.id === product.id) || product),
+    importedAreaOrder,
+    priceMode,
+    workspaceProjectId: workspaceProjectId || undefined,
+    projectName: quoteProject,
+    contractNo: quoteContractNo,
+    designerName,
+    salesName,
+    companyAddress,
+    installationIncludesTravel,
+    includeTax,
+    showDesignDeduction,
+    fees,
+  });
+  const restoreQuotation = async (
+    quotation: QuotationHistoryRecord,
+    mode: QuoteHistoryMode = "view",
+    exportFormat: HistoryExportFormat | null = null,
+  ) => {
+    if (quotation.voidedAt) { mode = "view"; exportFormat = null; }
+    setQuoteHistoryNotice(quotation.voidedAt ? "此报价已作废，仅供查阅历史，不可继续使用。" : quotation.finalAmount != null ? `最终成交价格 ${money(quotation.finalAmount, quotation.finalCurrency === "USD" ? "USD" : "CNY")}；下方保留原报价内容。` : "");
+    const snapshot = quotation.snapshot;
+    setWorkspaceProjectId(snapshot?.workspaceProjectId || "");
+    setQuoteHistorySaving(false);
+    setQuoteQuantityDrafts({});
+    setQuoteImportPreview(null);
+    quoteImportTemplateRef.current = snapshot?.importTemplate || null;
+    setRecordedQuoteHistoryId(mode === "view" || mode === "export" ? quotation.id : "");
+    setQuoteHistoryLineageId(mode === "edit" ? quotation.lineageId || quotation.id : "");
+    setQuoteHistoryMode(mode);
+    setQuoteActiveTab(mode === "view" || mode === "export" ? "all" : "summary");
+    setQuoteExpandedAreas(new Set());
+    setImportedQuotePairingOpen(false);
+    setToyMatchingDraftId("");
+    setCartOpen(false);
+    setQuoteOpen(true);
+    window.history.replaceState({}, "", "/");
+    if (!snapshot) {
+      clearQuotation();
+      setQuoteProject(quotation.projectName);
+      setQuoteContractNo(quotation.contractNo);
+      window.alert("这是一条旧历史记录，只保存了项目名称和合同号。已带入项目资料，请重新选择产品后生成新报价单。");
+    } else {
+      setCart(snapshot.cart || {});
+      setCartPairings(snapshot.cartPairings || {});
+      setImportedProducts(snapshot.importedProducts || []);
+      setImportedAreaOrder(snapshot.importedAreaOrder || []);
+      try {setRestoredQuoteProducts(await bilingualQuoteProducts(snapshot.products || []));}
+      catch (error) {setRestoredQuoteProducts(snapshot.products || []); window.alert(error instanceof Error ? error.message : "历史报价翻译未完成，请重试");}
+      setPriceMode(["factory", "vip", "usd"].includes(snapshot.priceMode) ? snapshot.priceMode : "vip");
+      setQuoteProject(quotation.projectName);
+      setQuoteContractNo(quotation.contractNo);
+      setDesignerName(snapshot.designerName || "");
+      setSalesName(snapshot.salesName || "");
+      setCompanyAddress(snapshot.companyAddress || "");
+      setInstallationIncludesTravel(snapshot.installationIncludesTravel !== false);
+      setIncludeTax(snapshot.includeTax !== false);
+      setShowDesignDeduction(Boolean(snapshot.showDesignDeduction));
+      setFees({
+        packaging: Number(snapshot.fees?.packaging) || 0,
+        formaldehyde: Number(snapshot.fees?.formaldehyde) || 0,
+        shipping: Number(snapshot.fees?.shipping) || 0,
+        installation: Number(snapshot.fees?.installation) || 0,
+        designDeduction: Number(snapshot.fees?.designDeduction) || 0,
+      });
+    }
+    if (mode === "edit") {
+      const response = await fetch(
+        `/api/quotation-history?nextRevisionOf=${encodeURIComponent(quotation.id)}`,
+      );
+      const data = (await response.json()) as { contractNo?: string };
+      if (!response.ok || !data.contractNo) {
+        window.alert("无法生成新项目编号，请返回历史报价单后重试。");
+        return;
+      }
+      setQuoteContractNo(data.contractNo);
+    }
+    if (mode === "export" && exportFormat) setPendingHistoryExport(exportFormat);
+  };
+  const checkCostedQuote = () => {
+    const pending = quoteCartItems.find(p => !excludedFromQuote(p) && p.quoteCosting && (p.quoteCosting.status !== "ready" || (priceMode === "usd" ? p.usd == null : priceMode === "factory" && p.quoteCosting.saleSource === "catalog" ? p.factory == null : p.price == null)));
+    if (!pending) return true;
+    window.alert(`${pending.sku}：${pending.quoteCosting?.status === "pending" ? pending.quoteCosting.issues.join("；") : pending.quoteCosting?.saleSource === "catalog" ? "产品库未填写当前报价模式的售价" : "尚未配置美元售价，请核实汇率"}。请补齐售价或核算规则后重新导入。`);
+    return false;
+  };
+  const recordQuoteHistory = async () => {
+    if (workspaceProjectId && !workplaceReady) { window.alert(workplaceNotice || "请等待项目关联确认后再保存。"); return false; }
+    const projectName = quoteProject.trim();
+    const contractNo = quoteContractNo.trim();
+    if (!projectName || !contractNo) {
+      window.alert("请先填写项目名称和项目合同号，再导出报价单。");
+      return false;
+    }
+    setQuoteHistorySaving(true);
+    try {
+      const response = await fetch("/api/quotation-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: recordedQuoteHistoryId || undefined,
+          projectName,
+          contractNo,
+          lineageId: quoteHistoryLineageId || undefined,
+          snapshot: quotationHistorySnapshot(),
+        }),
+      });
+      const data = (await response.json()) as {
+        quotation?: QuotationHistoryRecord;
+        error?: string;
+      };
+      if (!response.ok || !data.quotation) {
+        window.alert(data.error || "报价历史保存失败，请重试。");
+        return false;
+      }
+      setRecordedQuoteHistoryId(data.quotation.id);
+      setQuoteHistoryLineageId(data.quotation.lineageId || "");
+      window.localStorage.removeItem(activeQuotationStorageKey);
+      if (data.quotation.contractNo && data.quotation.contractNo !== contractNo) {
+        setQuoteContractNo(data.quotation.contractNo);
+        await new Promise<void>((resolve) =>
+          window.requestAnimationFrame(() =>
+            window.requestAnimationFrame(() => resolve()),
+          ),
+        );
+      }
+      return true;
+    } catch {
+      window.alert("报价历史保存失败，请检查网络后重试。");
+      return false;
+    } finally {
+      setQuoteHistorySaving(false);
+    }
+  };
+  const exportImportedQuoteTemplate = async (fileName: string) => {
     const template = quoteImportTemplateRef.current;
-    const sourceProducts = importedProducts.length
-      ? importedProducts
-      : quoteImportPreview?.rows.map(({ product }) => product) || [];
+    const sourceProducts = (importedProducts.length ? importedProducts : quoteImportPreview?.rows.map(({ product }) => product) || []).map(product => quoteProducts.find(item => item.id === product.id) || product);
     if (!template || !sourceProducts.length) return false;
     try {
+      if (!template.source) {
+        if (!template.id) throw new Error("历史记录没有原始模板，请重新导入原表");
+        const response = await fetch(`/api/quote-template?id=${encodeURIComponent(template.id)}`);
+        if (!response.ok) throw new Error("原始模板读取失败，请重新登录或重试");
+        template.source = await response.arrayBuffer();
+      }
       const files = unzipSync(new Uint8Array(template.source));
       const worksheetPath = Object.keys(files).find((path) =>
         /^xl\/worksheets\/sheet\d+\.xml$/.test(path),
       );
       if (!worksheetPath || !files[worksheetPath]) return false;
-      let xml = strFromU8(files[worksheetPath]);
+      let xml = await prepareQuoteTemplateImages(files, worksheetPath);
+      const originalXml = xml;
+      const originalAmount = (row: number | undefined, column: number) => {
+        if (!row) return 0;
+        const ref = XLSX.utils.encode_cell({ r: row - 1, c: column });
+        return Number(originalXml.match(new RegExp(`<c\\b[^>]*\\br="${ref}"[^>]*>([\\s\\S]*?)<\\/c>`))?.[1].match(/<v>([^<]+)<\/v>/)?.[1]) || 0;
+      };
       const setCell = (row: number, column: number, value: string | number | null) => {
         if (column < 0 || value === null || value === undefined) return;
         xml = updateTemplateCell(
@@ -2685,27 +4134,254 @@ export default function Home() {
             .map((product) => [product.importSourceRow!, product]),
         ).values(),
       ].sort((a, b) => a.importSourceRow! - b.importSourceRow!);
+      const sourceProductIds = new Set(sourceLines.map((product) => product.id));
+      const addedItems = quoteItemsInOrder.filter((item) => !sourceProductIds.has(item.product.id));
+      const addedImageFormulas = template.columns.image >= 0
+        ? await embedQuoteImages(files, addedItems.map(({ product }) => product))
+        : new Map<string, string>();
       const columnName = (column: number) => XLSX.utils.encode_col(column);
+      const addedItemRows: Array<{
+        product: Product;
+        quantity: number;
+        row: number;
+      }> = [];
+      let totalRow = template.totalRow;
+      let insertedRows = 0;
+      if (addedItems.length) {
+        const rowXmlByNumber = new Map<number, string>();
+        for (const row of xml.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g))
+          rowXmlByNumber.set(Number(row[1]), row[0]);
+        const firstSourceRow = sourceLines[0]?.importSourceRow;
+        const itemPrototypeRow = sourceLines.at(-1)?.importSourceRow;
+        const itemPrototype = itemPrototypeRow
+          ? rowXmlByNumber.get(itemPrototypeRow)
+          : undefined;
+        if (!itemPrototype || !itemPrototypeRow) return false;
+        const areaPrototypeRow =
+          firstSourceRow && firstSourceRow > template.headerRow + 1
+            ? firstSourceRow - 1
+            : undefined;
+        const areaPrototype = areaPrototypeRow
+          ? rowXmlByNumber.get(areaPrototypeRow)
+          : undefined;
+        const insertionRow =
+          template.insertBeforeRow ||
+          totalRow ||
+          Math.max(...sourceLines.map((product) => product.importSourceRow || 0)) + 1;
+        const groupedAddedItems = Object.entries(
+          addedItems.reduce<Record<string, typeof addedItems>>((groups, item) => {
+            (groups[item.area] ||= []).push(item);
+            return groups;
+          }, {}),
+        );
+        const addedRowCount = addedItems.length +
+          (areaPrototype ? groupedAddedItems.length : 0);
+        insertedRows = addedRowCount;
+        const shiftReference = (reference: string) =>
+          // Quoted image IDs, URLs and sheet names are not cell references.
+          reference.replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'|&quot;[\s\S]*?&quot;|&apos;[\s\S]*?&apos;|(\$?[A-Z]{1,3}\$?)(\d+)/g, (match, column, row) =>
+            column && Number(row) >= insertionRow ? `${column}${Number(row) + addedRowCount}` : match,
+          );
+        xml = xml
+          .replace(/(<row\b[^>]*\br=")(\d+)("[^>]*>)/g, (_row, start, row, end) =>
+            Number(row) >= insertionRow ? `${start}${Number(row) + addedRowCount}${end}` : _row,
+          )
+          .replace(/(\br=")([A-Z]+)(\d+)(")/g, (_cell, start, column, row, end) =>
+            Number(row) >= insertionRow ? `${start}${column}${Number(row) + addedRowCount}${end}` : _cell,
+          )
+          .replace(/(<f(?:\s[^>]*)?>)([\s\S]*?)(<\/f>)/g, (_formula, start, body, end) =>
+            `${start}${shiftReference(body)}${end}`,
+          )
+          .replace(/\b(ref|sqref)="([^"]+)"/g, (_reference, attribute, value) =>
+            `${attribute}="${shiftReference(value)}"`,
+          );
+        totalRow = totalRow ? totalRow + addedRowCount : undefined;
+        const areaAnchor = (() => {
+          const cellReference = areaPrototype?.match(/<c\b[^>]*\br="([A-Z]+)\d+"/)?.[1];
+          return cellReference
+            ? XLSX.utils.decode_col(cellReference)
+            : template.columns.name >= 0
+              ? template.columns.name
+              : template.columns.sku;
+        })();
+        const setAddedCell = (
+          rowXml: string,
+          row: number,
+          column: number,
+          value: string | number,
+        ) =>
+          column >= 0
+            ? updateTemplateRowCell(rowXml, row, column, value)
+            : rowXml;
+        const setAddedFormula = (
+          rowXml: string,
+          row: number,
+          column: number,
+          formula: string,
+          value: number,
+        ) =>
+          column >= 0
+            ? updateTemplateRowFormula(rowXml, row, column, formula, value)
+            : rowXml;
+        const addedRows: string[] = [];
+        const addedAreaMergeRefs = areaPrototypeRow
+          ? [...strFromU8(files[worksheetPath])
+              .matchAll(/<mergeCell\s+ref="([A-Z]+\d+:[A-Z]+\d+)"\/>/g)]
+              .map((match) => match[1])
+              .filter((ref) =>
+                new RegExp(`^[A-Z]+${areaPrototypeRow}:[A-Z]+${areaPrototypeRow}$`).test(ref),
+              )
+          : [];
+        let destinationRow = insertionRow;
+        let addedSequence = sourceLines.length;
+        groupedAddedItems.forEach(([area, items]) => {
+          let areaRow: string | undefined;
+          const firstItemRow = destinationRow + (areaPrototype ? 1 : 0);
+          if (areaPrototype && areaPrototypeRow) {
+            areaRow = templateRow(areaPrototype, areaPrototypeRow, destinationRow);
+            areaRow = setAddedCell(areaRow, destinationRow, areaAnchor, area);
+            destinationRow += 1;
+          }
+          items.forEach((item) => {
+            const { product, quantity } = item;
+            const row = destinationRow;
+            let productRow = templateRow(itemPrototype, itemPrototypeRow, row);
+            const englishName = needsEnglishTranslation(product)
+              ? ""
+              : englishProductName(product);
+            productRow = setAddedCell(productRow, row, template.columns.sequence, ++addedSequence);
+            productRow = setAddedCell(productRow, row, template.columns.sku, product.sku);
+            productRow = setAddedCell(
+              productRow,
+              row,
+              template.columns.name,
+              englishName ? `${product.name}\n${englishName}` : product.name,
+            );
+            if (template.columns.image >= 0) {
+              const imageFormula = addedImageFormulas.get(product.id);
+              productRow = imageFormula
+                ? updateTemplateRowTextFormula(
+                    productRow,
+                    row,
+                    template.columns.image,
+                    imageFormula,
+                  )
+                : setAddedCell(productRow, row, template.columns.image, "");
+            }
+            productRow = setAddedCell(productRow, row, template.columns.brand, product.brand || "YIFUN");
+            productRow = setAddedCell(productRow, row, template.columns.specification, product.spec || "");
+            productRow = setAddedCell(productRow, row, template.columns.unit, product.unit || "");
+            productRow = setAddedCell(productRow, row, template.columns.quantity, quantity);
+            productRow = setAddedCell(productRow, row, template.columns.cnyUnit, product.price || 0);
+            if (template.columns.cnyUnit >= 0 && template.columns.cnyAmount >= 0)
+              productRow = setAddedFormula(
+                productRow,
+                row,
+                template.columns.cnyAmount,
+                `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.cnyUnit)}${row}`,
+                (product.price || 0) * quantity,
+              );
+            productRow = setAddedCell(productRow, row, template.columns.usdUnit, product.usd || 0);
+            if (template.columns.usdUnit >= 0 && template.columns.usdAmount >= 0)
+              productRow = setAddedFormula(
+                productRow,
+                row,
+                template.columns.usdAmount,
+                `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.usdUnit)}${row}`,
+                (product.usd || 0) * quantity,
+              );
+            productRow = setAddedCell(productRow, row, template.columns.color, product.colorTag || "");
+            productRow = setAddedCell(
+              productRow,
+              row,
+              template.columns.note,
+              product.note ? (product.note.includes(englishRemark(product.note)) ? product.note : `${product.note}\n${englishRemark(product.note)}`) : "",
+            );
+            productRow = setAddedCell(productRow, row, template.columns.volume, product.volume || "");
+            if (template.columns.material !== undefined)
+              productRow = setAddedCell(productRow, row, template.columns.material, product.material || "");
+            addedRows.push(productRow);
+            addedItemRows.push({ product, quantity, row });
+            destinationRow += 1;
+          });
+          if (areaRow) {
+            const areaAmountColumn =
+              template.columns.usdAmount >= 0
+                ? template.columns.usdAmount
+                : template.columns.cnyAmount;
+            areaRow = setAddedFormula(
+              areaRow,
+              firstItemRow - 1,
+              template.columns.areaSubtotal,
+              `=SUM(${columnName(areaAmountColumn)}${firstItemRow}:${columnName(areaAmountColumn)}${destinationRow - 1})`,
+              items.reduce(
+                (total, item) =>
+                  total +
+                  ((areaAmountColumn === template.columns.usdAmount
+                    ? item.product.usd
+                    : item.product.price) || 0) *
+                    billableQuantity(item.product, item.quantity),
+                0,
+              ),
+            );
+            addedRows.splice(addedRows.length - items.length, 0, areaRow);
+          }
+        });
+        const shiftedInsertionRow = insertionRow + addedRowCount;
+        const insertionPattern = new RegExp(
+          `(<row\\b[^>]*\\br="${shiftedInsertionRow}"[^>]*>)`,
+        );
+        xml = insertionPattern.test(xml)
+          ? xml.replace(insertionPattern, `${addedRows.join("")}$1`)
+          : xml.replace("</sheetData>", `${addedRows.join("")}</sheetData>`);
+        if (addedAreaMergeRefs.length) {
+          const extraMerges = groupedAddedItems.flatMap((_, index) => {
+            const row = insertionRow + index +
+              groupedAddedItems.slice(0, index).reduce(
+                (count, [, items]) => count + items.length,
+                0,
+              );
+            return addedAreaMergeRefs.map((ref) =>
+              ref.replace(/([A-Z]+)\d+:([A-Z]+)\d+/, `$1${row}:$2${row}`),
+            );
+          });
+          xml = xml.replace(/<mergeCells\b([^>]*)>([\s\S]*?)<\/mergeCells>/, (_merges, attributes, body) => {
+            const count = [...body.matchAll(/<mergeCell\b/g)].length + extraMerges.length;
+            return `<mergeCells${attributes.replace(/\s+count="[^"]*"/, "")} count="${count}">${body}${extraMerges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>`;
+          });
+        }
+      }
       sourceLines.forEach((product) => {
         const row = product.importSourceRow!;
         const quantity = cart[product.id] || 0;
-        setCell(row, template.columns.quantity, quantity);
+        setCell(row, template.columns.quantity, product.importSourceQuantity === null && quantity === 1 ? "" : quantity);
+        const englishName = needsEnglishTranslation(product) ? "" : englishProductName(product);
+        setCell(row, template.columns.name, englishName && !product.name.includes(englishName) ? `${product.name}\n${englishName}` : product.name);
+        if (product.brand !== undefined) setCell(row, template.columns.brand, product.brand || "");
+        if (product.spec !== undefined) setCell(row, template.columns.specification, product.spec || "");
+        if (product.unit !== undefined) setCell(row, template.columns.unit, product.unit || "");
+        if (product.note !== undefined) setCell(row, template.columns.note, product.note || "");
+        if (product.volume !== undefined) setCell(row, template.columns.volume, product.volume || "");
+        if (template.columns.material !== undefined && product.material !== undefined)
+          setCell(row, template.columns.material, product.material || "");
         setCell(row, template.columns.cnyUnit, product.price);
-        setCell(row, template.columns.usdUnit, product.usd);
+        setCell(row, template.columns.usdUnit, product.usd ?? "");
         if (template.columns.cnyUnit >= 0 && template.columns.cnyAmount >= 0)
           setFormula(
             row,
             template.columns.cnyAmount,
-            `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.cnyUnit)}${row}`,
-            (product.price || 0) * quantity,
+            excludedFromQuote(product) ? "=0" : `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.cnyUnit)}${row}`,
+            (product.price || 0) * billableQuantity(product, quantity),
           );
-        if (template.columns.usdUnit >= 0 && template.columns.usdAmount >= 0)
-          setFormula(
+        if (template.columns.usdUnit >= 0 && template.columns.usdAmount >= 0) {
+          if (product.usd == null) setCell(row, template.columns.usdAmount, "");
+          else setFormula(
             row,
             template.columns.usdAmount,
-            `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.usdUnit)}${row}`,
-            (product.usd || 0) * quantity,
+            excludedFromQuote(product) ? "=0" : `=${columnName(template.columns.quantity)}${row}*${columnName(template.columns.usdUnit)}${row}`,
+            product.usd * billableQuantity(product, quantity),
           );
+        }
       });
       const amountColumn =
         template.columns.usdAmount >= 0
@@ -2715,46 +4391,115 @@ export default function Home() {
         (amountColumn === template.columns.usdAmount ? product.usd : product.price) || 0;
       Object.values(
         sourceLines.reduce<Record<string, Product[]>>((groups, product) => {
-          (groups[product.importArea || "导入项目"] ||= []).push(product);
+          (groups[`${product.importArea || "导入项目"}\u001f${product.importSection ?? ""}`] ||= []).push(product);
           return groups;
         }, {}),
       ).forEach((areaLines) => {
         const firstRow = areaLines[0].importSourceRow!;
         const lastRow = areaLines.at(-1)!.importSourceRow!;
         setFormula(
-          firstRow,
+          areaLines[0].importSection ? areaLines[0].importSection + 1 : firstRow,
           template.columns.areaSubtotal,
           `=SUM(${columnName(amountColumn)}${firstRow}:${columnName(amountColumn)}${lastRow})`,
           areaLines.reduce(
-            (total, product) => total + amountValue(product) * (cart[product.id] || 0),
+            (total, product) => total + amountValue(product) * billableQuantity(product, cart[product.id] || 0),
             0,
           ),
         );
       });
-      if (template.totalRow && sourceLines.length) {
-        const firstRow = sourceLines[0].importSourceRow!;
-        const lastRow = sourceLines.at(-1)!.importSourceRow!;
-        const cnyTotal = sourceLines.reduce(
-          (total, product) => total + (product.price || 0) * (cart[product.id] || 0),
-          0,
-        );
-        const usdTotal = sourceLines.reduce(
-          (total, product) => total + (product.usd || 0) * (cart[product.id] || 0),
-          0,
-        );
-        setFormula(
-          template.totalRow,
-          template.columns.cnyAmount,
-          `=SUM(${columnName(template.columns.cnyAmount)}${firstRow}:${columnName(template.columns.cnyAmount)}${lastRow})*(1+13%)`,
-          cnyTotal * 1.13,
-        );
-        setFormula(
-          template.totalRow,
-          template.columns.usdAmount,
-          `=SUM(${columnName(template.columns.usdAmount)}${firstRow}:${columnName(template.columns.usdAmount)}${lastRow})`,
-          usdTotal,
-        );
+      const exportLineItems = [
+        ...sourceLines.map((product) => ({
+          product,
+          quantity: cart[product.id] || 0,
+          row: product.importSourceRow!,
+        })),
+        ...addedItemRows,
+      ];
+      // Fill costs in the original sheet without rebuilding its images or layout.
+      const canExportCost = ["admin", "ceo", "cost_accountant"].includes(authAccount?.role || "");
+      const sourceBook = XLSX.read(template.source, { type: "array" });
+      const sourceSheet = sourceBook.Sheets[sourceBook.SheetNames[0]];
+      const range = XLSX.utils.decode_range(sourceSheet["!ref"] || "A1");
+      const costColumns: number[] = [];
+      let costUnit = -1, costAmount = -1;
+      for (let col = 0; col <= range.e.c; col++) {
+        const label = String(sourceSheet[XLSX.utils.encode_cell({ r: template.headerRow - 1, c: col })]?.v || "");
+        if (!/成本|\bcost\b/i.test(label)) continue;
+        costColumns.push(col);
+        if (/合计|总|金额|amount|total|成本价(?!.*单价)/i.test(label)) costAmount = col;
+        else costUnit = col;
       }
+      // Remove stale source costs, including subtotals, for every role before filling authorized values.
+      const costLetters = new Set(costColumns.map(columnName));
+      xml = xml.replace(/<c\b[^>]*\br="([A-Z]+)(\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g, (cell, col, row) => {
+        if (!costLetters.has(col) || Number(row) <= template.headerRow) return cell;
+        if (/←.*选择/.test(String(sourceSheet[`${col}${Number(row) - (Number(row) >= (template.insertBeforeRow || Infinity) + insertedRows ? insertedRows : 0)}`]?.v || ""))) return cell;
+        // Clear values and formulas, but retain borders, alignment and number formats.
+        return cell.replace(/\s+t="[^"]*"/g, "").replace(/\s*\/>$|>[\s\S]*$/, "/>");
+      });
+      if (canExportCost) {
+        let nextColumn = range.e.c + 1;
+        if (costUnit < 0) {
+          costUnit = nextColumn++;
+          setCell(template.headerRow, costUnit, "成本单价（人民币） / Unit Cost (CNY)");
+        }
+        if (costAmount < 0) {
+          costAmount = nextColumn++;
+          setCell(template.headerRow, costAmount, "成本合计（人民币） / Total Cost (CNY)");
+        }
+        exportLineItems.forEach(({ product, quantity, row }) => {
+          const cost = typeof product.cost === "number" && Number.isFinite(product.cost) ? product.cost : null;
+          setCell(row, costUnit, cost ?? "");
+          if (cost === null) setCell(row, costAmount, "");
+          else setFormula(row, costAmount, `=${columnName(template.columns.quantity)}${row}*${columnName(costUnit)}${row}`, Math.round(cost * quantity * 100) / 100);
+        });
+        if (totalRow) {
+          const complete = exportLineItems.filter(item => item.quantity > 0 && !excludedFromQuote(item.product)).every(item => typeof item.product.cost === "number" && Number.isFinite(item.product.cost));
+          setCell(totalRow, costAmount, complete ? Math.round(exportLineItems.reduce((sum, item) => sum + (item.product.cost || 0) * billableQuantity(item.product, item.quantity), 0) * 100) / 100 : "待补齐成本 / Cost Pending");
+        }
+        const lastColumn = Math.max(range.e.c, costUnit, costAmount);
+        xml = xml.replace(/<dimension\b[^>]*\/>/, `<dimension ref="A1:${columnName(lastColumn)}${Math.max(range.e.r + 1 + insertedRows, totalRow || 0)}"/>`);
+        const addedCostColumns = [costUnit, costAmount].filter(col => col > range.e.c).map(col => `<col min="${col + 1}" max="${col + 1}" width="28" customWidth="1"/>`).join("");
+        if (addedCostColumns) xml = xml.includes("</cols>") ? xml.replace("</cols>", `${addedCostColumns}</cols>`) : xml.replace(/<sheetData\b/, `<cols>${addedCostColumns}</cols><sheetData`);
+        // Imported templates may hide their cost columns: explicitly expose only those two columns.
+        xml = xml.replace(/<col\b([^>]*?)\/>/g, (tag, attrs: string) => {
+          const min = Number(attrs.match(/\bmin="(\d+)"/)?.[1]), max = Number(attrs.match(/\bmax="(\d+)"/)?.[1]);
+          if (!/\bhidden="1"/.test(attrs) || ![costUnit + 1, costAmount + 1].some(c => c >= min && c <= max)) return tag;
+          let result = "";
+          for (let col = min; col <= max; col++) {
+            let a = attrs.replace(/\bmin="\d+"/, `min="${col}"`).replace(/\bmax="\d+"/, `max="${col}"`);
+            if (col === costUnit + 1 || col === costAmount + 1) a = a.replace(/\s*hidden="[^"]*"/g, "");
+            result += `<col${a}/>`;
+          }
+          return result;
+        });
+      }
+      if (totalRow && exportLineItems.length) {
+        for (const [exportCurrency, amountColumn] of [["CNY", template.columns.cnyAmount], ["USD", template.columns.usdAmount]] as const) {
+          if (amountColumn < 0) continue;
+          const selected = exportCurrency === currency;
+          const exportFees = selected ? fees : {
+            packaging: originalAmount(template.feeRows?.packaging, amountColumn), formaldehyde: originalAmount(template.feeRows?.formaldehyde, amountColumn),
+            shipping: originalAmount(template.feeRows?.shipping, amountColumn), installation: originalAmount(template.feeRows?.installation, amountColumn),
+            designDeduction: originalAmount(template.feeRows?.designDeduction, amountColumn),
+          };
+          const exportTax = selected ? includeTax : template.feeRows?.tax ? originalAmount(template.feeRows.tax, amountColumn) > 0 : includeTax;
+          const exportDeduction = selected ? showDesignDeduction : Boolean(exportFees.designDeduction);
+          const rowTotal = exportLineItems.reduce((sum, item) => sum + (exportCurrency === "USD" ? item.product.usd || 0 : item.product.price || 0) * billableQuantity(item.product, item.quantity), 0);
+          const totals = quotationTotals(rowTotal, exportCurrency, exportFees, exportTax, exportDeduction);
+          const rowReference = (row: number) => `${columnName(amountColumn)}${row}`;
+          const productFormula = exportLineItems.map((item) => rowReference(item.row)).join("+") || "0";
+          const feeAmount = exportFees.packaging + exportFees.formaldehyde + exportFees.shipping + exportFees.installation;
+          const deduction = exportDeduction ? exportFees.designDeduction : 0;
+          setFormula(totalRow, amountColumn, `=(${productFormula}+${feeAmount})*${exportCurrency === "CNY" && exportTax ? 1.13 : 1}-${deduction}`, totals.totalWithTax);
+          for (const [key, originalRow] of Object.entries(template.feeRows || {})) {
+            const row = originalRow + (originalRow >= (template.insertBeforeRow || template.totalRow || Infinity) ? insertedRows : 0);
+            const amount = key === "subtotal" ? totals.preTax : key === "tax" ? totals.tax : key === "designDeduction" ? deduction : exportFees[key as keyof typeof exportFees];
+            setCell(row, amountColumn, amount || 0);
+          }
+        }
+      }
+
       if (template.metadata.designer)
         setCell(
           template.metadata.designer.row,
@@ -2767,20 +4512,599 @@ export default function Home() {
           template.metadata.sales.column,
           salesName,
         );
-      files[worksheetPath] = strToU8(xml);
-      const fileName = `${template.fileName.replace(/\.(xlsx|xls|csv)$/i, "")}_报价清单.xlsx`;
-      downloadExcelFile(zipSync(files, { level: 6 }), fileName);
+      xml = restoreTemplatePriceStyles(xml, new Set(exportLineItems.map((item) => item.row)), [
+        [template.columns.cnyUnit, template.columns.cnyAmount],
+        [template.columns.usdUnit, template.columns.usdAmount],
+      ]);
+      xml = formatQuoteCurrencyCells(files, xml, template.headerRow, [template.columns.cnyUnit, template.columns.cnyAmount, costUnit, costAmount]);
+      files[worksheetPath] = strToU8(normalizeTemplateCellOrder(xml));
+      applyQuoteRevisions(files, worksheetPath, exportLineItems, {quantity: template.columns.quantity, specification: template.columns.specification, amounts: [template.columns.cnyAmount, template.columns.usdAmount, costAmount].filter(column => column >= 0)});
+      downloadExcelFile(new Uint8Array(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer)), `${fileName}.xlsx`);
       return true;
     } catch {
       return false;
     }
   };
-  const exportQuoteExcel = () => {
-    if (exportImportedQuoteTemplate()) return;
-    window.alert(
-      "当前报价单没有可用的原始 Excel 模板，因此无法保持原格式导出。请先通过“导入清单”载入原报价表后再导出。",
-    );
+  const exportQuoteExcel = async (saveHistory = true) => {
+    if (!checkCostedQuote()) return;
+    if (saveHistory && !(await recordQuoteHistory())) return;
+    if (quoteImportTemplateRef.current) {
+      if (!(await exportImportedQuoteTemplate(quoteExportFileName()))) window.alert("原始模板导出失败，请重试；原始模板和报价内容仍已保留。");
+      return;
+    }
+    try {
+      const response = await fetch(
+        "/quotation-templates/YIFUNLIFE_MINIMDO_AUS_PRODUCTS_QUOTATION.xlsx",
+      );
+      if (!response.ok) throw new Error("未能读取报价模板");
+      const source = await response.arrayBuffer();
+      const files = unzipSync(new Uint8Array(source));
+      const worksheetPath = "xl/worksheets/sheet1.xml";
+      if (!files[worksheetPath]) throw new Error("报价模板缺少主表");
+      let xml = strFromU8(files[worksheetPath]);
+      const sheetData = xml.match(/<sheetData[^>]*>([\s\S]*?)<\/sheetData>/)?.[1];
+      if (!sheetData) throw new Error("报价模板主表格式无效");
+      const sourceRows = new Map<number, string>();
+      for (const row of sheetData.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g))
+        sourceRows.set(Number(row[1]), row[0]);
+      const areaPrototype = sourceRows.get(4);
+      const itemPrototype = sourceRows.get(5);
+      if (!areaPrototype || !itemPrototype) throw new Error("报价模板缺少分区或产品行");
+
+      const workbook = XLSX.read(source, { type: "array" });
+      const templateSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const templateImageFormulaBySku = new Map<string, string>();
+      if (templateSheet) {
+        for (let row = 5; row <= 115; row += 1) {
+          const sku = String(templateSheet[`B${row}`]?.v || "").trim().toUpperCase();
+          const imageFormula = templateSheet[`D${row}`]?.f;
+          if (sku && imageFormula) templateImageFormulaBySku.set(sku, imageFormula);
+        }
+      }
+      const embeddedImageFormulaByProductId = new Map<string, string>();
+      const cellImagesPath = "xl/cellimages.xml";
+      const cellImagesRelsPath = "xl/_rels/cellimages.xml.rels";
+      let cellImagesXml = files[cellImagesPath] ? strFromU8(files[cellImagesPath]) : "";
+      let cellImagesRelsXml = files[cellImagesRelsPath] ? strFromU8(files[cellImagesRelsPath]) : "";
+      const cellImageEntries: string[] = [];
+      const cellImageRelationships: string[] = [];
+      let nextCellImageId = Math.max(
+        0,
+        ...[...cellImagesXml.matchAll(/<xdr:cNvPr\b[^>]*\bid="(\d+)"/g)].map((match) => Number(match[1])),
+      ) + 1;
+      let nextRelationshipId = Math.max(
+        0,
+        ...[...cellImagesRelsXml.matchAll(/\bId="rId(\d+)"/g)].map((match) => Number(match[1])),
+      ) + 1;
+      let nextMediaId = Math.max(
+        0,
+        ...Object.keys(files).map((path) => Number(path.match(/^xl\/media\/image(\d+)\./)?.[1] || 0)),
+      ) + 1;
+      const embedProductImage = async (product: Product) => {
+        if (!product.image || embeddedImageFormulaByProductId.has(product.id)) return;
+        try {
+          const response = await fetch(product.image);
+          if (!response.ok) return;
+          const sourceBlob = await response.blob();
+          const sourceUrl = URL.createObjectURL(sourceBlob);
+          const sourceImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error("image load failed"));
+            image.src = sourceUrl;
+          });
+          const longestSide = Math.max(sourceImage.naturalWidth, sourceImage.naturalHeight);
+          if (!longestSide) {
+            URL.revokeObjectURL(sourceUrl);
+            return;
+          }
+          const scale = Math.min(1, 180 / longestSide);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(sourceImage.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(sourceImage.naturalHeight * scale));
+          const context = canvas.getContext("2d");
+          if (!context) {
+            URL.revokeObjectURL(sourceUrl);
+            return;
+          }
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(sourceUrl);
+          const outputBlob = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob(resolve, "image/jpeg", 0.76),
+          );
+          if (!outputBlob) return;
+          const imageId = `ID_${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
+          const relationshipId = nextRelationshipId++;
+          const mediaId = nextMediaId++;
+          files[`xl/media/image${mediaId}.jpeg`] = new Uint8Array(await outputBlob.arrayBuffer());
+          cellImageRelationships.push(
+            `<Relationship Id="rId${relationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image${mediaId}.jpeg"/>`,
+          );
+          cellImageEntries.push(
+            `<etc:cellImage><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${nextCellImageId++}" name="${imageId}"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1800000" cy="1800000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic></etc:cellImage>`,
+          );
+          embeddedImageFormulaByProductId.set(product.id, `=DISPIMG("${imageId}",1)`);
+        } catch {
+          // Keep the supplied template image or a linked image formula as a fallback.
+        }
+      };
+      await Promise.all(
+        [...new Map(quoteItemsInOrder.map(({ product }) => [product.id, product])).values()]
+          .map((product) => embedProductImage(product)),
+      );
+      if (cellImageEntries.length) {
+        cellImagesXml = cellImagesXml.replace(
+          /<\/etc:cellImages>\s*$/,
+          `${cellImageEntries.join("")}</etc:cellImages>`,
+        );
+        cellImagesRelsXml = cellImagesRelsXml.replace(
+          /<\/Relationships>\s*$/,
+          `${cellImageRelationships.join("")}</Relationships>`,
+        );
+        files[cellImagesPath] = strToU8(cellImagesXml);
+        files[cellImagesRelsPath] = strToU8(cellImagesRelsXml);
+      }
+      const currentProductImageFormula = (product: Product) => {
+        const embeddedFormula = embeddedImageFormulaByProductId.get(product.id);
+        if (embeddedFormula) return embeddedFormula;
+        const templateFormula = templateImageFormulaBySku.get(product.sku.toUpperCase());
+        if (templateFormula) return templateFormula;
+        if (!product.image) return undefined;
+        const sourceUrl = new URL(product.image, window.location.origin).toString();
+        return `=IMAGE("${sourceUrl.replaceAll('"', '""')}","",1)`;
+      };
+      const canExportCost = ["admin", "ceo", "cost_accountant"].includes(authAccount?.role || "");
+      const hiddenColumns = new Set<number>();
+
+      let destinationRow = 4;
+      const dynamicRows: string[] = [];
+      const areaMerges: string[] = [];
+      const revisionRows: Array<{row: number; product: Product}> = [];
+      quoteGroups.forEach(([area, items]) => {
+        if (destinationRow + items.length > 115)
+          throw new Error("当前报价产品过多，超过该报价模板的 100 项容量");
+        const areaLabel = splitBilingual(area);
+        let areaRow = templateRow(areaPrototype, 4, destinationRow);
+        areaRow = updateTemplateRowCell(
+          areaRow,
+          destinationRow,
+          1,
+          areaLabel.en
+            ? `${areaLabel.zh} / ${areaLabel.en} · 区域小计 / Area Subtotal`
+            : `${areaLabel.zh} · 区域小计 / Area Subtotal`,
+        );
+        areaMerges.push(`B${destinationRow}:N${destinationRow}`);
+        areaMerges.push(`O${destinationRow}:R${destinationRow}`);
+        destinationRow += 1;
+        const firstItemRow = destinationRow;
+        items.forEach((item, index) => {
+          const { product, quantity } = item;
+          const row = destinationRow + index;
+          revisionRows.push({row, product});
+          const unitPrice = displayPrice(product) || 0;
+          const englishName = needsEnglishTranslation(product)
+            ? ""
+            : englishProductName(product);
+          let productRow = templateRow(itemPrototype, 5, row);
+          productRow = updateTemplateRowCell(productRow, row, 0, quoteItemsInOrder.indexOf(item) + 1);
+          productRow = updateTemplateRowCell(productRow, row, 1, product.sku);
+          productRow = updateTemplateRowCell(
+            productRow,
+            row,
+            2,
+            englishName ? `${product.name}\n${englishName}` : product.name,
+          );
+          const imageFormula = currentProductImageFormula(product);
+          productRow = imageFormula
+            ? updateTemplateRowTextFormula(productRow, row, 3, imageFormula)
+            : updateTemplateRowCell(productRow, row, 3, "");
+          productRow = updateTemplateRowCell(productRow, row, 4, product.brand || "YIFUN");
+          productRow = updateTemplateRowCell(productRow, row, 5, product.spec || "");
+          productRow = updateTemplateRowCell(productRow, row, 6, product.unit || "");
+          productRow = updateTemplateRowCell(productRow, row, 7, quantity);
+          const cost = canExportCost && Number.isFinite(product.cost)
+            ? Number(product.cost)
+            : null;
+          productRow = updateTemplateRowCell(productRow, row, 8, cost ?? "");
+          productRow = cost === null
+            ? updateTemplateRowCell(productRow, row, 9, "")
+            : updateTemplateRowFormula(productRow, row, 9, `=H${row}*I${row}`, cost * billableQuantity(product, quantity));
+          productRow = updateTemplateRowCell(productRow, row, 10, priceMode === "factory" ? unitPrice : product.price ?? "");
+          productRow = updateTemplateRowFormula(
+            productRow,
+            row,
+            11,
+            `=H${row}*K${row}`,
+            (priceMode === "factory" ? unitPrice : product.price || 0) * billableQuantity(product, quantity),
+          );
+          productRow = updateTemplateRowCell(productRow, row, 12, product.usd ?? "");
+          productRow = updateTemplateRowFormula(
+            productRow,
+            row,
+            13,
+            `=H${row}*M${row}`,
+            (product.usd || 0) * billableQuantity(product, quantity),
+          );
+          productRow = updateTemplateRowCell(productRow, row, 14, "");
+          productRow = updateTemplateRowCell(productRow, row, 15, product.note || "");
+          productRow = updateTemplateRowCell(productRow, row, 16, product.material || "");
+          productRow = updateTemplateRowCell(productRow, row, 17, product.volume || "");
+          dynamicRows.push(productRow);
+        });
+        const lastItemRow = destinationRow + items.length - 1;
+        const areaTotal = items.reduce((sum, item) => sum + (item.product.usd || 0) * billableQuantity(item.product, item.quantity), 0);
+        areaRow = updateTemplateRowFormula(
+          areaRow,
+          firstItemRow - 1,
+          14,
+          `=SUM(N${firstItemRow}:N${lastItemRow})`,
+          areaTotal,
+        );
+        dynamicRows.push(areaRow);
+        const areaRowIndex = dynamicRows.length - items.length - 1;
+        dynamicRows.splice(areaRowIndex, 0, dynamicRows.pop()!);
+        destinationRow = lastItemRow + 1;
+      });
+
+      const preservedRows = [...sourceRows.entries()]
+        .filter(([row]) => row < 4 || row >= 116)
+        .sort(([left], [right]) => left - right)
+        .map(([, row]) => row);
+      xml = xml.replace(
+        /<sheetData[^>]*>[\s\S]*?<\/sheetData>/,
+        `<sheetData>${[...preservedRows.slice(0, 3), ...dynamicRows, ...preservedRows.slice(3)].join("")}</sheetData>`,
+      );
+      const mergedCells = [...xml.matchAll(/<mergeCell\s+ref="([^"]+)"\/>/g)]
+        .map((match) => match[1])
+        .filter((ref) => !/^B\d+:S\d+$/.test(ref) && XLSX.utils.decode_col(ref.match(/^[A-Z]+/)![0]) < 18 && ref !== "A1:P2");
+      xml = xml.replace(
+        /<mergeCells\b[^>]*>[\s\S]*?<\/mergeCells>/,
+        `<mergeCells count="${mergedCells.length + areaMerges.length + 3}">${[
+          ...mergedCells,
+          ...areaMerges, "A1:O2", "P1:Q1", "P2:Q2",
+        ].map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>`,
+      );
+      xml = xml.replace(/<dimension ref="[^"]+"\/>/, '<dimension ref="A1:R125"/>');
+      xml = setTemplateHiddenColumns(xml, hiddenColumns);
+
+      const setCell = (row: number, column: number, value: string | number) => {
+        xml = updateTemplateCell(xml, XLSX.utils.encode_cell({ r: row - 1, c: column }), value);
+      };
+      const setFormula = (row: number, column: number, formula: string, value: number) => {
+        xml = updateTemplateFormula(xml, XLSX.utils.encode_cell({ r: row - 1, c: column }), formula, value);
+      };
+      for (const [code, column] of [["CNY", 11], ["USD", 13]] as const) {
+        const selected = code === currency;
+        const sum = quoteItemsInOrder.reduce((total, item) => total + (code === "USD" ? item.product.usd || 0 : priceMode === "factory" ? displayPrice(item.product) || 0 : item.product.price || 0) * billableQuantity(item.product, item.quantity), 0);
+        const extra = selected ? fees : {packaging: 0, formaldehyde: 0, shipping: 0, installation: 0, designDeduction: 0};
+        const totals = quotationTotals(sum, code, extra, selected && includeTax, selected && showDesignDeduction);
+        const letter = XLSX.utils.encode_col(column);
+        [extra.packaging, extra.formaldehyde, extra.shipping, extra.installation].forEach((value, index) => setCell(116 + index, column, value));
+        setFormula(120, column, `=SUM(${letter}4:${letter}119)`, totals.preTax);
+        setFormula(121, column, code === "CNY" && selected && includeTax ? `=${letter}120*13%` : "=0", totals.tax);
+        setFormula(122, column, `=${letter}120+${letter}121-${selected && showDesignDeduction ? fees.designDeduction : 0}`, totals.totalWithTax);
+      }
+      const selectedTotal = totalWithTax;
+      setCell(1, 0, `YIFUN LIFE+${quoteProject.trim() || "PROJECT"}+QUOTATION`);
+      setCell(1, 15, "设计师 / Designer");
+      setCell(1, 16, "");
+      setCell(1, 17, "商务 / Sales");
+      setCell(2, 15, designerName);
+      setCell(2, 16, "");
+      setCell(2, 17, salesName);
+      importedQuoteHeaders.forEach((lines, column) => setCell(3, column, lines.join("\n")));
+      setCell(123, 2, `${currency} ${new Intl.NumberFormat(currency === "USD" ? "en-US" : "zh-CN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(selectedTotal)}`);
+      xml = xml.replace(/<c\b[^>]*\/>|<c\b[^>]*>[\s\S]*?<\/c>/g, cell => {
+        const ref = cell.match(/\br="([A-Z]+)\d+"/)?.[1];
+        return ref && XLSX.utils.decode_col(ref) >= 18 ? "" : cell;
+      }).replace(/<col\b([^>]*)\/>/g, (tag, attrs: string) => {
+        const min = Number(attrs.match(/\bmin="(\d+)"/)?.[1]);
+        return min > 18 ? "" : tag.replace(/\bmax="(\d+)"/, (_, max) => `max="${Math.min(18, Number(max))}"`);
+      }).replace(/(<mergeCell\s+ref="[A-Z]+\d+:)([A-Z]+)(\d+"\/>)/g, (_, start, column, end) => `${start}${XLSX.utils.decode_col(column) >= 18 ? "R" : column}${end}`);
+      xml = formatQuoteCurrencyCells(files, xml, 3, [8, 9, 10, 11]);
+      files[worksheetPath] = strToU8(normalizeTemplateCellOrder(xml));
+      applyQuoteRevisions(files, worksheetPath, revisionRows);
+      downloadExcelFile(new Uint8Array(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer)), `${quoteExportFileName()}.xlsx`);
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "导出 Excel 失败，请重新打开报价单后再试。",
+      );
+    }
   };
+  const exportQuotePdf = async (saveHistory = true) => {
+    if (!checkCostedQuote()) return;
+    if (saveHistory && !(await recordQuoteHistory())) return;
+    try {
+      const pageWidth = 2384;
+      const pageHeight = 1684;
+      const left = 48;
+      const tableWidth = 2288;
+      const columns = [64, 164, 340, 170, 140, 170, 92, 75, 190, 190, 115, 115, 463];
+      const headers = [
+        "序号 / No.", "款号 / SKU", "产品名称 / Product", "图片展示 / Image",
+        "玩具品牌 / Brand", "规格尺寸 / Size", "单位 / Unit", "数量 / Qty",
+        `${currency} 单价 / Unit price`, `${currency} 金额 / Amount`, "色卡编号 / Colour",
+        "体积 / Volume", "备注 / Remarks",
+      ];
+      const font = 'Arial, "PingFang SC", "Microsoft YaHei", sans-serif';
+      const loadImage = (sourceUrl: string) =>
+        new Promise<HTMLImageElement | null>((resolve) => {
+          const source = new Image();
+          source.onload = () => resolve(source);
+          source.onerror = () => resolve(null);
+          source.src = sourceUrl;
+        });
+      const logo = await loadImage("/brand/yifun-life-logo.png");
+      const images = new Map<string, HTMLImageElement | null>();
+      const uniqueProducts = [...new Map(quoteItemsInOrder.map(({ product }) => [product.id, product])).values()];
+      await Promise.all(uniqueProducts.map(async (product) => {
+        const sourceUrls = [
+          product.image,
+          product.sku
+            ? `/api/catalog/image?key=${encodeURIComponent(`quote-imports/mdo/${skuImageKey(product.sku)}`)}`
+            : "",
+        ].filter(Boolean);
+        let image: HTMLImageElement | null = null;
+        for (const imageUrl of sourceUrls) {
+          image = await loadImage(imageUrl);
+          if (image) break;
+        }
+        images.set(product.id, image);
+      }));
+
+      const pages: Uint8Array[] = [];
+      let canvas = document.createElement("canvas");
+      let context: CanvasRenderingContext2D | null = null;
+      let y = 0;
+      let pageNumber = 0;
+      const tableTop = 184;
+      const contentBottom = pageHeight - 104;
+      const textLines = (value: string, width: number, maxLines = 3) => {
+        const words = String(value || "—").split(/(?=[\u4e00-\u9fff])|\s+/).filter(Boolean);
+        const lines: string[] = [];
+        let line = "";
+        words.forEach((word) => {
+          const next = line ? `${line}${/^[\u4e00-\u9fff]/.test(word) ? "" : " "}${word}` : word;
+          if (context!.measureText(next).width > width && line) {
+            lines.push(line);
+            line = word;
+          } else line = next;
+        });
+        if (line) lines.push(line);
+        if (lines.length > maxLines) return [...lines.slice(0, maxLines - 1), `${lines[maxLines - 1].slice(0, 18)}…`];
+        return lines.length ? lines : ["—"];
+      };
+      const drawLines = (value: string, x: number, top: number, width: number, lineHeight: number, maxLines = 3, align: CanvasTextAlign = "left") => {
+        const lines = textLines(value, width, maxLines);
+        context!.textAlign = align;
+        lines.forEach((line, index) => context!.fillText(line, x, top + lineHeight * index));
+        return lines.length;
+      };
+      const canvasToJpeg = async () => {
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.88));
+        if (!blob) throw new Error("PDF 页面生成失败");
+        pages.push(new Uint8Array(await blob.arrayBuffer()));
+      };
+      const startPage = () => {
+        pageNumber += 1;
+        canvas = document.createElement("canvas");
+        canvas.width = pageWidth;
+        canvas.height = pageHeight;
+        context = canvas.getContext("2d");
+        if (!context) throw new Error("PDF 页面生成失败");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, pageWidth, pageHeight);
+        if (logo && logo.naturalWidth && logo.naturalHeight) {
+          const logoWidth = 440;
+          const logoHeight = logoWidth * (logo.naturalHeight / logo.naturalWidth);
+          context.drawImage(logo, left, 44, logoWidth, logoHeight);
+        }
+        context.textAlign = "right";
+        context.fillStyle = "#c4b421";
+        context.font = `700 19px ${font}`;
+        context.fillText(`QUOTATION · ${currency}`, left + tableWidth, 54);
+        context.fillStyle = "#08477e";
+        context.font = `700 52px ${font}`;
+        context.fillText("产品报价清单 / Product Quotation", left + tableWidth, 130);
+        context.fillRect(left, 150, tableWidth, 7);
+        context.fillStyle = "#08477e";
+        context.fillRect(left, tableTop, tableWidth, 82);
+        context.fillStyle = "#ffffff";
+        context.font = `700 20px ${font}`;
+        let x = left;
+        headers.forEach((header, index) => {
+          context!.textAlign = "center";
+          const [first, second] = header.split(" / ");
+          context!.fillText(first, x + columns[index] / 2, tableTop + 33);
+          context!.font = `600 15px ${font}`;
+          context!.fillText(second || "", x + columns[index] / 2, tableTop + 60);
+          context!.font = `700 20px ${font}`;
+          x += columns[index];
+        });
+        context!.fillStyle = "#cfd9d5";
+        context!.fillRect(left, pageHeight - 72, tableWidth, 2);
+        context!.fillStyle = "#5c6c72";
+        context!.font = `600 17px ${font}`;
+        context!.textAlign = "right";
+        context!.fillText(`第 ${pageNumber} 页 / Page ${pageNumber}`, left + tableWidth, pageHeight - 40);
+        y = tableTop + 82;
+      };
+      const startNewPage = async () => {
+        if (context) await canvasToJpeg();
+        startPage();
+      };
+      const fillGroup = (area: string) => {
+        context!.fillStyle = "#e2eddc";
+        context!.fillRect(left, y, tableWidth, 48);
+        context!.fillStyle = "#315d45";
+        context!.font = `700 25px ${font}`;
+        context!.textAlign = "left";
+        context!.fillText(area, left + 18, y + 32);
+        y += 48;
+      };
+      const drawGroupSubtotal = (items: (typeof quoteItemsInOrder)[number][]) => {
+        const subtotal = quoteAreaSubtotal(items);
+        context!.fillStyle = "#f3f7f0";
+        context!.fillRect(left, y, tableWidth, 52);
+        context!.strokeStyle = "#c8d7c4";
+        context!.lineWidth = 1;
+        context!.strokeRect(left, y, tableWidth, 52);
+        context!.fillStyle = "#315d45";
+        context!.font = `700 21px ${font}`;
+        context!.textAlign = "right";
+        context!.fillText(
+          `区域小计 / Area subtotal: ${money(subtotal, currency)}`,
+          left + tableWidth - 18,
+          y + 33,
+        );
+        y += 52;
+      };
+      const drawItem = (item: (typeof quoteItemsInOrder)[number], serial: number) => {
+        const { product, quantity } = item;
+        const unitPrice = displayPrice(product);
+        const amount = unitPrice === null ? null : unitPrice * quantity;
+        const rowHeight = 122;
+        context!.fillStyle = serial % 2 ? "#ffffff" : "#fbfcfa";
+        context!.fillRect(left, y, tableWidth, rowHeight);
+        context!.strokeStyle = "#d8e0dc";
+        context!.lineWidth = 1;
+        context!.beginPath();
+        context!.moveTo(left, y + rowHeight);
+        context!.lineTo(left + tableWidth, y + rowHeight);
+        let x = left;
+        columns.forEach((width) => {
+          context!.moveTo(x, y);
+          context!.lineTo(x, y + rowHeight);
+          x += width;
+        });
+        context!.lineTo(left + tableWidth, y);
+        context!.stroke();
+        const cell = (index: number) => left + columns.slice(0, index).reduce((sum, width) => sum + width, 0);
+        context!.fillStyle = "#1f2e3d";
+        context!.font = `600 18px ${font}`;
+        context!.textBaseline = "middle";
+        drawLines(String(serial), cell(0) + columns[0] / 2, y + 60, columns[0] - 12, 22, 1, "center");
+        drawLines(product.sku || "—", cell(1) + 10, y + 38, columns[1] - 20, 23, 2);
+        context!.font = `700 20px ${font}`;
+        drawLines(product.name, cell(2) + 10, y + 28, columns[2] - 20, 24, 2);
+        context!.fillStyle = "#84919a";
+        context!.font = `500 15px ${font}`;
+        drawLines(needsEnglishTranslation(product) ? "" : englishProductName(product), cell(2) + 10, y + 88, columns[2] - 20, 18, 1);
+        const image = images.get(product.id);
+        const imageX = cell(3) + 16;
+        const imageY = y + 14;
+        const imageWidth = columns[3] - 32;
+        const imageHeight = rowHeight - 28;
+        context!.fillStyle = "#f1f3ef";
+        context!.fillRect(imageX, imageY, imageWidth, imageHeight);
+        if (image && image.naturalWidth && image.naturalHeight) {
+          const scale = Math.min(imageWidth / image.naturalWidth, imageHeight / image.naturalHeight);
+          const width = image.naturalWidth * scale;
+          const height = image.naturalHeight * scale;
+          context!.drawImage(image, imageX + (imageWidth - width) / 2, imageY + (imageHeight - height) / 2, width, height);
+        } else {
+          context!.fillStyle = "#7a878d";
+          context!.font = `500 15px ${font}`;
+          drawLines("暂无图片", imageX + imageWidth / 2, y + 61, imageWidth - 8, 18, 1, "center");
+        }
+        const values = [
+          product.brand || "YIFUN", product.spec || "—", unitLabel(product.unit).zh || product.unit || "—",
+          String(quantity), money(unitPrice, currency), money(amount, currency), colourLabel(product.colorTag).zh || "—",
+          product.volume || "—", product.note || "—",
+        ];
+        const indices = [4, 5, 6, 7, 8, 9, 10, 11, 12];
+        values.forEach((value, position) => {
+          const index = indices[position];
+          context!.fillStyle = index === 8 || index === 9 ? "#08477e" : "#31404b";
+          context!.font = `${index === 8 || index === 9 ? "700" : "500"} ${index === 12 ? 16 : 17}px ${font}`;
+          const centered = [6, 7, 10, 11].includes(index);
+          drawLines(value, centered ? cell(index) + columns[index] / 2 : cell(index) + 9, y + 38, columns[index] - 18, 22, index === 12 ? 3 : 2, centered ? "center" : "left");
+        });
+        y += rowHeight;
+      };
+
+      startPage();
+      let serial = 1;
+      for (const [area, items] of quoteGroups) {
+        if (y + 48 + 122 + 52 > contentBottom) await startNewPage();
+        fillGroup(area);
+        for (const [index, item] of items.entries()) {
+          const needsSubtotal = index === items.length - 1;
+          if (y + 122 + (needsSubtotal ? 52 : 0) > contentBottom)
+            await startNewPage();
+          drawItem(item, serial++);
+        }
+        drawGroupSubtotal(items);
+      }
+      if (y + 74 > contentBottom) await startNewPage();
+      context!.fillStyle = "#08477e";
+      context!.font = `700 28px ${font}`;
+      context!.textAlign = "right";
+      context!.fillText(`报价总额 / Total: ${money(totalWithTax, currency)}`, left + tableWidth, y + 48);
+      await canvasToJpeg();
+
+      const encoder = new TextEncoder();
+      const pieces: Uint8Array[] = [];
+      const offsets: number[] = [];
+      let size = 0;
+      const append = (value: string | Uint8Array) => {
+        const bytes = typeof value === "string" ? encoder.encode(value) : value;
+        pieces.push(bytes);
+        size += bytes.byteLength;
+      };
+      const object = (id: number, body: string | Uint8Array) => {
+        offsets[id] = size;
+        append(`${id} 0 obj\n`);
+        append(body);
+        append("\nendobj\n");
+      };
+      const objectCount = 2 + pages.length * 3;
+      append("%PDF-1.4\n");
+      object(1, "<< /Type /Catalog /Pages 2 0 R >>");
+      const pageIds = pages.map((_, index) => 3 + index * 3);
+      object(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`);
+      pages.forEach((image, index) => {
+        const pageId = 3 + index * 3;
+        const imageId = pageId + 1;
+        const contentId = pageId + 2;
+        object(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1190.55 841.89] /Resources << /XObject << /Im${index} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+        offsets[imageId] = size;
+        append(`${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pageWidth} /Height ${pageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.byteLength} >>\nstream\n`);
+        append(image);
+        append("\nendstream\nendobj\n");
+        const stream = `q\n1190.55 0 0 841.89 0 0 cm\n/Im${index} Do\nQ\n`;
+        object(contentId, `<< /Length ${encoder.encode(stream).byteLength} >>\nstream\n${stream}endstream`);
+      });
+      const xref = size;
+      append(`xref\n0 ${objectCount + 1}\n0000000000 65535 f \n`);
+      for (let id = 1; id <= objectCount; id += 1)
+        append(`${String(offsets[id]).padStart(10, "0")} 00000 n \n`);
+      append(`trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+      const pdf = new Blob(pieces.map((piece) => new Uint8Array(piece).buffer), { type: "application/pdf" });
+      const url = URL.createObjectURL(pdf);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${quoteExportFileName()}.pdf`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "导出 PDF 失败，请重新打开报价单后再试。");
+    }
+  };
+  useEffect(() => {
+    if (!pendingHistoryExport || !quoteOpen) return;
+    const format = pendingHistoryExport;
+    const timer = window.setTimeout(() => {
+      setPendingHistoryExport(null);
+      void (format === "pdf" ? exportQuotePdf(false) : exportQuoteExcel(false));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [pendingHistoryExport, quoteOpen]);
   const packageProducts = (group: KitchenPackageGroup) =>
     group.source === "main"
       ? kitchenMainProducts
@@ -2878,6 +5202,7 @@ export default function Home() {
     if (!isAdmin) return;
     setEditor(p);
     setDraft(p);
+    setTagDraftText(p.tags.join("、"));
     if (
       p.category1 === "模拟设备" &&
       p.colorTag === "待重新识别" &&
@@ -2891,10 +5216,25 @@ export default function Home() {
   };
   const save = async () => {
     if (!draft) return;
+    const normalizedTags = [...new Set(
+      tagDraftText.split(/[,，、]/).map((tag) => tag.trim()).filter(Boolean),
+    )];
+    if (normalizedTags.includes("主设备") && !draft.spec.trim()) {
+      window.alert("主设备必须填写尺寸后才能保存。");
+      return;
+    }
+    if (!draft.classifications.length || draft.classifications.some(
+      (record) => !record.level1.trim() || !record.level2.trim() || !record.level3.trim(),
+    )) {
+      window.alert("每一条分类记录都必须完整填写 1、2、3级分类。");
+      return;
+    }
+    const primaryClassification = draft.classifications[0];
+    const primaryTag = normalizedTags[0] || "";
     const colorTag =
       isSpaceTheme(draft.name, draft.en)
         ? "银色"
-        : draft.category1 === "模拟设备" && draft.category2 === "消防区设备"
+        : primaryClassification.level2 === "模拟设备" && primaryClassification.level3 === "消防区设备"
         ? "红"
         : normalizeColorTag(draft.colorTag);
     const patch = {
@@ -2902,39 +5242,52 @@ export default function Home() {
       price: draft.price === null ? "" : String(draft.price),
       imageUrl: draft.image,
       volume: draft.volume,
+      specification: draft.spec,
+      unit: draft.unit,
+      cost: draft.cost,
+      branchPrice: draft.branchPrice,
+      supplyMethod: draft.supplyMethod,
       stock: draft.stock,
-      majorCategory: draft.majorCategory,
-      category1: draft.category1,
-      category2: draft.category2,
-      category3: draft.category3,
+      majorCategory: primaryClassification.level1 as MajorCategory,
+      category1: primaryClassification.level2,
+      category2: primaryClassification.level3,
+      category3: primaryTag,
       colorTag,
       hasScreen: draft.hasScreen,
       isRecommended: draft.isRecommended,
     };
-    await fetch("/api/catalog", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: draft.id, patch }),
-    });
-    await fetch("/api/catalog", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "recommendations",
-        productId: draft.id,
-        relatedIds: draft.relatedIds,
-      }),
-    });
+    const previousFields = { ...editor, imageUrl: editor?.image, specification: editor?.spec, price: editor?.price === null ? "" : String(editor?.price) };
+    const changedPatch = Object.fromEntries(Object.entries(patch).filter(([key, value]) => value !== previousFields[key as keyof typeof previousFields]));
+    const relatedProducts = draft.relatedIds.map((relatedProductId) => ({ relatedProductId, quantity: relations.find((relation) => relation.productId === draft.id && relation.relatedProductId === relatedProductId)?.quantity || 1 }));
+    let classificationResult: { classifications?: ProductClassification[]; tags?: string[] };
+    try {
+      const response = await fetch("/api/catalog", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: draft.id, patch: changedPatch, editedFields: Object.keys(changedPatch), classifications: draft.classifications, tags: normalizedTags, relatedProducts }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "保存失败");
+      classificationResult = result;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "保存失败，请检查网络后重试。");
+      return;
+    }
     setOverrides((x) => [
       ...x.filter((o) => o.productId !== draft.id),
       { productId: draft.id, ...patch },
     ]);
+    setProductClassifications((current) => [
+      ...current.filter((record) => record.productId !== draft.id),
+      ...(classificationResult.classifications || []),
+    ]);
+    setProductTags((current) => [
+      ...current.filter((record) => record.productId !== draft.id),
+      ...(classificationResult.tags || []).map((tag: string) => ({ productId: draft.id, tag })),
+    ]);
     setRelations((x) => [
       ...x.filter((r) => r.productId !== draft.id),
-      ...draft.relatedIds.map((relatedProductId) => ({
-        productId: draft.id,
-        relatedProductId,
-      })),
+      ...relatedProducts.map((relation) => ({ productId: draft.id, ...relation })),
     ]);
     setEditor(null);
   };
@@ -2973,13 +5326,17 @@ export default function Home() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: loginUsername,
+        username: loginUsername,
         password: loginPassword,
       }),
     });
     if (r.ok) {
       const d = await r.json();
       setLoginPassword("");
+      if (d.role === "ceo") {
+        window.location.replace("/ceo-dashboard");
+        return;
+      }
       setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt });
       setAuth("signedIn");
     } else {
@@ -3049,53 +5406,16 @@ export default function Home() {
     setLoginNotice(d.message || "密码已更新，请使用新密码登录。");
     setAuthMode("login");
   };
-  const loadStaff = async () => {
-    setStaffError("");
-    const r = await fetch("/api/admin/users");
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      setStaffError(d.error || "员工列表加载失败。");
-      return;
-    }
-    const users = d.users || [];
-    setStaffUsers(users);
-    setPendingStaffCount(
-      users.filter((user: ManagedUser) => user.status === "pending").length,
-    );
-  };
-  const openStaff = () => {
-    setStaffOpen(true);
-    void loadStaff();
-  };
+  const openStaff = () => window.location.assign("/personnel");
   useEffect(() => {
     if (auth !== "signedIn" || authAccount?.role !== "admin") return;
-    void loadStaff();
+    void fetch("/api/admin/users").then(response => response.json()).then(data => {
+      setPendingStaffCount((data.users || []).filter((user: { status: string }) => user.status === "pending").length);
+    }).catch(() => {});
   }, [auth, authAccount?.role]);
-  const updateStaffStatus = async (email: string, action: "approve" | "suspend" | "activate") => {
-    const r = await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, action }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) setStaffError(d.error || "更新员工状态失败。");
-    else void loadStaff();
-  };
-  const updateStaffRole = async (email: string, role: "employee" | "management") => {
-    const r = await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, action: "set_role", role }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) setStaffError(d.error || "更新员工权限失败。");
-    else void loadStaff();
-  };
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    setAuthAccount(null);
-    setAuthMode("login");
-    setAuth("signedOut");
+    window.location.assign("/");
   };
   if (auth === "checking")
     return (
@@ -3119,8 +5439,8 @@ export default function Home() {
       : isForgot
         ? "输入已获批准的邮箱，我们会发送 30 分钟内有效的重设链接。"
         : isReset
-          ? "请设置至少 10 位的新密码。"
-          : "请输入邮箱与密码后继续。";
+          ? "请设置至少 8 位的新密码。"
+          : "请输入用户名与密码后继续。";
     return (
       <main className="loginShell">
         <form className="loginCard" onSubmit={submit}>
@@ -3131,15 +5451,15 @@ export default function Home() {
           <h1>{title}</h1>
           <p>{description}</p>
           {isRegister && <label>姓名 / Name<input value={loginName} onChange={(e) => setLoginName(e.target.value)} autoComplete="name" required /></label>}
-          {!isReset && <label>邮箱 / Email<input type="email" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoComplete="email" required /></label>}
-          {!isForgot && <label>密码 / Password<input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} autoComplete={isReset ? "new-password" : isRegister ? "new-password" : "current-password"} required /></label>}
-          {(isRegister || isReset) && <label>确认密码 / Confirm password<input type="password" value={loginPasswordConfirm} onChange={(e) => setLoginPasswordConfirm(e.target.value)} autoComplete="new-password" required /></label>}
+          {!isReset && <label>{isForgot ? "邮箱 / Email" : "用户名 / Username"}<input type={isForgot ? "email" : "text"} value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoComplete={isForgot ? "email" : "username"} required /></label>}
+          {!isForgot && <PasswordField key={authMode} id="login-password" label="密码 / Password" value={loginPassword} onChange={setLoginPassword} autoComplete={isReset || isRegister ? "new-password" : "current-password"} required />}
+          {(isRegister || isReset) && <PasswordField id="confirm-password" label="确认密码 / Confirm password" value={loginPasswordConfirm} onChange={setLoginPasswordConfirm} autoComplete="new-password" required />}
           {loginError && <div className="loginError">{loginError}</div>}
           {loginNotice && <div className="loginNotice">{loginNotice}</div>}
           <button className="primary" type="submit">{isRegister ? "提交注册 / Register" : isForgot ? "发送重设链接 / Send link" : isReset ? "更新密码 / Update password" : "登录 / Sign in"}</button>
           {!isReset && <div className="loginLinks">
             {authMode !== "login" && <button type="button" onClick={() => { setAuthMode("login"); setLoginError(""); }}>返回登录</button>}
-            {authMode === "login" && <><button type="button" onClick={() => { setAuthMode("register"); setLoginError(""); }}>注册员工账号</button><button type="button" onClick={() => { setAuthMode("forgot"); setLoginError(""); }}>忘记密码？</button></>}
+            {authMode === "login" && <small>账号开通或忘记密码，请联系管理员或 CEO。</small>}
           </div>}
           <small className="loginHint">为保护报价信息，登录 30 分钟后将自动退出。</small>
         </form>
@@ -3147,12 +5467,20 @@ export default function Home() {
     );
   }
   const hospitalPairingSource = pairingSuggestion?.source.category2 === "医院区";
+  const optionalPairingItems =
+    pairingSuggestion?.relatedItems.filter((item) => !item.isBound) || [];
+  const selectedOptionalPairingCount = optionalPairingItems.filter(
+    (item) => item.quantity > 0,
+  ).length;
+  const allOptionalPairingItemsSelected =
+    optionalPairingItems.length > 0 &&
+    selectedOptionalPairingCount === optionalPairingItems.length;
   const pairingDialogItems = (
     items: PairingSuggestion["relatedItems"],
     emptyText: string,
   ) =>
     items.length ? (
-      items.map(({ product, quantity }) => (
+      items.map(({ product, quantity, isBound }) => (
         <article className="pairingDialogItem" key={product.id}>
           <div className="pairingDialogImage"><Visual p={product} mini /></div>
           <div className="pairingDialogInfo">
@@ -3160,9 +5488,32 @@ export default function Home() {
             <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
             <small>SKU: {product.sku}</small>
           </div>
+          {!isBound || pairingSuggestion?.mode === "cart" ? (
+            <label className="pairingDialogSelect">
+              <input
+                aria-label={`选择 ${product.sku}`}
+                checked={quantity > 0}
+                onChange={(event) =>
+                  setOptionalPairingSelection(product.id, event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>{isBound ? "已选" : "选择"}</span>
+            </label>
+          ) : (
+            <span className="pairingDialogSelectSpacer" aria-hidden="true" />
+          )}
           <div className="pairingDialogQty">
-            <label>
-              <span>数量</span>
+            <span>数量</span>
+            <div className="pairingDialogQuantityControl">
+              <button
+                aria-label={`减少 ${product.sku} 数量`}
+                disabled={quantity <= 0}
+                onClick={() => setSuggestedPairingQuantity(product.id, quantity - 1)}
+                type="button"
+              >
+                −
+              </button>
               <input
                 aria-label={`${product.sku} 数量`}
                 inputMode="numeric"
@@ -3175,7 +5526,14 @@ export default function Home() {
                     setSuggestedPairingQuantity(product.id, Number(value || 0));
                 }}
               />
-            </label>
+              <button
+                aria-label={`增加 ${product.sku} 数量`}
+                onClick={() => setSuggestedPairingQuantity(product.id, quantity + 1)}
+                type="button"
+              >
+                ＋
+              </button>
+            </div>
           </div>
         </article>
       ))
@@ -3207,19 +5565,13 @@ export default function Home() {
           <select
             className="currency"
             value={priceMode}
-            onChange={(event) => setPriceMode(event.target.value as PriceMode)}
+            onChange={(event) => requestPriceModeChange(event.target.value as PriceMode)}
             aria-label="选择报价货币"
           >
             <option value="factory">出厂价（CNY）</option>
-            <option value="vip">国内 VIP 价（CNY）</option>
+            <option value="vip">连锁品牌价（CNY）</option>
             <option value="usd">美金价格（USD）</option>
           </select>
-          <button
-            className="outline"
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            筛选器
-          </button>
           {isAdmin && (
             <button
               className="outline"
@@ -3238,6 +5590,9 @@ export default function Home() {
           >
             导入清单
           </button>
+          <button className="outline" onClick={openToyMatchingWorkspace} type="button">
+            玩具匹配{toyMatchingDraftId ? " · 未完成" : ""}
+          </button>
           <button className="cartButton" onClick={() => setCartOpen(true)}>
             <span>报价清单</span>
             <b>{cartItems.length}</b>
@@ -3245,6 +5600,7 @@ export default function Home() {
           <button
             className="employeeButton"
             onClick={() => setEmployeeMenuOpen((current) => !current)}
+            data-employee-menu-surface
             aria-label="员工账户菜单"
             aria-expanded={employeeMenuOpen}
           >
@@ -3258,6 +5614,12 @@ export default function Home() {
           </button>
         </div>
       </header>
+      <nav className="mobileQuickNav" aria-label="手机快捷导航">
+        <button type="button" aria-expanded={mobileCategoriesOpen} aria-controls="product-categories" onClick={() => { setEmployeeMenuOpen(false); setMobileCategoriesOpen(value => !value); }}>分类</button>
+        <button type="button" onClick={() => { setMobileCategoriesOpen(false); setQuoteImportError(""); setQuoteImportPreview(null); setQuoteImportOpen(true); }}>导入清单</button>
+        <button type="button" onClick={() => { setMobileCategoriesOpen(false); setCartOpen(true); }}>报价清单 <b>{cartItems.length}</b></button>
+        <button type="button" data-employee-menu-surface aria-expanded={employeeMenuOpen} onClick={() => { setMobileCategoriesOpen(false); setEmployeeMenuOpen(value => !value); }}>更多</button>
+      </nav>
       {authAccount?.role === "admin" && pendingStaffCount > 0 && (
         <aside className="staffApprovalNotice" aria-live="polite">
           <div>
@@ -3274,13 +5636,42 @@ export default function Home() {
         </aside>
       )}
       {employeeMenuOpen && (
-        <aside className="employeeMenu" role="menu" aria-label="员工账户菜单">
+        <aside
+          className="employeeMenu"
+          role="menu"
+          aria-label="员工账户菜单"
+          data-employee-menu-surface
+        >
           <div className="employeeMenuAccount">
             <span>当前账号 / ACCOUNT</span>
             <b>{authAccount?.name || "员工"}</b>
             <small>{authAccount?.email}</small>
-            <small>{authAccount?.role === "admin" ? "管理员 / Administrator" : authAccount?.role === "management" ? "管理层 / Management（可查看全部信息并使用系统）" : "员工 / Employee"}</small>
+            <small>{authAccount?.role === "admin" ? "管理员 / Administrator" : authAccount?.role === "ceo" ? "CEO（可查看全部信息并导出成本）" : authAccount?.role === "management" ? "管理层 / Management（可查看全部信息并使用系统）" : authAccount?.role === "cost_accountant" ? "核算人员 / Cost accountant" : "员工 / Employee"}</small>
           </div>
+          <button className="mobileMenuAction" role="menuitem" onClick={() => { setEmployeeMenuOpen(false); openToyMatchingWorkspace(); }}>玩具匹配</button>
+          {isAdmin && <button className="mobileMenuAction" role="menuitem" onClick={() => { setEmployeeMenuOpen(false); window.open("/product-pairing", "_blank", "noopener"); }}>玩具配对管理</button>}
+          <button
+            role="menuitem"
+            onClick={() => {
+              setEmployeeMenuOpen(false);
+              window.location.assign("/quotation-history");
+            }}
+          >
+            历史报价单
+          </button>
+          <button role="menuitem" onClick={() => { setEmployeeMenuOpen(false); window.location.assign("/trade-documents"); }}>PI / CI / 设备合同 · PDF 邮件</button>
+          {(authAccount?.role === "admin" || authAccount?.role === "ceo" || authAccount?.role === "management") && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setEmployeeMenuOpen(false);
+                window.location.assign("/ceo-dashboard");
+              }}
+            >
+              CEO 看板
+            </button>
+          )}
+          {["admin", "ceo", "cost_accountant"].includes(authAccount?.role || "") && <button role="menuitem" onClick={() => window.location.assign("/costing")}>核算管理</button>}
           {canViewStaff && (
             <button
               role="menuitem"
@@ -3289,7 +5680,7 @@ export default function Home() {
                 void openStaff();
               }}
             >
-              {isAdmin ? "员工管理" : "员工管理（只读）"}
+              人员及权限
             </button>
           )}
           <button
@@ -3334,50 +5725,9 @@ export default function Home() {
           </section>
         </div>
       )}
-      {staffOpen && (
-        <div className="staffOverlay" role="dialog" aria-modal="true" aria-label="员工管理">
-          <section className="staffPanel">
-            <div className="staffHead">
-              <div>
-                <span className="eyebrow">ACCOUNT ADMINISTRATION</span>
-                <h2>员工管理</h2>
-                <p>{isAdmin ? "管理员可修改全部设置；管理层可查看全部信息并使用员工所有功能；员工仅可使用系统功能。" : "管理层可查看全部信息、账号、权限与审批状态，并可使用员工所有系统功能；不能修改系统设置。"}</p>
-              </div>
-              <button className="closeStaff" onClick={() => setStaffOpen(false)} aria-label="关闭员工管理">×</button>
-            </div>
-            {staffError && <div className="loginError">{staffError}</div>}
-            <div className="staffList">
-              {staffUsers.map((user) => (
-                <article className="staffRow" key={user.email}>
-                  <div>
-                    <strong>{user.name}</strong>
-                    <small>{user.email}</small>
-                    <small>{user.role === "admin" ? "管理员 / Administrator" : user.role === "management" ? "管理层 / Management" : "员工 / Employee"}</small>
-                    <small>注册于 {new Date(user.createdAt).toLocaleDateString("zh-CN")}</small>
-                  </div>
-                  <div className="staffActions">
-                    <span className={`staffStatus ${user.status}`}>{user.status === "pending" ? "待审批" : user.status === "active" ? "已启用" : "已停用"}</span>
-                    {isAdmin && user.role !== "admin" && (
-                      <label className="staffRoleSelect">
-                        <select aria-label={`${user.name} 的账号权限`} value={user.role === "management" ? "management" : "employee"} onChange={(event) => void updateStaffRole(user.email, event.target.value as "employee" | "management")}>
-                          <option value="employee">员工（可使用）</option>
-                          <option value="management">管理层（查看全部信息并可使用）</option>
-                        </select>
-                      </label>
-                    )}
-                    {isAdmin && user.role !== "admin" && user.status === "pending" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "approve")}>批准</button>}
-                    {isAdmin && user.role !== "admin" && user.status === "active" && <button className="outline" onClick={() => updateStaffStatus(user.email, "suspend")}>停用</button>}
-                    {isAdmin && user.role !== "admin" && user.status === "suspended" && <button className="primary smallPrimary" onClick={() => updateStaffStatus(user.email, "activate")}>启用</button>}
-                  </div>
-                </article>
-              ))}
-              {!staffUsers.length && !staffError && <p className="staffEmpty">暂无员工账号。</p>}
-            </div>
-          </section>
-        </div>
-      )}
       <section className={`workspace${editor ? " editorOpen" : ""}`}>
-        <aside className="sidebar">
+        <aside id="product-categories" className={`sidebar${mobileCategoriesOpen ? " mobileCategoriesOpen" : ""}`}>
+          <div className="mobileCategoryHeading"><b>产品分类</b><button type="button" onClick={() => setMobileCategoriesOpen(false)}>完成选择</button></div>
           <div className="sideIntro">
             <span>PRODUCT LIBRARY · 2026</span>
             <h1>
@@ -3386,7 +5736,7 @@ export default function Home() {
               与方案编辑
             </h1>
             <p>
-              八大类为一级目录；点击任意 SKU
+              九大类为一级目录；点击任意 SKU
               可维护主图、价格、分类、标签和常用搭配。
             </p>
             {toyTierSyncStatus && (
@@ -3399,6 +5749,14 @@ export default function Home() {
           <nav>
             {navigationMajors.map((major, i) => {
               const expanded = expandedMajors.has(major);
+              const isSeniorMajor = major === "大童类 / Older Children";
+              const isRetailMajor = major === "零售（游玩必备） / Retail";
+              const retailProducts = productViews.filter((product) =>
+                navigationMajorMembers(major).includes(product.majorCategory),
+              );
+              const retailTypes = [...new Set(
+                retailProducts.map((product) => product.category2).filter(Boolean),
+              )];
               return (
                 <div
                   className={`navGroup ${activeMajor === major ? "selected" : ""}`}
@@ -3419,10 +5777,11 @@ export default function Home() {
                           new Set(current).add(major),
                         );
                       setActiveMajor(major);
+                      setQuery("");
                       setCategory("全部产品");
                       setCategory3Filter("");
                       setSelectedCategoryKey("");
-                      setNavigationGroup("simulation");
+                      setNavigationGroup(isRetailMajor || isSeniorMajor ? "all" : "simulation");
                     }
                   }}
                 >
@@ -3433,14 +5792,14 @@ export default function Home() {
                     <b>
                       {major === "农牧生活 / 动物世界"
                         ? major
-                        : major.split(" / ")[0]}
+                        : majorCategoryDisplayName(major).split(" / ")[0]}
                     </b>
                     <small>
                       {major === "农牧生活 / 动物世界"
                         ? "Agro-pastoral Life · Animal World"
-                        : major.split(" / ")[1]} ·{" "}
+                        : majorCategoryDisplayName(major).split(" / ")[1]} ·{" "}
                       {
-                        products.filter((p) =>
+                        productViews.filter((p) =>
                           navigationMajorMembers(major).includes(p.majorCategory),
                         ).length
                       }{" "}
@@ -3453,48 +5812,145 @@ export default function Home() {
                 </button>
                 {expanded && (
                   <div className="subnav">
-                    {([
+                    {isSeniorMajor ? (
+                      ["拓展迷宫", "滑梯"].map((group) => {
+                        const groupProducts = retailProducts.filter((p) => p.category1 === group);
+                        const sheets = [...new Set(groupProducts.map((p) => p.category2))];
+                        const sectionKey = `${major}:${group}`;
+                        const sectionExpanded = expandedProductGroups.has(sectionKey);
+                        return (
+                          <div className="subnavGroup" key={group}>
+                            <div className={selectedCategoryKey === `senior:${group}` && category === "全部产品" ? "subnavGroupHead on" : "subnavGroupHead"}>
+                            <button
+                              className="subnavGroupSelect"
+                              onClick={() => {
+                                setActiveMajor(major);
+                                setQuery("");
+                                setCategory("全部产品");
+                                setCategory3Filter("");
+                                setSelectedCategoryKey(`senior:${group}`);
+                                setNavigationGroup("all");
+                              }}
+                            >
+                              <b>{group}</b><span>{groupProducts.length}</span>
+                            </button>
+                            <button
+                              className="subnavGroupToggle"
+                              aria-label={`${sectionExpanded ? "收起" : "展开"}${group}`}
+                              onClick={() =>
+                                setExpandedProductGroups((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(sectionKey)) next.delete(sectionKey);
+                                  else next.add(sectionKey);
+                                  return next;
+                                })
+                              }
+                            >
+                              {sectionExpanded ? "−" : "+"}
+                            </button>
+                            </div>
+                              {sectionExpanded && sheets.map((sheet) => (
+                                <button
+                                  key={sheet}
+                                  className={selectedCategoryKey === `senior:${group}` && category === sheet ? "on" : ""}
+                                  onClick={() => {
+                                    setActiveMajor(major);
+                                    setQuery("");
+                                    setCategory(sheet);
+                                    setCategory3Filter("");
+                                    setSelectedCategoryKey(`senior:${group}`);
+                                    setNavigationGroup("all");
+                                  }}
+                                >
+                                  {sheet}<span>{groupProducts.filter((p) => p.category2 === sheet).length}</span>
+                                </button>
+                              ))}
+                          </div>
+                        );
+                      })
+                    ) : isRetailMajor ? (
+                      <>
+                        <button
+                          className={category === "全部产品" && navigationGroup === "all" ? "on" : ""}
+                          onClick={() => {
+                            setQuery("");
+                            setCategory("全部产品");
+                            setCategory3Filter("");
+                            setSelectedCategoryKey("");
+                            setNavigationGroup("all");
+                          }}
+                        >
+                          全部类型
+                          <span>{retailProducts.length}</span>
+                        </button>
+                        {retailTypes.map((type) => {
+                          const typeProducts = retailProducts.filter(
+                            (product) => product.category2 === type,
+                          );
+                          return (
+                            <button
+                              className={selectedCategoryKey === `retail:${type}` ? "on" : ""}
+                              key={type}
+                              onClick={() => {
+                                setQuery("");
+                                setCategory(type);
+                                setCategory3Filter("");
+                                setSelectedCategoryKey(`retail:${type}`);
+                                setNavigationGroup("all");
+                              }}
+                            >
+                              {retailTypeDisplayName(type)}
+                              <span>{typeProducts.length}</span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    ) : ([
                         {
                           key: "simulation" as const,
-                          name: "模拟区",
+                          name: "主设备",
                           matches: (p: Product) =>
                             unpairedNavigationMajors.has(major) ||
-                            p.category1 !== "小玩具",
+                            p.category1 === "模拟设备" ||
+                            (p.category1 === "配套产品" && !isToy(p)),
                         },
                         {
                           key: "toys" as const,
                           name: "配套玩具",
-                          matches: (p: Product) => p.category1 === "小玩具",
+                          matches: (p: Product) => isToy(p),
                         },
                       ]).filter(
                         (section) =>
                           section.key !== "toys" ||
                           !unpairedNavigationMajors.has(major),
                       ).map((section) => {
-                        const sectionProducts = products.filter(
+                        const sectionProducts = productViews.filter(
                           (p) =>
                             navigationMajorMembers(major).includes(
                               p.majorCategory,
                             ) && section.matches(p),
                         );
-                        const pairedCategories =
-                          section.key === "toys" ? pairedAreasForMajor(major) : [];
+                        const pairedCategories = section.key === "toys"
+                          ? pairedAreasForMajor(major).map((area) =>
+                              groupedNavigationArea(area, section.key),
+                            )
+                          : [];
                         const simulationCategoryOrder = [
                           ...new Set(
-                            products
+                            productViews
                               .filter(
                                 (p) =>
                                   navigationMajorMembers(major).includes(
                                     p.majorCategory,
-                                  ) && p.category1 !== "小玩具",
+                                  ) && p.category1 === "模拟设备",
                               )
-                              .map((p) => p.category2),
+                              .map((p) => groupedNavigationArea(p.category2, section.key)),
                           ),
                         ];
                         const sectionCategories = [...new Set([
                           ...pairedCategories,
                           ...sectionProducts
-                            .map((p) => p.category2)
+                            .map((p) => groupedNavigationArea(p.category2, section.key))
                             .filter(
                               (categoryName) =>
                                 !pairedCategories.includes(categoryName),
@@ -3530,6 +5986,7 @@ export default function Home() {
                               <button
                                 className="subnavGroupSelect"
                                 onClick={() => {
+                                  setQuery("");
                                   setCategory("全部产品");
                                   setCategory3Filter("");
                                   setSelectedCategoryKey("");
@@ -3565,7 +6022,7 @@ export default function Home() {
                                 const categoryProducts = sectionProducts.filter((p) =>
                                   isHospitalToyGroup
                                     ? hospitalToySourceCategories.has(p.category2)
-                                    : p.category2 === c,
+                                    : groupedNavigationArea(p.category2, section.key) === c,
                                 );
                                 const toyCategoryKey = `${sectionKey}:${c}`;
                                 const toyCategoryExpanded =
@@ -3579,6 +6036,7 @@ export default function Home() {
                                           : ""
                                       }
                                       onClick={() => {
+                                        setQuery("");
                                         setCategory(c);
                                         setCategory3Filter("");
                                         setSelectedCategoryKey(`${section.key}:${c}`);
@@ -3601,6 +6059,7 @@ export default function Home() {
                                             : ""
                                         }
                                         onClick={() => {
+                                          setQuery("");
                                           setCategory(c);
                                           setCategory3Filter("");
                                           setSelectedCategoryKey(`toys:${c}`);
@@ -3643,6 +6102,7 @@ export default function Home() {
                                             }
                                             key={tier}
                                             onClick={() => {
+                                              setQuery("");
                                               setCategory(c);
                                               setCategory3Filter(tier);
                                               setSelectedCategoryKey(`toys:${c}`);
@@ -3681,14 +6141,14 @@ export default function Home() {
           </nav>
           <div className="sideFoot">
             <span className="statusDot" /> 已归类 SKU <b>{products.length}</b>
-            <small>八大类映射已写入产品库</small>
+            <small>九大类映射已写入产品库</small>
           </div>
         </aside>
         <section className="catalog">
           <div className="catalogHead">
             <div>
               <span className="eyebrow">
-                {hasGlobalQuery ? "全局搜索 / Global Search" : activeMajor} ·{" "}
+                {hasGlobalQuery ? "全局搜索 / Global Search" : majorCategoryDisplayName(activeMajor)} ·{" "}
                 {isKitchenView ? kitchenProducts.length : visible.length} ITEMS
               </span>
               <h2>{catalogTitle}</h2>
@@ -3718,7 +6178,7 @@ export default function Home() {
             </div>
           )}
           {filtersOpen && (
-            <div className="filterBar">
+            <div className="filterBar" data-filter-surface>
               <b>关联常用推荐筛选</b>
               <select
                 value={colorFilter}
@@ -3947,7 +6407,7 @@ export default function Home() {
                   {items.map((p) => (
                     <article
                       className={`productCard${isAdmin ? " editableCard" : ""}`}
-                      key={p.id}
+                      key={p.viewKey || p.id}
                       onClick={isAdmin ? () => openEditor(p) : undefined}
                     >
                       <div className="productImage">
@@ -3965,9 +6425,9 @@ export default function Home() {
                         <p className={`en${needsEnglishTranslation(p) ? " missingEnglish" : ""}`}>
                           {englishProductName(p)}
                         </p>
-                        {(p.category1 !== "小玩具" || p.isRecommended) && (
+                        {(!isToy(p) || p.isRecommended) && (
                           <div className="tagRow">
-                            {p.category1 !== "小玩具" && (
+                            {!isToy(p) && (
                               <>
                                 <i
                                   className="colorDot"
@@ -4028,7 +6488,7 @@ export default function Home() {
                               <button
                                 type="button"
                                 aria-label={`增加 ${p.name} 数量`}
-                                onClick={() => add(p.id)}
+                                onClick={() => add(p)}
                               >
                                 +
                               </button>
@@ -4038,7 +6498,7 @@ export default function Home() {
                               className="productAddButton"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                add(p.id);
+                                add(p);
                               }}
                             >
                               ＋ 添加
@@ -4062,7 +6522,7 @@ export default function Home() {
       </section>
       {pairingSuggestion && (
         <div
-          className="overlay pairingOverlay"
+          className={`overlay pairingOverlay${pairingSuggestion.mode === "cart" ? " cartPairingOverlay" : ""}`}
           role="dialog"
           aria-modal="true"
           aria-labelledby="pairing-selection-title"
@@ -4070,8 +6530,10 @@ export default function Home() {
           <section className="pairingDialog">
             <div className="pairingDialogHead">
               <div>
-                <span>PAIRED TOYS</span>
-                <h2 id="pairing-selection-title">选择关联产品</h2>
+                <span>PAIRED ITEMS</span>
+                <h2 id="pairing-selection-title">
+                  {pairingSuggestion.mode === "cart" ? "选择配套玩具" : "选择关联产品"}
+                </h2>
               </div>
               <button
                 onClick={() => setPairingSuggestion(null)}
@@ -4089,20 +6551,65 @@ export default function Home() {
                 </div>
               </div>
               <p>
-                请确认本次要加入的主产品与玩具。必配玩具按保存数量预填；同区域选配玩具默认不加入，可按需加减后以母子结构加入报价清单。
+                {pairingSuggestion.mode === "cart"
+                  ? "为当前 SKU 选择同一模拟区的配套玩具。可勾选新增，也可取消勾选或将数量减至 0 删除配套；保存后，玩具会归在该 SKU 下方，主设备或配套产品的数量不会改变。"
+                  : "请确认本次要加入的主设备、配套产品与玩具。已配置的配套项目按保存数量预填；同区域可选项目默认不加入，可按需加减后以母子结构加入报价清单。"}
               </p>
             </div>
             <div className="pairingDialogList">
               <section className="pairingDialogSection">
                 <div className="pairingDialogSectionTitle">
-                  <b>必须匹配的玩具</b>
+                  <b>
+                    {pairingSuggestion.mode === "cart"
+                      ? "已配置的配套玩具"
+                      : "已配置的配套项目"}
+                  </b>
                   <small>按已保存的绑定数量默认加入，可调整数量</small>
                 </div>
                 {pairingDialogItems(
                   pairingSuggestion.relatedItems.filter((item) => item.isBound),
-                  "暂无必须匹配的玩具。",
+                  pairingSuggestion.mode === "cart"
+                    ? "暂无已配置的配套玩具。"
+                    : "暂无已配置的配套产品或玩具。",
                 )}
               </section>
+              {optionalPairingItems.length > 0 && (
+                <section className="pairingDialogBatch" aria-label="批量配置可选项目">
+                  <label>
+                    <input
+                      checked={allOptionalPairingItemsSelected}
+                      onChange={(event) =>
+                        setAllOptionalPairingSelections(event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    <span>全选可选项目（已选 {selectedOptionalPairingCount} 款）</span>
+                  </label>
+                  <label>
+                    <span>批量数量</span>
+                    <input
+                      inputMode="numeric"
+                      min="1"
+                      onChange={(event) => setPairingBatchQuantity(event.target.value)}
+                      pattern="[0-9]*"
+                      placeholder="数量"
+                      type="text"
+                      value={pairingBatchQuantity}
+                    />
+                  </label>
+                  <button
+                    className="outline"
+                    disabled={
+                      !selectedOptionalPairingCount ||
+                      !/^[1-9]\d*$/.test(pairingBatchQuantity)
+                    }
+                    onClick={applyOptionalPairingBatchQuantity}
+                    type="button"
+                  >
+                    填入已勾选项
+                  </button>
+                </section>
+              )}
               {hospitalPairingSource ? (
                 <>
                   <div className="pairingDialogTabs" role="group" aria-label="医院玩具分类">
@@ -4143,16 +6650,38 @@ export default function Home() {
                       </section>
                     );
                   })}
+                  {pairingSuggestion.mode !== "cart" && (
+                    <section className="pairingDialogSection">
+                      <div className="pairingDialogSectionTitle">
+                        <b>同区域配套产品</b>
+                        <small>默认不加入，可按需加减</small>
+                      </div>
+                      {pairingDialogItems(
+                        pairingSuggestion.relatedItems.filter(
+                          (item) =>
+                            !item.isBound &&
+                            item.product.category3 === "配套产品",
+                        ),
+                        "该模拟区暂无可选配产品。",
+                      )}
+                    </section>
+                  )}
                 </>
               ) : (
                 <section className="pairingDialogSection">
                   <div className="pairingDialogSectionTitle">
-                    <b>同一个模拟区里的玩具选配</b>
+                    <b>
+                      {pairingSuggestion.mode === "cart"
+                        ? "同一个模拟区里的可选配玩具"
+                        : "同一个模拟区里的可选配项目"}
+                    </b>
                     <small>默认不加入，可按需加减</small>
                   </div>
                   {pairingDialogItems(
                     pairingSuggestion.relatedItems.filter((item) => !item.isBound),
-                    "该模拟区暂无可选配的玩具。",
+                    pairingSuggestion.mode === "cart"
+                      ? "该模拟区暂无可选配玩具。"
+                      : "该模拟区暂无可选配产品或玩具。",
                   )}
                 </section>
               )}
@@ -4161,18 +6690,25 @@ export default function Home() {
               <span>
                 {pairingSuggestion.relatedItems.length
                   ? `已选 ${pairingSuggestion.relatedItems.filter(({ quantity }) => quantity > 0).length} 款，共 ${pairingSuggestion.relatedItems.reduce((total, item) => total + item.quantity, 0)} 件`
-                  : "仅加入主产品"}
+                  : pairingSuggestion.mode === "cart"
+                    ? "暂未选择配套玩具"
+                    : "仅加入主产品"}
               </span>
               <div>
-                {pairingSuggestion.relatedItems.length > 0 && (
+                {pairingSuggestion.mode === "catalog" && pairingSuggestion.relatedItems.length > 0 && (
                   <button className="outline" onClick={addSourceOnly}>
                     仅加入主产品
                   </button>
                 )}
-                <button className="primary" onClick={addSuggestedPairing}>
-                  {pairingSuggestion.relatedItems.length > 0
-                    ? "确认加入购物车"
-                    : "加入购物车"}
+                <button
+                  className="primary"
+                  onClick={pairingSuggestion.mode === "cart" ? saveCartToyPairing : addSuggestedPairing}
+                >
+                  {pairingSuggestion.mode === "cart"
+                    ? "保存配套玩具"
+                    : pairingSuggestion.relatedItems.length > 0
+                      ? "确认加入购物车"
+                      : "加入购物车"}
                 </button>
               </div>
             </div>
@@ -4181,10 +6717,10 @@ export default function Home() {
       )}
       {pairingRemovalPrompt && (
         <aside className="pairingSuggestion pairingRemovalPrompt" aria-live="assertive">
-          <p>关联玩具 / PAIRED TOYS</p>
+          <p>关联项目 / PAIRED ITEMS</p>
           <h3>删除 {pairingRemovalPrompt.device.sku}？</h3>
           <span>
-            该设备已配对 {pairingRemovalPrompt.relatedItems.length} 个、且已加入报价单的玩具。
+            该设备已配对 {pairingRemovalPrompt.relatedItems.length} 个、且已加入报价单的配套项目。
           </span>
           <small>
             {pairingRemovalPrompt.relatedItems
@@ -4195,10 +6731,10 @@ export default function Home() {
           </small>
           <div className="pairingSuggestionActions">
             <button className="outline" onClick={() => removePairedDevice(false)}>
-              保留玩具
+              保留配套项目
             </button>
             <button className="primary" onClick={() => removePairedDevice(true)}>
-              一并删除玩具
+              一并删除配套项目
             </button>
           </div>
         </aside>
@@ -4227,12 +6763,12 @@ export default function Home() {
                     )
                   }
                 >
-                  <option value="factory">出厂价（CNY；小玩具自动使用国内 VIP 价）</option>
-                  <option value="vip">国内 VIP 价格（CNY）</option>
+                  <option value="factory">出厂价（CNY；小玩具自动使用连锁品牌价）</option>
+                  <option value="vip">连锁品牌价（CNY）</option>
                   <option value="usd">美金价格（USD）</option>
                 </select>
                 <small>
-                  主设备可按出厂价、国内 VIP 价或美金价格导入；配套小玩具仅使用国内 VIP 价或美金价格。
+                  主设备可按出厂价、连锁品牌价或美金价格导入；配套小玩具仅使用连锁品牌价或美金价格。
                 </small>
               </label>
               <label
@@ -4251,7 +6787,7 @@ export default function Home() {
               >
                 <input
                   type="file"
-                  accept=".xlsx,.xls,.csv"
+                  accept=".xlsx,.xls"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) void readQuoteImport(file);
@@ -4259,7 +6795,7 @@ export default function Home() {
                   }}
                 />
                 <b>{quoteImporting ? "正在读取表单…" : quoteImportDragging ? "松开以导入 Excel 表单" : "拖拽 Excel 表单到这里，或点击选择"}</b>
-                <small>支持 .xlsx、.xls、.csv；未匹配款号会作为自定义产品保留在核对清单中。</small>
+                <small>支持 .xls、.xlsx（最大 200MB）。XLS 会转换为 XLSX，旧格式中的图片和复杂排版可能无法保留，建议优先使用 XLSX。未匹配款号会保留在核对清单中。</small>
               </label>
               {quoteImportError && <p className="importError">{quoteImportError}</p>}
               {quoteImportPreview && (
@@ -4276,51 +6812,62 @@ export default function Home() {
                     <span>商务：{quoteImportPreview.salesName || "表单未提供"}</span>
                   </div>
                   <p>
-                    下表金额已按 {quoteImportPriceMode === "factory" ? "出厂价（CNY；小玩具使用国内 VIP 价）" : quoteImportPriceMode === "usd" ? "美金价格（USD）" : "国内 VIP 价格（CNY）"} 计算。
+                    下表金额已按 {quoteImportPriceMode === "factory" ? "出厂价（CNY；小玩具使用连锁品牌价）" : quoteImportPriceMode === "usd" ? "美金价格（USD）" : "连锁品牌价（CNY）"} 计算。
                   </p>
                   <div className="importTableWrap">
                     <table className="importTable">
+                      <colgroup>{(quoteImportTemplateRef.current?.headers || importedQuoteHeaders).map((_, index) => <col key={index} />)}</colgroup>
                       <thead>
+                        <tr className="sourceFormTitle"><th colSpan={15}>{quoteImportTemplateRef.current?.title || quoteImportPreview.projectName}</th><th colSpan={2}>设计师：{quoteImportPreview.designerName || "—"}</th><th>商务：{quoteImportPreview.salesName || "—"}</th></tr>
                         <tr>
-                          <th>款号 / SKU</th>
-                          <th>区域 / Area</th>
-                          <th>产品名称 / Product</th>
-                          <th>图片 / Image</th>
-                          <th>规格尺寸 / Size</th>
-                          <th>数量 / Qty</th>
-                          <th>单价 / Unit price</th>
-                          <th>金额 / Amount</th>
-                          <th>颜色 / Colour</th>
-                          <th>备注 / Remarks</th>
-                          <th>体积 / Volume</th>
+                          {(quoteImportTemplateRef.current?.headers || importedQuoteHeaders).map((lines, index) => <th key={index}>{lines.map((line, lineIndex) => <span key={lineIndex}>{line}</span>)}</th>)}
                         </tr>
                       </thead>
                       <tbody>
-                        {quoteImportPreview.rows.map(({ product, quantity }) => {
-                          const unitPrice = importUnitPrice(product);
-                          return (
-                            <tr key={product.id}>
+                        {quoteImportPreview.rows.flatMap(({ product, quantity }, index, rows) => {
+                          const cnyPrice = quoteImportPriceMode === "usd" ? product.price : importUnitPrice(product);
+                          const usdPrice = product.usd ?? null;
+                          const cost = canViewQuoteCost ? product.cost : null;
+                          const area = product.importArea || "导入项目";
+                          const firstInArea = index === 0 || rows[index - 1].product.importArea !== product.importArea || rows[index - 1].product.importSection !== product.importSection;
+                          const areaRows = rows.filter(row => row.product.importArea === product.importArea && row.product.importSection === product.importSection);
+                          const areaUsd = areaRows.every(row => excludedFromQuote(row.product) || row.product.usd != null)
+                            ? areaRows.reduce((sum, row) => sum + (row.product.usd || 0) * billableQuantity(row.product, row.quantity), 0) : null;
+                          return [
+                            firstInArea ? <tr className="areaRow" key={`${product.id}-area`}><td></td><td colSpan={13}>{area}</td><td colSpan={2}>{money(areaUsd, "USD", 2)}</td><td colSpan={2}></td></tr> : null,
+                            <tr className={`revision-${product.revision?.status || "none"}`} key={product.id}>
+                              <td>{product.importSequence ?? index + 1}</td>
                               <td><b>{product.sku}</b></td>
-                              <td>{product.importArea || "—"}</td>
-                              <td>{product.name}</td>
-                              <td>
-                                {product.image ? (
-                                  <img src={product.image} alt={product.name} />
-                                ) : (
-                                  "—"
-                                )}
-                              </td>
-                              <td>{product.spec || "—"}</td>
-                              <td>{quantity}</td>
-                              <td>{formatImportPrice(unitPrice)}</td>
-                              <td>{formatImportPrice(unitPrice === null ? null : unitPrice * quantity)}</td>
-                              <td>{colourLabel(product.colorTag).zh}</td>
-                              <td>{product.note || "—"}</td>
+                              <td className={product.revision?.status === "modified" && product.importBlueColumns?.includes(2) ? "revisionModifiedCell" : ""}>{product.name}<small>{englishProductName(product)}</small>{product.quoteCosting && <small>{product.quoteCosting.status === "ready" ? product.quoteCosting.saleSource === "catalog" ? "售价取产品库，成本单独核算" : "已按面积及难度核算售价" : `待核算：${product.quoteCosting.issues.join("；")}`}{quoteImportPriceMode === "usd" && product.quoteCosting.status === "ready" && product.usd == null ? "；尚未配置美元售价，请使用人民币报价" : ""}</small>}</td>
+                              <td className={product.revision?.status === "modified" && product.importBlueColumns?.includes(3) ? "revisionModifiedCell" : ""}>{product.image ? <img src={product.image} alt={product.name} /> : "—"}</td>
+                              <td className={product.revision?.status === "modified" && product.importBlueColumns?.includes(4) ? "revisionModifiedCell" : ""}>{product.brand || "—"}</td>
+                              <td className={product.revision?.changes.some(change => change.field === "规格/尺寸") ? "revisionModifiedCell sourceFormNote" : "sourceFormNote"}>{product.spec || "—"}</td>
+                              <td>{product.unit || "—"}</td>
+                              <td className={product.revision?.changes.some(change => change.field === "数量") ? "revisionModifiedCell" : ""}>{product.importSourceQuantity === null && quantity === 1 ? "" : quantity}</td>
+                              <td>{canViewQuoteCost ? money(cost, "CNY", 2) : "—"}</td>
+                              <td>{canViewQuoteCost ? money(cost == null ? null : cost * billableQuantity(product, quantity), "CNY", 2) : "—"}</td>
+                              <td>{money(cnyPrice, "CNY", 2)}</td>
+                              <td>{money(cnyPrice == null ? null : cnyPrice * billableQuantity(product, quantity), "CNY", 2)}</td>
+                              <td>{money(usdPrice, "USD", 2)}</td>
+                              <td>{money(usdPrice == null ? null : usdPrice * billableQuantity(product, quantity), "USD", 2)}</td>
+                              <td></td>
+                              <td className="sourceFormNote">{product.note || "—"}</td>
+                              <td className="sourceFormNote">{product.material || "—"}</td>
                               <td>{product.volume || "—"}</td>
-                            </tr>
-                          );
+                            </tr>,
+                          ];
                         })}
                       </tbody>
+                      <tfoot>
+                        {(["packaging", "formaldehyde", "shipping", "installation", "subtotal", "tax", "total"] as const).map(key => {
+                          const labels = { packaging: "包装费", formaldehyde: "除甲醛", shipping: "运输费", installation: "安装费", subtotal: "小计（不含税）", tax: "税额13%（可抵税）", total: "总计" };
+                          const fees = quoteImportPreview.fees || { packaging: 0, formaldehyde: 0, shipping: 0, installation: 0, designDeduction: 0 };
+                          const total = quotationTotals(quoteImportPreview.rows.reduce((sum, row) => sum + (importUnitPrice(row.product) || 0) * billableQuantity(row.product, row.quantity), 0), importCurrency, fees, Boolean(quoteImportPreview.includeTax), false);
+                          const amount = key === "total" ? total.totalWithTax : key === "subtotal" ? total.preTax : key === "tax" ? total.tax : fees[key];
+                          return <tr key={key}><td colSpan={8}>{quoteImportTemplateRef.current?.feeLabels?.[key] || labels[key]}</td><td colSpan={importCurrency === "USD" ? 5 : 3}></td><td>{money(amount, importCurrency, 2)}</td><td colSpan={importCurrency === "USD" ? 4 : 6} className="sourceFormNote">{quoteImportTemplateRef.current?.feeNotes?.[key] || ""}</td></tr>;
+                        })}
+                        {quoteImportTemplateRef.current?.footerNotes?.map((note, index) => <tr key={`note-${index}`}><td colSpan={18} className="sourceFormNote">{note}</td></tr>)}
+                      </tfoot>
                     </table>
                   </div>
                   {quoteImportPreview.unmatchedSkus.length > 0 && (
@@ -4344,6 +6891,284 @@ export default function Home() {
                 导入并替换当前报价单
               </button>
             </footer>
+          </section>
+        </div>
+      )}
+      {importedQuotePairingOpen && (
+        <main className="importPairingPage" aria-labelledby="import-pairing-title">
+          <header className="importPairingHead">
+            <div>
+              <h1 id="import-pairing-title">玩具匹配</h1>
+              <p className="importPairingSteps">导入清单 <b>→</b> 玩具匹配 <b>→</b> 购物车生成报价单</p>
+              <p>选择已导入的 SKU 查看关联产品；主设备或配套产品只能匹配同一模拟区的配套玩具。</p>
+            </div>
+            <div className="importPairingHeadActions">
+              <button
+                className="outline"
+                onClick={() => {
+                  setImportedQuotePairingOpen(false);
+                  setCartOpen(false);
+                }}
+                type="button"
+              >
+                返回主界面
+              </button>
+            </div>
+          </header>
+          <section className="importPairingBody" aria-label="导入产品配套玩具">
+            <section className="toyMatchingDraftPanel" aria-labelledby="toy-matching-drafts-title">
+              <div className="toyMatchingDraftPanelHead">
+                <div>
+                  <p>未完成清单</p>
+                  <h2 id="toy-matching-drafts-title">继续编辑已保存的匹配清单</h2>
+                </div>
+                <span>{toyMatchingDrafts.length} 份</span>
+              </div>
+              {toyMatchingDrafts.length ? (
+                <div className="toyMatchingDraftRows">
+                  {toyMatchingDrafts.map((draft) => (
+                    <div className="toyMatchingDraftRow" key={draft.id}>
+                      <button className="toyMatchingDraftRestore" onClick={() => void restoreToyMatchingDraft(draft)} type="button">
+                      <span>
+                        <b>项目名称：{draft.name}</b>
+                        <small>最近保存：{new Date(draft.updatedAt).toLocaleString("zh-CN")}</small>
+                        {canViewStaff && <small>创建人：{draft.createdBy || "历史账号"}</small>}
+                      </span>
+                      <strong>继续编辑</strong>
+                      </button>
+                      <button
+                        className="toyMatchingDraftDelete"
+                        onClick={() => void deleteToyMatchingDraft(draft)}
+                        type="button"
+                      >
+                        删除草稿
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="toyMatchingDraftEmpty">暂无未完成清单。保存当前进度后，会在这里显示。</p>
+              )}
+            </section>
+            {toyMatchingOverview ? (
+              <div className="toyMatchingOverviewEmpty">
+                <b>请选择一份未完成清单继续匹配</b>
+                <span>点击上方清单的“继续编辑”，即可恢复对应导入 SKU 与配套玩具进度。</span>
+              </div>
+            ) : importedPairingItems.length ? (
+              <div className="importPairingList">
+                <div className="importPairingListHead">
+                  <b>已导入 SKU</b>
+                  <span>共 {importedPairingItems.length} 款 · 点击 SKU 查看关联产品</span>
+                </div>
+                {importedPairingItems.map(({ product, quantity }) => {
+                  const associations = importedProductAssociations.get(product.id) || [];
+                  const selected = selectedImportedProductId === product.id;
+                  const isAssociationExpanded = expandedImportedRelations.has(product.id);
+                  const catalogProduct = product.catalogProductId
+                    ? products.find((candidate) => candidate.id === product.catalogProductId)
+                    : products.find((candidate) => candidate.sku === product.sku);
+                  const simulationArea = pairedArea(
+                    catalogProduct?.category2 || product.category2,
+                    product.name,
+                  );
+                  return (
+                    <article className={`importPairingItem${selected ? " selected" : ""}`} key={product.id}>
+                      <div className="importPairingSelect">
+                        <button
+                          aria-label={`查看 ${product.name} 大图`}
+                          className="importPairingImageButton"
+                          onClick={() => setImagePreviewProduct(product)}
+                          type="button"
+                        >
+                          <Visual p={product} mini />
+                        </button>
+                        <button
+                          className="importPairingInfoButton"
+                          onClick={() => {
+                            setSelectedImportedProductId(product.id);
+                            if (associations.length)
+                              setExpandedImportedRelations((current) => new Set(current).add(product.id));
+                          }}
+                          type="button"
+                        >
+                          <b>{product.name}</b>
+                          <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>
+                            {englishProductName(product)}
+                          </small>
+                          <small>{product.sku}</small>
+                          <span>模拟区：{simulationArea || "待匹配"} · 导入数量 {quantity}</span>
+                        </button>
+                      </div>
+                      <div className="importPairingActions">
+                        {!isToy(product) ? (
+                          <button
+                            className="importPairingButton"
+                            onClick={() => openPairingSelection(product, "cart")}
+                            type="button"
+                          >
+                            选择配套玩具
+                          </button>
+                        ) : (
+                          <span className="importPairingToyLabel">配套玩具</span>
+                        )}
+                      </div>
+                      {associations.length > 0 && (
+                        <details
+                          className="importPairingRelations"
+                          onToggle={(event) => {
+                            const expanded = event.currentTarget.open;
+                            setExpandedImportedRelations((current) => {
+                              const next = new Set(current);
+                              if (expanded) next.add(product.id);
+                              else next.delete(product.id);
+                              return next;
+                            });
+                          }}
+                          open={isAssociationExpanded}
+                        >
+                          <summary>关联产品 · {associations.length} 款</summary>
+                          <div className="importPairingRelationList">
+                            {associations.map(({ product: relatedProduct, quantity: relatedQuantity }) => (
+                              <div className="importPairingRelation" key={`${product.id}-${relatedProduct.id}`}>
+                                <button
+                                  aria-label={`查看 ${relatedProduct.name} 大图`}
+                                  className="importPairingRelationImageButton"
+                                  onClick={() => setImagePreviewProduct(relatedProduct)}
+                                  type="button"
+                                >
+                                  <Visual p={relatedProduct} mini />
+                                </button>
+                                <div>
+                                  <b>{relatedProduct.name}</b>
+                                  <small>{relatedProduct.sku}</small>
+                                </div>
+                                <label className="importPairingRelationQuantity">
+                                  <span>数量</span>
+                                  <div>
+                                    <button
+                                      aria-label={`减少 ${relatedProduct.sku} 数量`}
+                                      disabled={relatedQuantity <= 1}
+                                      onClick={() => setImportedAssociationQuantity(product.id, relatedProduct.id, relatedQuantity - 1)}
+                                      type="button"
+                                    >
+                                      −
+                                    </button>
+                                    <input
+                                      aria-label={`${relatedProduct.sku} 数量`}
+                                      inputMode="numeric"
+                                      min="1"
+                                      onChange={(event) => {
+                                        if (/^[1-9]\d*$/.test(event.target.value))
+                                          setImportedAssociationQuantity(product.id, relatedProduct.id, Number(event.target.value));
+                                      }}
+                                      pattern="[0-9]*"
+                                      type="text"
+                                      value={relatedQuantity}
+                                    />
+                                    <button
+                                      aria-label={`增加 ${relatedProduct.sku} 数量`}
+                                      onClick={() => setImportedAssociationQuantity(product.id, relatedProduct.id, relatedQuantity + 1)}
+                                      type="button"
+                                    >
+                                      ＋
+                                    </button>
+                                  </div>
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="importPairingEmpty">
+                本次导入没有可配置配套玩具的主设备或配套产品。
+              </div>
+            )}
+          </section>
+          {!toyMatchingOverview && <footer className="importPairingFoot">
+            <span>这里只配置配套玩具；返回购物车后可继续调整数量、删除产品或生成报价单。</span>
+            <button
+              className="outline"
+              disabled={toyMatchingDraftSaving}
+              onClick={() => void saveToyMatchingDraft()}
+              type="button"
+            >
+              {toyMatchingDraftSaving ? "保存中…" : "保存草稿"}
+            </button>
+            <button
+              className="primary"
+              onClick={() => {
+                setImportedQuotePairingOpen(false);
+                setCartOpen(true);
+              }}
+              type="button"
+            >
+              回到购物车
+            </button>
+          </footer>}
+        </main>
+      )}
+      {matchingSkuPickerOpen && (
+        <div
+          className="overlay toyMatchingSkuOverlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setMatchingSkuPickerOpen(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="增加 SKU"
+        >
+          <section className="toyMatchingSkuDialog">
+            <div className="toyMatchingDialogHead">
+              <div>
+                <h2>增加 SKU</h2>
+                <p>加入后会出现在当前玩具匹配清单；主设备和配套产品仍只可匹配同模拟区玩具。</p>
+              </div>
+              <button aria-label="关闭增加 SKU" onClick={() => setMatchingSkuPickerOpen(false)} type="button">×</button>
+            </div>
+            <label className="toyMatchingSkuSearch">
+              <span>搜索 SKU 或名称</span>
+              <input autoFocus onChange={(event) => setMatchingSkuQuery(event.target.value)} placeholder="输入款号、名称或模拟区" value={matchingSkuQuery} />
+            </label>
+            <div className="toyMatchingSkuList">
+              {matchingSkuCandidates.map((product) => (
+                <button key={product.id} onClick={() => addCatalogProductToToyMatching(product)} type="button">
+                  <span className="toyMatchingSkuImage"><Visual p={product} mini /></span>
+                  <span>
+                    <b>{product.name}</b>
+                    <small>{product.sku} · {pairedArea(product.category2, product.name) || "未匹配模拟区"}</small>
+                  </span>
+                  <em>{isToy(product) ? "配套玩具" : "加入"}</em>
+                </button>
+              ))}
+              {!matchingSkuCandidates.length && <p>没有找到相符 SKU，请换一个关键词。</p>}
+            </div>
+          </section>
+        </div>
+      )}
+      {imagePreviewProduct && (
+        <div
+          className="overlay importImagePreview"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setImagePreviewProduct(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${imagePreviewProduct.name} 图片预览`}
+        >
+          <section className="importImagePreviewDialog">
+            <button aria-label="关闭图片预览" onClick={() => setImagePreviewProduct(null)} type="button">×</button>
+            {imagePreviewProduct.image ? (
+              <img alt={imagePreviewProduct.name} src={imagePreviewProduct.image} />
+            ) : (
+              <p>该 SKU 暂无可查看的大图。</p>
+            )}
+            <div><b>{imagePreviewProduct.name}</b><span>{imagePreviewProduct.sku}</span></div>
           </section>
         </div>
       )}
@@ -4383,7 +7208,7 @@ export default function Home() {
                   />
                 </label>
                 <label>
-                  国内 VIP 价（人民币） / Domestic VIP price (CNY)
+                  连锁品牌价（人民币） / Chain Brand Price (CNY)
                   <input
                     type="number"
                     value={draft.price ?? ""}
@@ -4395,6 +7220,66 @@ export default function Home() {
                       })
                     }
                   />
+                </label>
+                <label>
+                  尺寸 / Specification
+                  <input
+                    value={draft.spec}
+                    onChange={(e) => setDraft({ ...draft, spec: e.target.value })}
+                    placeholder="主设备必须填写尺寸"
+                  />
+                </label>
+                <label>
+                  单位 / Unit
+                  <input
+                    value={draft.unit}
+                    onChange={(e) => setDraft({ ...draft, unit: e.target.value })}
+                    placeholder="个、套、组、盒等"
+                  />
+                </label>
+                <label>
+                  成本（CNY） / Cost
+                  <input
+                    min="0"
+                    type="number"
+                    value={draft.cost ?? ""}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        cost: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    placeholder="待补"
+                  />
+                </label>
+                <label>
+                  分公司价（USD） / Branch price
+                  <input
+                    min="0"
+                    type="number"
+                    value={draft.branchPrice ?? ""}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        branchPrice:
+                          e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    placeholder="待补"
+                  />
+                </label>
+                <label>
+                  供应方式 / Supply method
+                  <select
+                    value={draft.supplyMethod || ""}
+                    onChange={(e) =>
+                      setDraft({ ...draft, supplyMethod: e.target.value || null })
+                    }
+                  >
+                    <option value="">待补</option>
+                    <option value="自有生产">自有生产</option>
+                    <option value="外采">外采</option>
+                  </select>
                 </label>
                 <label>
                   体积 / Volume
@@ -4426,104 +7311,104 @@ export default function Home() {
               <section className="editSection">
                 <h3>分类层级 / Classification</h3>
                 <p>
-                  一级大目录来自 2026
-                  产品册；产品大类、区域与三级分类会继续保留。
+                  每一行是一条分类记录；同一个 SKU 可以无限增加分类记录。
                 </p>
-                <div className="fourCols">
-                  <label>
-                    一级大目录
-                    <select
-                      value={draft.majorCategory}
-                      onChange={(e) =>
-                        setDraft({
+                <div className="classificationRecordList">
+                  {draft.classifications.map((record, index) => (
+                    <div className="classificationRecord" key={record.id}>
+                      <span>记录 {index + 1}</span>
+                      <label>
+                        1级分类
+                        <select
+                          value={record.level1}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            classifications: draft.classifications.map((item) =>
+                              item.id === record.id ? { ...item, level1: event.target.value } : item,
+                            ),
+                          })}
+                        >
+                          {majorCategories.map((name) => <option key={name} value={name}>{majorCategoryDisplayName(name)}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        2级分类
+                        <input
+                          list="level-2-classifications"
+                          value={record.level2}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            classifications: draft.classifications.map((item) =>
+                              item.id === record.id ? { ...item, level2: event.target.value } : item,
+                            ),
+                          })}
+                        />
+                      </label>
+                      <label>
+                        3级分类
+                        <input
+                          list="level-3-classifications"
+                          value={record.level3}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            classifications: draft.classifications.map((item) =>
+                              item.id === record.id ? { ...item, level3: event.target.value } : item,
+                            ),
+                          })}
+                        />
+                      </label>
+                      <button
+                        className="outline"
+                        disabled={draft.classifications.length === 1}
+                        onClick={() => setDraft({
                           ...draft,
-                          majorCategory: e.target.value as MajorCategory,
-                        })
-                      }
-                    >
-                      {majorCategories.map((x) => (
-                        <option key={x} value={x}>
-                          {x}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    产品大类
-                    <select
-                      value={draft.category1}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          category1: e.target.value,
-                          category2: "",
-                          category3: "未细分",
-                        })
-                      }
-                    >
-                      {["小玩具", "模拟设备", "大型设备"].map((x) => (
-                        <option key={x}>{x}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    区域分类
-                    <select
-                      value={draft.category2}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          category2: e.target.value,
-                          category3: "未细分",
-                        })
-                      }
-                    >
-                      {[
-                        ...new Set([
-                          ...products
-                            .filter((p) => p.category1 === draft.category1)
-                            .map((p) => p.category2),
-                          ...categories
-                            .filter(
-                              (c) =>
-                                c.level === 2 &&
-                                c.parentKey === draft.category1,
-                            )
-                            .map((c) => c.name),
-                        ]),
-                      ].map((x) => (
-                        <option key={x}>{x}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    三级分类
-                    <select
-                      value={draft.category3}
-                      onChange={(e) =>
-                        setDraft({ ...draft, category3: e.target.value })
-                      }
-                    >
-                      <option>未细分</option>
-                      {[...new Set(
-                        categories
-                          .filter(
-                            (c) =>
-                              c.level === 3 &&
-                              c.parentKey ===
-                                `${draft.category1}/${draft.category2}`,
-                          )
-                          .map((c) => c.name),
-                      )].map((name) => (
-                        <option key={name}>{name}</option>
-                      ))}
-                    </select>
-                  </label>
+                          classifications: draft.classifications.filter((item) => item.id !== record.id),
+                        })}
+                        type="button"
+                      >
+                        删除此记录
+                      </button>
+                    </div>
+                  ))}
                 </div>
+                <datalist id="level-2-classifications">
+                  {[...new Set(productViews.map((product) => product.category1))].map((name) => <option key={name} value={name} />)}
+                </datalist>
+                <datalist id="level-3-classifications">
+                  {[...new Set(productViews.map((product) => product.category2))].map((name) => <option key={name} value={name} />)}
+                </datalist>
+                <button
+                  className="outline addClassificationRecordButton"
+                  onClick={() => setDraft({
+                    ...draft,
+                    classifications: [
+                      ...draft.classifications,
+                      {
+                        id: crypto.randomUUID(),
+                        productId: draft.id,
+                        level1: draft.classifications[0]?.level1 || draft.majorCategory,
+                        level2: draft.classifications[0]?.level2 || draft.category1,
+                        level3: "",
+                      },
+                    ],
+                  })}
+                  type="button"
+                >
+                  ＋ 增加分类记录
+                </button>
+                <label className="productTagsField">
+                  标签
+                  <input
+                    value={tagDraftText}
+                    onChange={(event) => setTagDraftText(event.target.value)}
+                    placeholder="例如：配套玩具、芯片款、英文版"
+                  />
+                  <small>多个标签用逗号或顿号分隔，可继续增加。</small>
+                </label>
               </section>
               <section className="editSection">
                 <h3>识别标签</h3>
-                {draft.category1 === "小玩具" ? (
+                {isToy(draft) ? (
                   <p className="muted">配套小玩具无需识别主色。</p>
                 ) : !draft.image ? (
                   <p className="muted">请先上传主图，系统会自动识别主色。</p>
@@ -4918,11 +7803,64 @@ export default function Home() {
               <button onClick={() => setCartOpen(false)}>×</button>
             </div>
             <div className="drawerContent">
+              {cartHierarchyItems.length > 0 && (
+                <div className="cartSelectionBar">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={
+                        cartHierarchyItems.length > 0 &&
+                        cartHierarchyItems.every((item) =>
+                          selectedCartItemKeys.has(
+                            quoteQuantityKey(item.product.id, item.parentId),
+                          ),
+                        )
+                      }
+                      onChange={(event) => {
+                        setSelectedCartItemKeys(
+                          event.target.checked
+                            ? new Set(
+                                cartHierarchyItems.map((item) =>
+                                  quoteQuantityKey(item.product.id, item.parentId),
+                                ),
+                              )
+                            : new Set(),
+                        );
+                      }}
+                    />
+                    全选
+                  </label>
+                  <span>已选 {selectedCartItemKeys.size} 项</span>
+                  <button
+                    className="cartBatchDeleteButton"
+                    disabled={!selectedCartItemKeys.size}
+                    onClick={() => removeCartItems(selectedCartItemKeys)}
+                    type="button"
+                  >
+                    删除已选
+                  </button>
+                </div>
+              )}
               {cartHierarchyItems.map(({ product: p, quantity, parentId }) => (
                 <div
                   className={`cartItem${parentId ? " cartChildItem" : ""}${quantity === 0 ? " cartZeroQuantity" : ""}`}
                   key={`${parentId || "root"}-${p.id}`}
                 >
+                  <label className="cartSelectControl">
+                    <input
+                      aria-label={`选择 ${p.sku || p.name}`}
+                      checked={selectedCartItemKeys.has(
+                        quoteQuantityKey(p.id, parentId),
+                      )}
+                      onChange={(event) =>
+                        toggleCartItemSelection(
+                          quoteQuantityKey(p.id, parentId),
+                          event.target.checked,
+                        )
+                      }
+                      type="checkbox"
+                    />
+                  </label>
                   <div className="cartImage">
                     <Visual p={p} mini />
                   </div>
@@ -4943,45 +7881,77 @@ export default function Home() {
                     </strong>
                   </div>
                   <div className="qty">
-                    <label>
+                    <div className="qtyLabel">
                       <span>数量</span>
-                      <input
-                        aria-label={`${p.sku || p.name} 数量`}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        type="text"
-                        value={
-                          quoteQuantityDrafts[quoteQuantityKey(p.id, parentId)] ??
-                          String(quantity)
-                        }
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          if (!/^\d*$/.test(value)) return;
-                          const quantityKey = quoteQuantityKey(p.id, parentId);
-                          setQuoteQuantityDrafts((current) => ({
-                            ...current,
-                            [quantityKey]: value,
-                          }));
-                          if (value !== "")
-                            setQuoteItemQuantity(p.id, Number(value), parentId);
-                        }}
-                        onBlur={() => {
-                          const quantityKey = quoteQuantityKey(p.id, parentId);
-                          const value = quoteQuantityDrafts[quantityKey];
-                          if (value === undefined) return;
-                          if (value !== "")
-                            setQuoteItemQuantity(p.id, Number(value), parentId);
-                          setQuoteQuantityDrafts((current) => {
-                            const next = { ...current };
-                            delete next[quantityKey];
-                            return next;
-                          });
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") event.currentTarget.blur();
-                        }}
-                      />
-                    </label>
+                      <span className="cartQuantityControl">
+                        <button
+                          aria-label={`${p.sku || p.name} 减少数量`}
+                          disabled={quantity <= 0}
+                          onClick={() =>
+                            setQuoteItemQuantity(p.id, quantity - 1, parentId)
+                          }
+                          type="button"
+                        >
+                          −
+                        </button>
+                        <input
+                          aria-label={`${p.sku || p.name} 数量`}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          type="text"
+                          value={
+                            quoteQuantityDrafts[quoteQuantityKey(p.id, parentId)] ??
+                            String(quantity)
+                          }
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            if (!/^\d*$/.test(value)) return;
+                            const quantityKey = quoteQuantityKey(p.id, parentId);
+                            setQuoteQuantityDrafts((current) => ({
+                              ...current,
+                              [quantityKey]: value,
+                            }));
+                            if (value !== "")
+                              setQuoteItemQuantity(p.id, Number(value), parentId);
+                          }}
+                          onBlur={() => {
+                            const quantityKey = quoteQuantityKey(p.id, parentId);
+                            const value = quoteQuantityDrafts[quantityKey];
+                            if (value === undefined) return;
+                            if (value !== "")
+                              setQuoteItemQuantity(p.id, Number(value), parentId);
+                            setQuoteQuantityDrafts((current) => {
+                              const next = { ...current };
+                              delete next[quantityKey];
+                              return next;
+                            });
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") event.currentTarget.blur();
+                          }}
+                        />
+                        <button
+                          aria-label={`${p.sku || p.name} 增加数量`}
+                          onClick={() =>
+                            setQuoteItemQuantity(p.id, quantity + 1, parentId)
+                          }
+                          type="button"
+                        >
+                          +
+                        </button>
+                      </span>
+                    </div>
+                    <button
+                      className="cartDeleteButton"
+                      onClick={() =>
+                        removeCartItems(
+                          new Set([quoteQuantityKey(p.id, parentId)]),
+                        )
+                      }
+                      type="button"
+                    >
+                      删除
+                    </button>
                   </div>
                 </div>
               ))}
@@ -4997,13 +7967,26 @@ export default function Home() {
                 </button>
                 <button
                   className="primary"
-                  onClick={() => {
-                    setCartOpen(false);
-                    setQuoteActiveTab("summary");
-                    setQuoteOpen(true);
+                  disabled={quotePreparing}
+                  onClick={async () => {
+                    setQuotePreparing(true);
+                    try {
+                      const translated = await bilingualQuoteProducts(quoteCartItems);
+                      setRestoredQuoteProducts(current => [...current.filter(product => !translated.some(item => item.id === product.id)), ...translated]);
+                      setCartOpen(false);
+                      setQuoteActiveTab("all");
+                      setRecordedQuoteHistoryId("");
+                      setQuoteHistoryLineageId("");
+                      setQuoteHistoryNotice("");
+                      setQuoteHistoryMode("new");
+                      setPendingHistoryExport(null);
+                      setQuoteOpen(true);
+                    } catch (error) {
+                      window.alert(error instanceof Error ? error.message : "报价翻译未完成，请重试");
+                    } finally {setQuotePreparing(false);}
                   }}
                 >
-                  生成报价单
+                  {quotePreparing ? "正在准备中英文报价…" : "生成报价单"}
                 </button>
               </div>
             </div>
@@ -5012,28 +7995,38 @@ export default function Home() {
       )}
       {quoteOpen && (
         <div className="quoteOverlay">
-          <div className="quoteShell">
-            <div className="quoteToolbar">
-              <b>报价清单已生成 / Quotation ready · {currency}</b>
-              <div>
-                <button className="outline" onClick={() => setQuoteOpen(false)}>
-                  返回编辑 / Back
-                </button>
-                <button className="outline" onClick={exportQuoteExcel}>
-                  导出 Excel / Export Excel
-                </button>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    setQuoteActiveTab("all");
-                    window.setTimeout(() => window.print(), 120);
-                  }}
-                >
-                  导出 PDF / Export PDF
-                </button>
+            <div className="quoteShell">
+              <div className="quoteToolbar">
+                <b>报价清单已生成 / Quotation ready · {currency}</b>
+                <div>
+                  {quoteHistoryMode === "view" ? (
+                    <a className="outline quoteHistoryLink" href="/quotation-history">
+                      返回报价历史 / Back to history
+                    </a>
+                  ) : (
+                    <>
+                      <a className="outline quoteHistoryLink" href="/quotation-history">
+                        报价历史
+                      </a>
+                      <button className="outline" onClick={() => void exportQuoteExcel()}>
+                        导出 Excel / Export Excel
+                      </button>
+                      <button
+                        className="primary"
+                        disabled={quoteHistorySaving}
+                        onClick={() => void exportQuotePdf()}
+                      >
+                        导出 PDF / Export PDF
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-            <article className="quotePaper quotePaperWide">
+            {quoteHistoryMode === "view" && quoteHistoryNotice && <p className="quoteHistoryQuoteNotice" role="status">{quoteHistoryNotice}</p>}
+            <article
+              className={`quotePaper quotePaperWide${quoteHistoryMode === "view" ? " quotePaperReadOnly" : ""}`}
+              inert={quoteHistoryMode === "view" ? true : undefined}
+            >
               <header className="quoteHeader">
                 <div className="quoteBrand">
                   <CompanyLogo className="quoteLogo" />
@@ -5043,13 +8036,23 @@ export default function Home() {
                   <h1>产品报价清单 / Product Quotation</h1>
                 </div>
               </header>
+              {workplaceNotice && <p role="status">{workplaceNotice}</p>}
               <section className="quoteMeta">
                 <div>
                   <label>项目名称 / Project</label>
                   <input
                     value={quoteProject}
+                    readOnly={Boolean(workspaceProjectId)}
                     onChange={(e) => setQuoteProject(e.target.value)}
                     placeholder="请输入项目名称"
+                  />
+                </div>
+                <div>
+                  <label>项目合同号 / Contract No.</label>
+                  <input
+                    value={quoteContractNo}
+                    onChange={(e) => setQuoteContractNo(e.target.value)}
+                    placeholder="请输入项目合同号"
                   />
                 </div>
                 <div>
@@ -5073,11 +8076,11 @@ export default function Home() {
                   <select
                     className="quoteCurrencySelect"
                     value={priceMode}
-                    onChange={(event) => setPriceMode(event.target.value as PriceMode)}
+                    onChange={(event) => requestPriceModeChange(event.target.value as PriceMode)}
                     aria-label="选择报价币种"
                   >
                     <option value="factory">出厂价 / Factory (CNY)</option>
-                    <option value="vip">国内 VIP 价 / Domestic VIP (CNY)</option>
+                    <option value="vip">连锁品牌价 / Chain Brand Price (CNY)</option>
                     <option value="usd">美元 / USD</option>
                   </select>
                 </div>
@@ -5099,13 +8102,33 @@ export default function Home() {
                 </div>
               </section>
               <section className="quoteLead">
-                <h2>亦玩集团产品报价清单 / Yifun Life Product Quotation</h2>
-                <p>
-                  产品按体验区域归类；同一区域的玩具与模拟设备会汇总在一起。 /
-                  Products are grouped by experience area.
-                </p>
+                <div className="quoteLeadTop">
+                  <div>
+                    <h2>亦玩集团产品报价清单 / Yifun Life Product Quotation</h2>
+                    <p>
+                      产品按体验区域归类；同一区域的玩具与模拟设备会汇总在一起。 /
+                      Products are grouped by experience area.
+                    </p>
+                  </div>
+                  {quoteHistoryMode !== "view" && (
+                    <div className="quoteLeadActions">
+                      <button className="outline" onClick={() => setQuoteOpen(false)} type="button">
+                        返回选品添加 SKU
+                      </button>
+                      <button
+                        className="outline"
+                        disabled={!selectedCartItemKeys.size}
+                        onClick={() => removeCartItems(selectedCartItemKeys)}
+                        type="button"
+                      >
+                        删除已选{selectedCartItemKeys.size ? ` · ${selectedCartItemKeys.size}` : ""}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </section>
               <nav className="quoteAreaTabs" aria-label="报价区域">
+                {quoteImportTemplateRef.current && <button className={quoteActiveTab === "all" ? "active" : ""} onClick={() => setQuoteActiveTab("all")}>完整表单 / Full quotation</button>}
                 <button
                   className={quoteActiveTab === "summary" ? "active" : ""}
                   onClick={() => setQuoteActiveTab("summary")}
@@ -5115,40 +8138,20 @@ export default function Home() {
                 {quoteGroups.map(([area, items]) => (
                   <button
                     className={quoteActiveTab === area ? "active" : ""}
-                    key={area}
+                    key={`${area}-${items[0]?.product.id}`}
                     onClick={() => setQuoteActiveTab(area)}
                   >
                     {area} · {items.length} 项
                   </button>
                 ))}
               </nav>
+              <div className="quoteTableWrap">
               <table className="quoteTable">
+                <colgroup>{(quoteImportTemplateRef.current?.headers || importedQuoteHeaders).map((_, index) => <col key={index} />)}</colgroup>
                 <thead>
+                  <tr className="sourceFormTitle"><th colSpan={15}>{quoteImportTemplateRef.current?.title || "亦玩集团+地区+品牌名&报价清单"}</th><th colSpan={2}>设计师：{designerName || "—"}</th><th>商务：{salesName || "—"}</th></tr>
                   <tr>
-                    <th className="quoteSerialHeader">
-                      <span>序号</span>
-                      <span>No.</span>
-                    </th>
-                    <th>款号 / SKU</th>
-                    <th>产品名称 / Product</th>
-                    <th>图片展示 / Image</th>
-                    <th>玩具品牌 / Brand</th>
-                    <th>规格/尺寸 / Size</th>
-                    <th>单位 / Unit</th>
-                    <th>数量 / Qty</th>
-                    <th>
-                      {currency === "USD"
-                        ? "美元单价 / USD Unit Price"
-                        : "人民币单价 / CNY Unit Price"}
-                    </th>
-                    <th>
-                      {currency === "USD"
-                        ? "美元报价 / USD Amount"
-                        : "人民币报价 / CNY Amount"}
-                    </th>
-                    <th>色卡编号 / Colour</th>
-                    <th>体积 / Volume</th>
-                    <th>备注 / Remarks</th>
+                    {(quoteImportTemplateRef.current?.headers || importedQuoteHeaders).map((lines, index) => <th key={index}>{lines.map((line, lineIndex) => <span key={lineIndex}>{line}</span>)}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -5156,8 +8159,8 @@ export default function Home() {
                     ? quoteGroups.flatMap(([area, items]) => {
                       const isExpanded = quoteExpandedAreas.has(area);
                       return [
-                        <tr className="quoteAreaSummaryRow" key={`${area}-summary`}>
-                          <td colSpan={7}>
+                        <tr className="quoteAreaSummaryRow" key={`${area}-${items[0]?.product.id}-summary`}>
+                          <td colSpan={12}>
                             <button
                               aria-expanded={isExpanded}
                               className="quoteAreaExpand"
@@ -5173,7 +8176,7 @@ export default function Home() {
                               className="quoteAreaExpand quoteAreaTotal"
                               onClick={() => toggleQuoteArea(area)}
                             >
-                              {money(quoteAreaSubtotal(items), currency)}
+                              {money(quoteAreaSubtotal(items), currency, 2)}
                             </button>
                           </td>
                         </tr>,
@@ -5188,11 +8191,8 @@ export default function Home() {
                       ];
                     })
                     : quoteVisibleGroups.flatMap(([area, items]) => [
-                    <tr className="areaRow" key={`${area}-area`}>
-                      <td colSpan={10}>{area}</td>
-                      <td className="quoteAreaSubtotal" colSpan={3}>
-                        区域小计 / Area subtotal：{money(quoteAreaSubtotal(items), currency)}
-                      </td>
+                    <tr className="areaRow" key={`${area}-${items[0]?.product.id}-area`}>
+                      <td></td><td colSpan={13}>{area}</td><td colSpan={2}>{money(items.every(item => excludedFromQuote(item.product) || item.product.usd != null) ? items.reduce((sum, item) => sum + (item.product.usd || 0) * billableQuantity(item.product, item.quantity), 0) : null, "USD", 2)}</td><td colSpan={2}></td>
                     </tr>,
                     ...items.map((item) =>
                       renderQuoteItemRow(
@@ -5200,19 +8200,19 @@ export default function Home() {
                         quoteItemsInOrder.indexOf(item) + 1,
                       ),
                     ),
-                    <tr className="quoteAreaSubtotalRow" key={`${area}-subtotal`}>
-                      <td colSpan={10}>区域小计 / Area Subtotal</td>
-                      <td colSpan={3}>{money(quoteAreaSubtotal(items), currency)}</td>
+                    <tr className="quoteAreaSubtotalRow" key={`${area}-${items[0]?.product.id}-subtotal`}>
+                      <td colSpan={15}>区域小计 / Area Subtotal</td>
+                      <td colSpan={3}>{money(quoteAreaSubtotal(items), currency, 2)}</td>
                     </tr>,
                   ])}
                 </tbody>
                 <tfoot>
                   <tr className="costRow">
                     <td className="feeLabel" colSpan={8}>
-                      包装费（含部分产品特定包装箱） / Packaging fee (including
-                      special packing cases)
+                      {quoteImportTemplateRef.current?.feeLabels?.packaging || "包装费（含部分产品特定包装箱） / Packaging fee (including special packing cases)"}
                     </td>
-                    <td className="feeAmount" colSpan={3}>
+                    <td colSpan={currency === "USD" ? 5 : 3}></td>
+                    <td className="feeAmount" colSpan={1}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5225,11 +8225,12 @@ export default function Home() {
                         }
                       />
                     </td>
-                    <td className="feeNote" colSpan={2}>&nbsp;</td>
+                    <td className="feeNote sourceFormNote" colSpan={currency === "USD" ? 4 : 6}>{quoteImportTemplateRef.current?.feeNotes?.packaging || ""}</td>
                   </tr>
                   <tr className="costRow">
-                    <td className="feeLabel" colSpan={8}>除甲醛 / Formaldehyde removal</td>
-                    <td className="feeAmount" colSpan={3}>
+                    <td className="feeLabel" colSpan={8}>{quoteImportTemplateRef.current?.feeLabels?.formaldehyde || "除甲醛 / Formaldehyde removal"}</td>
+                    <td colSpan={currency === "USD" ? 5 : 3}></td>
+                    <td className="feeAmount" colSpan={1}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5242,14 +8243,14 @@ export default function Home() {
                         }
                       />
                     </td>
-                    <td className="feeNote" colSpan={2}>&nbsp;</td>
+                    <td className="feeNote sourceFormNote" colSpan={currency === "USD" ? 4 : 6}>{quoteImportTemplateRef.current?.feeNotes?.formaldehyde || ""}</td>
                   </tr>
                   <tr className="costRow">
                     <td className="feeLabel" colSpan={8}>
-                      运输费（含装货不含卸货） / Shipping fee (loading included,
-                      unloading excluded)
+                      {quoteImportTemplateRef.current?.feeLabels?.shipping || "运输费（含装货不含卸货） / Shipping fee (loading included, unloading excluded)"}
                     </td>
-                    <td className="feeAmount" colSpan={3}>
+                    <td colSpan={currency === "USD" ? 5 : 3}></td>
+                    <td className="feeAmount" colSpan={1}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5262,11 +8263,11 @@ export default function Home() {
                         }
                       />
                     </td>
-                    <td className="feeNote" colSpan={2}>&nbsp;</td>
+                    <td className="feeNote sourceFormNote" colSpan={currency === "USD" ? 4 : 6}>{quoteImportTemplateRef.current?.feeNotes?.shipping || ""}</td>
                   </tr>
                   <tr className="costRow">
                     <td className="feeLabel" colSpan={8}>
-                      安装费 / Installation fee{" "}
+                      {quoteImportTemplateRef.current?.feeLabels?.installation || "安装费 / Installation fee"}{" "}
                       <select
                         value={
                           installationIncludesTravel ? "included" : "excluded"
@@ -5285,7 +8286,8 @@ export default function Home() {
                         </option>
                       </select>
                     </td>
-                    <td className="feeAmount" colSpan={3}>
+                    <td colSpan={currency === "USD" ? 5 : 3}></td>
+                    <td className="feeAmount" colSpan={1}>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -5298,11 +8300,11 @@ export default function Home() {
                         }
                       />
                     </td>
-                    <td className="feeNote" colSpan={2}>&nbsp;</td>
+                    <td className="feeNote sourceFormNote" colSpan={currency === "USD" ? 4 : 6}>{quoteImportTemplateRef.current?.feeNotes?.installation || ""}</td>
                   </tr>
                   <tr className="feeSummaryRow">
                     <td className="feeLabel" colSpan={8}>
-                      小计（不含税） / Subtotal (tax excluded)
+                      {quoteImportTemplateRef.current?.feeLabels?.subtotal || "小计（不含税） / Subtotal (tax excluded)"}
                       <span className="taxControl">
                         <label htmlFor="quote-tax-mode">税额 / Tax</label>
                         <select
@@ -5322,18 +8324,20 @@ export default function Home() {
                         )}
                       </span>
                     </td>
-                    <td className="feeAmount" colSpan={3}>{money(preTax, currency)}</td>
-                    <td className="feeNote" colSpan={2}>
+                    <td colSpan={currency === "USD" ? 5 : 3}></td>
+                    <td className="feeAmount" colSpan={1}>{money(preTax, currency, 2)}</td>
+                    <td className="feeNote" colSpan={currency === "USD" ? 4 : 6}>
                       产品与附加费用合计 / Products and additional fees
                     </td>
                   </tr>
-                  {currency === "CNY" && includeTax && (
+                  {(currency === "CNY" && includeTax || quoteImportTemplateRef.current?.feeRows?.tax) && (
                     <tr className="costRow">
                       <td className="feeLabel" colSpan={8}>
-                        税额 13%（可抵税） / Tax 13% (deductible)
+                        {quoteImportTemplateRef.current?.feeLabels?.tax || "税额 13%（可抵税） / Tax 13% (deductible)"}
                       </td>
-                      <td className="feeAmount" colSpan={3}>{money(tax, currency)}</td>
-                      <td className="feeNote" colSpan={2}>
+                      <td colSpan={currency === "USD" ? 5 : 3}></td>
+                      <td className="feeAmount" colSpan={1}>{money(tax, currency, 2)}</td>
+                      <td className="feeNote" colSpan={currency === "USD" ? 4 : 6}>
                         按不含税小计计算 / Calculated on pre-tax subtotal
                       </td>
                     </tr>
@@ -5349,7 +8353,8 @@ export default function Home() {
                           隐藏 / Hide
                         </button>
                       </td>
-                      <td className="feeAmount" colSpan={3}>
+                      <td colSpan={currency === "USD" ? 5 : 3}></td>
+                    <td className="feeAmount" colSpan={1}>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -5362,11 +8367,11 @@ export default function Home() {
                           }
                         />
                       </td>
-                      <td className="feeNote" colSpan={2}>&nbsp;</td>
+                      <td className="feeNote" colSpan={currency === "USD" ? 4 : 6}>&nbsp;</td>
                     </tr>
                   ) : (
                     <tr className="showDeduction">
-                      <td colSpan={13}>
+                      <td colSpan={18}>
                         <button onClick={() => setShowDesignDeduction(true)}>
                           ＋ 显示设计费抵扣 / Show design fee deduction
                         </button>
@@ -5375,12 +8380,13 @@ export default function Home() {
                   )}
                   <tr className="grandTotal">
                     <td className="feeLabel" colSpan={8}>
-                      {currency === "CNY" && includeTax
+                      {quoteImportTemplateRef.current?.feeLabels?.total || (currency === "CNY" && includeTax
                         ? "总计（含税） / Total (tax included)"
-                        : "总计（不含税） / Total (tax excluded)"}
+                        : "总计（不含税） / Total (tax excluded)")}
                     </td>
-                    <td className="feeAmount" colSpan={3}>{money(totalWithTax, currency)}</td>
-                    <td className="feeNote" colSpan={2}>
+                    <td colSpan={currency === "USD" ? 5 : 3}></td>
+                    <td className="feeAmount" colSpan={1}>{money(totalWithTax, currency, 2)}</td>
+                    <td className="feeNote" colSpan={currency === "USD" ? 4 : 6}>
                       {showDesignDeduction && fees.designDeduction > 0
                         ? currency === "CNY" && includeTax
                           ? "已含税并扣除设计费 / Tax included, design deduction applied"
@@ -5390,8 +8396,10 @@ export default function Home() {
                           : "未含税 / Tax excluded"}
                     </td>
                   </tr>
+                  {quoteImportTemplateRef.current?.footerNotes?.map((note, index) => <tr key={`note-${index}`}><td colSpan={18} className="sourceFormNote">{note}</td></tr>)}
                 </tfoot>
               </table>
+              </div>
               <footer className="quoteFooter">
                 <b>上海亦玩游乐设备集团有限公司 / Yifun Life Group</b>
                 <p>Infinite Idea, Endless Joy.</p>
@@ -5416,136 +8424,60 @@ export default function Home() {
                 </div>
               </header>
               <section className="quotePrintMeta">
-                <div>
-                  <PrintBilingual zh="项目名称" en="Project" />
-                  <b>{printValue(quoteProject)}</b>
-                </div>
-                <div>
-                  <PrintBilingual zh="设计师名称" en="Designer" />
-                  <b>{printValue(designerName)}</b>
-                </div>
-                <div>
-                  <PrintBilingual zh="业务员名称" en="Sales" />
-                  <b>{printValue(salesName)}</b>
-                </div>
-                <div>
-                  <PrintBilingual zh="报价币种" en="Currency" />
-                  <b>{currency}</b>
-                </div>
-                <div>
-                  <PrintBilingual zh="报价日期" en="Date" />
-                  <b>{new Date().toLocaleDateString("zh-CN")}</b>
-                </div>
-                <div>
-                  <PrintBilingual zh="报价产品" en="Items" />
-                  <b>{quoteCartItems.length}</b>
-                </div>
+                <div><PrintBilingual zh="项目名称" en="Project" /><b>{printValue(quoteProject)}</b></div>
+                <div><PrintBilingual zh="设计师名称" en="Designer" /><b>{printValue(designerName)}</b></div>
+                <div><PrintBilingual zh="业务员名称" en="Sales" /><b>{printValue(salesName)}</b></div>
+                <div><PrintBilingual zh="报价币种" en="Currency" /><b>{currency}</b></div>
+                <div><PrintBilingual zh="报价日期" en="Date" /><b>{new Date().toLocaleDateString("zh-CN")}</b></div>
+                <div><PrintBilingual zh="报价产品" en="Items" /><b>{quoteCartItems.length}</b></div>
               </section>
               {quoteGroups.map(([area, items]) => {
                 const areaLabel = splitBilingual(area);
+                const title = <div className="quotePrintAreaTitle"><PrintBilingual {...areaLabel} /><span>{items.length} 项<small>{items.length} Items</small></span></div>;
+                const columns = <div className="quotePrintColumnHeader">
+                  <PrintBilingual zh="序号" en="No." /><PrintBilingual zh="图片" en="Image" /><PrintBilingual zh="产品名称" en="Product" /><PrintBilingual zh="品牌" en="Brand" /><PrintBilingual zh="规格/尺寸" en="Size" /><PrintBilingual zh="单位" en="Unit" /><PrintBilingual zh="数量" en="Qty" />
+                  <PrintBilingual zh={currency === "USD" ? "美元单价" : "人民币单价"} en={currency === "USD" ? "USD Unit Price" : "CNY Unit Price"} />
+                  <PrintBilingual zh={currency === "USD" ? "美元报价" : "人民币报价"} en={currency === "USD" ? "USD Amount" : "CNY Amount"} />
+                  <PrintBilingual zh="颜色" en="Colour" /><PrintBilingual zh="体积" en="Volume" /><PrintBilingual zh="备注" en="Remarks" />
+                </div>;
+                const subtotal = <div className="quotePrintAreaSubtotal"><PrintBilingual zh="区域小计" en="Area subtotal" /><strong className="quotePrintAmount">{money(quoteAreaSubtotal(items), currency)}</strong></div>;
                 return (
                   <section className="quotePrintArea" key={`print-${area}`}>
-                    <div className="quotePrintAreaTitle">
-                      <PrintBilingual {...areaLabel} />
-                      <span>
-                        {items.length} 项
-                        <small>{items.length} Items</small>
-                      </span>
-                    </div>
-                    <div className="quotePrintColumnHeader">
-                      <PrintBilingual zh="序号" en="No." />
-                      <PrintBilingual zh="图片" en="Image" />
-                      <PrintBilingual zh="产品名称" en="Product" />
-                      <PrintBilingual zh="品牌" en="Brand" />
-                      <PrintBilingual zh="规格/尺寸" en="Size" />
-                      <PrintBilingual zh="单位" en="Unit" />
-                      <PrintBilingual zh="数量" en="Qty" />
-                      <PrintBilingual
-                        zh={currency === "USD" ? "美元单价" : "人民币单价"}
-                        en={currency === "USD" ? "USD Unit Price" : "CNY Unit Price"}
-                      />
-                      <PrintBilingual
-                        zh={currency === "USD" ? "美元报价" : "人民币报价"}
-                        en={currency === "USD" ? "USD Amount" : "CNY Amount"}
-                      />
-                      <PrintBilingual zh="颜色" en="Colour" />
-                      <PrintBilingual zh="体积" en="Volume" />
-                      <PrintBilingual zh="备注" en="Remarks" />
-                    </div>
-                    {items.map((item) =>
-                      renderPrintQuoteItem(
-                        item,
-                        quoteItemsInOrder.indexOf(item) + 1,
-                      ),
+                    {items.length === 1 ? (
+                      <div className="quotePrintAreaSingle">
+                        {title}
+                        {columns}
+                        {renderPrintQuoteItem(items[0], quoteItemsInOrder.indexOf(items[0]) + 1)}
+                        {subtotal}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="quotePrintAreaOpening">
+                          {title}
+                          {columns}
+                          {renderPrintQuoteItem(items[0], quoteItemsInOrder.indexOf(items[0]) + 1)}
+                        </div>
+                        {items.slice(1, -1).map((item) => renderPrintQuoteItem(item, quoteItemsInOrder.indexOf(item) + 1))}
+                        <div className="quotePrintAreaTail">
+                          {renderPrintQuoteItem(items[items.length - 1], quoteItemsInOrder.indexOf(items[items.length - 1]) + 1)}
+                          {subtotal}
+                        </div>
+                      </>
                     )}
-                    <div className="quotePrintAreaSubtotal">
-                      <PrintBilingual zh="区域小计" en="Area subtotal" />
-                      <strong className="quotePrintAmount">
-                        {money(quoteAreaSubtotal(items), currency)}
-                      </strong>
-                    </div>
                   </section>
                 );
               })}
               <section className="quotePrintFees">
-                <div className="quotePrintFee">
-                  <PrintBilingual
-                    zh="包装费（含部分产品特定包装箱）"
-                    en="Packaging fee (including special packing cases)"
-                  />
-                  <strong className="quotePrintAmount">{money(fees.packaging, currency)}</strong>
-                </div>
-                <div className="quotePrintFee">
-                  <PrintBilingual zh="除甲醛" en="Formaldehyde removal" />
-                  <strong className="quotePrintAmount">{money(fees.formaldehyde, currency)}</strong>
-                </div>
-                <div className="quotePrintFee">
-                  <PrintBilingual
-                    zh="运输费（含装货不含卸货）"
-                    en="Shipping fee (loading included, unloading excluded)"
-                  />
-                  <strong className="quotePrintAmount">{money(fees.shipping, currency)}</strong>
-                </div>
-                <div className="quotePrintFee">
-                  <PrintBilingual
-                    zh={installationIncludesTravel ? "安装费（含工人出行食宿）" : "安装费（不含工人出行食宿）"}
-                    en={installationIncludesTravel ? "Installation fee (travel and accommodation included)" : "Installation fee (travel and accommodation excluded)"}
-                  />
-                  <strong className="quotePrintAmount">{money(fees.installation, currency)}</strong>
-                </div>
-                <div className="quotePrintFee quotePrintSubtotal">
-                  <PrintBilingual zh="小计（不含税）" en="Subtotal (tax excluded)" />
-                  <strong className="quotePrintAmount">{money(preTax, currency)}</strong>
-                </div>
-                {currency === "CNY" && includeTax && (
-                  <div className="quotePrintFee">
-                    <PrintBilingual zh="税额 13%（可抵税）" en="Tax 13% (deductible)" />
-                    <strong className="quotePrintAmount">{money(tax, currency)}</strong>
-                  </div>
-                )}
-                {showDesignDeduction && fees.designDeduction > 0 && (
-                  <div className="quotePrintFee">
-                    <PrintBilingual zh="设计费抵扣" en="Design fee deduction" />
-                    <strong className="quotePrintAmount">
-                      −{money(fees.designDeduction, currency)}
-                    </strong>
-                  </div>
-                )}
-                <div className="quotePrintFee quotePrintGrandTotal">
-                  <PrintBilingual
-                    zh={currency === "CNY" && includeTax ? "总计（含税）" : "总计（不含税）"}
-                    en={currency === "CNY" && includeTax ? "Total (tax included)" : "Total (tax excluded)"}
-                  />
-                  <strong className="quotePrintAmount">{money(totalWithTax, currency)}</strong>
-                </div>
+                <div className="quotePrintFee"><PrintBilingual zh="包装费（含部分产品特定包装箱）" en="Packaging fee (including special packing cases)" /><strong className="quotePrintAmount">{money(fees.packaging, currency)}</strong></div>
+                <div className="quotePrintFee"><PrintBilingual zh="除甲醛" en="Formaldehyde removal" /><strong className="quotePrintAmount">{money(fees.formaldehyde, currency)}</strong></div>
+                <div className="quotePrintFee"><PrintBilingual zh="运输费（含装货不含卸货）" en="Shipping fee (loading included, unloading excluded)" /><strong className="quotePrintAmount">{money(fees.shipping, currency)}</strong></div>
+                <div className="quotePrintFee"><PrintBilingual zh={installationIncludesTravel ? "安装费（含工人出行食宿）" : "安装费（不含工人出行食宿）"} en={installationIncludesTravel ? "Installation fee (travel and accommodation included)" : "Installation fee (travel and accommodation excluded)"} /><strong className="quotePrintAmount">{money(fees.installation, currency)}</strong></div>
+                <div className="quotePrintFee quotePrintSubtotal"><PrintBilingual zh="小计（不含税）" en="Subtotal (tax excluded)" /><strong className="quotePrintAmount">{money(preTax, currency)}</strong></div>
+                {currency === "CNY" && includeTax && <div className="quotePrintFee"><PrintBilingual zh="税额 13%（可抵税）" en="Tax 13% (deductible)" /><strong className="quotePrintAmount">{money(tax, currency)}</strong></div>}
+                {showDesignDeduction && fees.designDeduction > 0 && <div className="quotePrintFee"><PrintBilingual zh="设计费抵扣" en="Design fee deduction" /><strong className="quotePrintAmount">−{money(fees.designDeduction, currency)}</strong></div>}
+                <div className="quotePrintFee quotePrintGrandTotal"><PrintBilingual zh={currency === "CNY" && includeTax ? "总计（含税）" : "总计（不含税）"} en={currency === "CNY" && includeTax ? "Total (tax included)" : "Total (tax excluded)"} /><strong className="quotePrintAmount">{money(totalWithTax, currency)}</strong></div>
               </section>
-              <footer className="quotePrintFooter">
-                <span>{printValue(companyAddress)}</span>
-                <span>
-                  第 <i /> 页
-                  <small>Page <i /></small>
-                </span>
-              </footer>
+              <footer className="quotePrintFooter"><span>{printValue(companyAddress)}</span><span>第 <i /> 页<small>Page <i /></small></span></footer>
             </article>
           </div>
         </div>

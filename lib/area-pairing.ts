@@ -18,7 +18,7 @@ export const pairedAreasByMajor: Record<MajorArea, string[]> = {
     "阅读区", "桌面游戏区", "洗衣房区", "BABY区", "育婴室区", "舞台区", "花店区",
   ],
   "农牧生活 / Agro-pastoral Life": [
-    "牧场区", "种植采摘区", "鱼池区",
+    "牧场区", "果蔬区", "未来果蔬区", "种植区", "未来种植区", "鱼池区",
   ],
   "动物世界 / Animal World": ["宠物医院区", "沐浴区", "恐龙区"],
   "车生活 / Car Life": ["赛车区", "修车区", "洗车区"],
@@ -76,9 +76,6 @@ const exactAreaMap: Record<string, string> = {
   母鸡生蛋区域配套玩具: "牧场区",
   母鸡生蛋区: "牧场区",
   宠物之家区: "宠物医院区",
-  种植采摘区域配套玩具: "种植采摘区",
-  果蔬采摘区域配套玩具: "种植采摘区",
-  果蔬采摘区: "种植采摘区",
   鱼池区域配套玩具: "鱼池区",
   恐龙区设备: "恐龙区",
   恐龙区域配套玩具: "恐龙区",
@@ -101,6 +98,10 @@ export function pairedArea(sourceArea: string, productName: string) {
   // 分类整理后，模拟设备与配套玩具会共同使用标准区域名。
   // 这些名称本身就是可配对区域，不应再回退到旧的来源分类规则。
   if (canonicalPairedAreas.has(sourceArea)) return sourceArea;
+  if (/果蔬采摘/.test(sourceArea))
+    return has(productName, /芯片|chip/i) ? "未来果蔬区" : "果蔬区";
+  if (/种植采摘/.test(sourceArea))
+    return has(productName, /芯片|chip/i) ? "未来种植区" : "种植区";
   if (exactAreaMap[sourceArea]) return exactAreaMap[sourceArea];
   const text = productName;
 
@@ -120,8 +121,8 @@ export function pairedArea(sourceArea: string, productName: string) {
   }
   if (sourceArea === "公主房、化妆间区域配套玩具") return "化妆区";
   if (sourceArea === "牧场区") {
-    if (has(text, /种植|采摘/)) return "种植采摘区";
-    if (has(text, /果蔬|蔬菜|水果/)) return "种植采摘区";
+    if (has(text, /种植|采摘/)) return has(text, /芯片|chip/i) ? "未来种植区" : "种植区";
+    if (has(text, /果蔬|蔬菜|水果/)) return has(text, /芯片|chip/i) ? "未来果蔬区" : "果蔬区";
     if (has(text, /鱼|钓/)) return "鱼池区";
     return "牧场区";
   }

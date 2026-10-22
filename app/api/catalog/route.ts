@@ -6,11 +6,16 @@ import {
   catalogProducts,
   catalogCategories,
   kitchenPackages,
+  productClassifications,
   productOverrides,
   productRecommendations,
+  productTags,
 } from "../../../db/schema";
 import { getLoginSession } from "../../../lib/auth";
 import { isPairableArea, pairedArea } from "../../../lib/area-pairing";
+
+import { sharedExchangeRate } from "../../../lib/costing-catalog";
+import { usdFromCny } from "../../../lib/currency";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +81,26 @@ async function ensureAreaPairingRuleTable() {
   ).run();
 }
 
+async function ensureBranchPriceColumn() {
+  const columns = await env.DB
+    .prepare("PRAGMA table_info(product_overrides)")
+    .all<{ name: string }>();
+  if (columns.results.some((column) => column.name === "branch_price")) return;
+
+  try {
+    await env.DB
+      .prepare("ALTER TABLE product_overrides ADD COLUMN branch_price real")
+      .run();
+  } catch {
+    const checkedColumns = await env.DB
+      .prepare("PRAGMA table_info(product_overrides)")
+      .all<{ name: string }>();
+    if (!checkedColumns.results.some((column) => column.name === "branch_price")) {
+      throw new Error("Unable to add the branch price column");
+    }
+  }
+}
+
 async function getStoredCatalogBackup() {
   const object = await env.PRODUCT_IMAGES.get("catalog/catalog.json");
   if (!object) return [];
@@ -105,21 +130,26 @@ async function getStoredCatalogBackup() {
 }
 
 export async function GET(request: Request) {
-  if (!(await getLoginSession(request)))
+  const session = await getLoginSession(request);
+  if (!session)
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   await Promise.all([
     ensureRecommendationQuantityColumn(),
     ensureAreaPairingRuleTable(),
+    ensureBranchPriceColumn(),
   ]);
   const db = getDb();
-  const [products, overrides, categories, recommendations, packages, areaRules] = await Promise.all([
+  const [products, overrides, classifications, tags, categories, recommendations, packages, areaRules] = await Promise.all([
     db.select().from(catalogProducts),
     db.select().from(productOverrides),
+    db.select().from(productClassifications),
+    db.select().from(productTags),
     db.select().from(catalogCategories),
     db.select().from(productRecommendations),
     db.select().from(kitchenPackages),
     db.select().from(areaPairingRules),
   ]);
+  const exchangeRate = await sharedExchangeRate();
   const catalog = products.length
     ? products.map((product) => ({
         id: product.id,
@@ -141,8 +171,18 @@ export async function GET(request: Request) {
       }))
     : await getStoredCatalogBackup();
   return Response.json({
-    products: catalog,
-    overrides,
+    products: catalog.map(product => {
+      return { ...product, usd: usdFromCny(product.factory, exchangeRate), usdExchangeRate: exchangeRate };
+    }),
+    overrides: overrides.map(({ cost, branchPrice, ...override }) => {
+      if (session.role === "ceo") return { ...override, cost, branchPrice };
+      if (session.role === "admin" || session.role === "management") {
+        return { ...override, branchPrice };
+      }
+      return override;
+    }),
+    classifications,
+    tags,
     categories,
     recommendations: recommendations.map(recommendationForClient),
     packages,
@@ -153,22 +193,64 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   if (!(await requireAdmin(request)))
     return Response.json({ error: "仅管理员可修改产品资料" }, { status: 403 });
-  const { productId, patch } = (await request.json()) as {
+  await ensureBranchPriceColumn();
+  const { productId, patch: inputPatch, classifications, tags, relatedProducts, editedFields } = (await request.json()) as {
     productId: string;
     patch: Record<string, unknown>;
+    classifications?: Array<{ id?: string; level1: string; level2: string; level3: string }>;
+    tags?: string[];
+    relatedProducts?: Array<{ relatedProductId: string; quantity: number }>;
+    editedFields?: string[];
   };
+  const writable = new Set(["name", "price", "imageUrl", "volume", "specification", "unit", "cost", "branchPrice", "supplyMethod", "stock", "majorCategory", "category1", "category2", "category3", "colorTag", "hasScreen", "isRecommended"]);
+  const patch = Object.fromEntries(Object.entries(inputPatch || {}).filter(([key]) => writable.has(key)));
+  // Older editors sent hidden cost defaults with every save. Accept only an explicit cost edit.
+  if (!editedFields?.includes("cost") && Object.keys(patch).length !== 1) delete patch.cost;
   if (!productId)
     return Response.json({ error: "productId is required" }, { status: 400 });
+  const db = getDb();
+  const [product, currentOverride] = await Promise.all([
+    db.query.catalogProducts.findFirst({ where: eq(catalogProducts.id, productId) }),
+    db.query.productOverrides.findFirst({ where: eq(productOverrides.productId, productId) }),
+  ]);
+  if (!product)
+    return Response.json({ error: "产品不存在" }, { status: 404 });
+  const productType = String(
+    patch.category3 ??
+      currentOverride?.category3 ??
+      (product.family === "小玩具" ? "配套玩具" : "主设备"),
+  );
+  const specification = String(
+    patch.specification ?? currentOverride?.specification ?? product.specification ?? "",
+  ).trim();
+  if (productType === "主设备" && !specification)
+    return Response.json(
+      { error: "主设备必须填写尺寸后才能保存" },
+      { status: 400 },
+    );
   const values = {
     productId,
     ...patch,
     updatedAt: new Date().toISOString(),
   } as typeof productOverrides.$inferInsert;
-  await getDb()
-    .insert(productOverrides)
-    .values(values)
-    .onConflictDoUpdate({ target: productOverrides.productId, set: values });
-  return Response.json({ override: values });
+  if (classifications && (!classifications.length || classifications.some((record) => !record.level1?.trim() || !record.level2?.trim() || !record.level3?.trim())))
+    return Response.json({ error: "每条分类记录必须完整填写" }, { status: 400 });
+  if (relatedProducts?.some((record) => !record.relatedProductId || !Number.isInteger(record.quantity) || record.quantity < 1))
+    return Response.json({ error: "搭配数量必须为正整数" }, { status: 400 });
+  const records = classifications?.map((record) => ({ ...record, id: record.id || crypto.randomUUID(), productId, createdAt: values.updatedAt, updatedAt: values.updatedAt }));
+  const normalizedTags = tags ? [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))] : undefined;
+  const queries = [db.insert(productOverrides).values(values).onConflictDoUpdate({ target: productOverrides.productId, set: values })];
+  // D1 batch commits all product fields, classifications and pairings together.
+  const changes: Parameters<typeof db.batch>[0][number][] = [
+    ...queries,
+    ...(records ? [db.delete(productClassifications).where(eq(productClassifications.productId, productId)), db.insert(productClassifications).values(records)] : []),
+    ...(normalizedTags ? [db.delete(productTags).where(eq(productTags.productId, productId)), ...(normalizedTags.length ? [db.insert(productTags).values(normalizedTags.map((tag) => ({ productId, tag })))] : [])] : []),
+    ...(relatedProducts ? [db.delete(productRecommendations).where(eq(productRecommendations.productId, productId))] : []),
+  ];
+  for (let index = 0; relatedProducts && index < relatedProducts.length; index += 25)
+    changes.push(db.insert(productRecommendations).values(relatedProducts.slice(index, index + 25).map((record) => ({ ...record, productId }))));
+  await db.batch([changes[0], ...changes.slice(1)]);
+  return Response.json({ override: values, classifications: records, tags: normalizedTags, recommendations: relatedProducts?.map((record) => ({ ...record, productId })) });
 }
 
 export async function POST(request: Request) {
@@ -178,6 +260,7 @@ export async function POST(request: Request) {
   const payload = (await request.json()) as {
     action:
       | "category"
+      | "classifications"
       | "recommendations"
       | "kitchenPackage"
       | "organizeToyTiers"
@@ -185,6 +268,13 @@ export async function POST(request: Request) {
       | "areaPairingRules"
       | "catalogImport";
     category?: typeof catalogCategories.$inferInsert;
+    classifications?: Array<{
+      id?: string;
+      level1: string;
+      level2: string;
+      level3: string;
+    }>;
+    tags?: string[];
     productId?: string;
     relatedIds?: string[];
     relatedProducts?: Array<{ relatedProductId: string; quantity: number }>;
@@ -201,6 +291,53 @@ export async function POST(request: Request) {
   };
   const db = getDb();
   await ensureAreaPairingRuleTable();
+  if (payload.action === "classifications" && payload.productId) {
+    const now = new Date().toISOString();
+    const seenPaths = new Set<string>();
+    const records = (payload.classifications || []).flatMap((record) => {
+      const level1 = String(record.level1 || "").trim();
+      const level2 = String(record.level2 || "").trim();
+      const level3 = String(record.level3 || "").trim();
+      const key = `${level1}\u0000${level2}\u0000${level3}`;
+      if (!level1 || !level2 || !level3 || seenPaths.has(key)) return [];
+      seenPaths.add(key);
+      return [{
+        id: record.id || crypto.randomUUID(),
+        productId: payload.productId!,
+        level1,
+        level2,
+        level3,
+        createdAt: now,
+        updatedAt: now,
+      }];
+    });
+    if (!records.length)
+      return Response.json({ error: "每个 SKU 至少需要一条完整分类记录" }, { status: 400 });
+    const normalizedTags = [...new Set(
+      (payload.tags || []).map((tag) => String(tag).trim()).filter(Boolean),
+    )];
+    await db.delete(productClassifications).where(eq(productClassifications.productId, payload.productId));
+    await db.insert(productClassifications).values(records);
+    await db.delete(productTags).where(eq(productTags.productId, payload.productId));
+    if (normalizedTags.length)
+      await db.insert(productTags).values(
+        normalizedTags.map((tag) => ({ productId: payload.productId!, tag })),
+      );
+    const primary = records[0];
+    const legacyValues = {
+      productId: payload.productId,
+      majorCategory: primary.level1,
+      category1: primary.level2,
+      category2: primary.level3,
+      category3: normalizedTags[0] || "",
+      updatedAt: now,
+    };
+    await db
+      .insert(productOverrides)
+      .values(legacyValues)
+      .onConflictDoUpdate({ target: productOverrides.productId, set: legacyValues });
+    return Response.json({ classifications: records, tags: normalizedTags });
+  }
   if (payload.action === "areaPairingRules" && payload.area && payload.rules) {
     const values = {
       area: payload.area,
@@ -220,7 +357,7 @@ export async function POST(request: Request) {
       db.select().from(catalogProducts),
       db.select().from(productOverrides),
     ]);
-    const productById = new Map(existingProducts.map((product) => [product.id, product]));
+    const productById = new Map<string, typeof catalogProducts.$inferInsert>(existingProducts.map((product) => [product.id, product]));
     const overrideByProductId = new Map(
       existingOverrides.map((override) => [override.productId, override]),
     );
@@ -291,10 +428,11 @@ export async function POST(request: Request) {
     return Response.json({ category: payload.category }, { status: 201 });
   }
   if (payload.action === "recommendations" && payload.productId) {
+    const previousRecommendations = await db.select().from(productRecommendations).where(eq(productRecommendations.productId, payload.productId));
     const relatedProducts = payload.relatedProducts ||
       (payload.relatedIds || []).map((relatedProductId) => ({
         relatedProductId,
-        quantity: 1,
+        quantity: previousRecommendations.find((record) => record.relatedProductId === relatedProductId)?.quantity || 1,
       }));
     await db
       .delete(productRecommendations)
