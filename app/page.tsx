@@ -1678,7 +1678,7 @@ function CompanyLogo({ className = "" }: { className?: string }) {
   return (
     <img
       className={`companyLogo ${className}`}
-      src="/brand/yifun-life-logo.png"
+      src="/brand/yifun-life-logo.png?v=bb45e13732b7"
       alt="亦玩集团 Yifun Life"
     />
   );
@@ -4839,7 +4839,7 @@ export default function Home() {
           source.onerror = () => resolve(null);
           source.src = sourceUrl;
         });
-      const logo = await loadImage("/brand/yifun-life-logo.png");
+      const logo = await loadImage("/brand/yifun-life-logo.png?v=bb45e13732b7");
       const images = new Map<string, HTMLImageElement | null>();
       const uniqueProducts = [...new Map(quoteItemsInOrder.map(({ product }) => [product.id, product])).values()];
       await Promise.all(uniqueProducts.map(async (product) => {

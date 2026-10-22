@@ -1070,7 +1070,7 @@ export function ProductGridManager({
       <header className="skuGridHeader">
         <div className="skuGridIdentity">
           <a className="workspaceBrand" href="/" aria-label="返回主页">
-            <img src="/brand/yifun-life-logo.png" alt="亦玩集团 Yifun Life" />
+            <img src="/brand/yifun-life-logo.png?v=bb45e13732b7" alt="亦玩集团 Yifun Life" />
           </a>
           <div className="skuGridTitle">
             <span>PRODUCT LIST MANAGEMENT</span>
@@ -1229,7 +1229,7 @@ export function ProductGridManager({
             <header className="pairingHead">
               <div className="pairingIdentity">
                 <a className="pairingBrand" href="/" aria-label="返回主页">
-                  <img src="/brand/yifun-life-logo.png" alt="亦玩集团 Yifun Life" />
+                  <img src="/brand/yifun-life-logo.png?v=bb45e13732b7" alt="亦玩集团 Yifun Life" />
                 </a>
                 <div>
                   <span>PRODUCT PAIRING</span>

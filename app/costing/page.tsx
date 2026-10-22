@@ -68,7 +68,7 @@ export default function CostingPage() {
   const standardLabor = recipe?.houseClass && settings ? settings.houseStandard!.lines.filter(l => settings.resources.find(r => r.id === l.resourceId)?.kind === "labor").reduce((sum, l) => sum + (l.usage || 0) * (settings.resources.find(r => r.id === l.resourceId)?.price || 0), 0) : null;
   const displayedTotal = recipe?.houseClass ? (sample?.issues.length ? null : ((standardMaterial || 0) + (standardLabor || 0) * (recipe.difficultyFactor || 1)) * 1.1) : sample?.total ?? null;
   return <main className="costingPage">
-    <header className="costingHeader"><Link href="/?catalog=1" className="costingBrand"><Image src="/brand/yifun-life-logo.png" alt="亦玩集团" width={140} height={56} unoptimized /></Link><Link href="/?catalog=1">返回选品与报价</Link></header>
+    <header className="costingHeader"><Link href="/?catalog=1" className="costingBrand"><Image src="/brand/yifun-life-logo.png?v=bb45e13732b7" alt="亦玩集团" width={140} height={56} unoptimized /></Link><Link href="/?catalog=1">返回选品与报价</Link></header>
     <div className="costingHeading"><div><h1>核算管理</h1><p>材料价格、工种工资和核算参数统一维护，修改后点击保存生效。</p></div>{data && <span>规则版本 {data.version || "尚未保存"}{dirty ? " · 有未保存修改" : ""}</span>}</div>
     {error && <div className="costingError" role="alert">{error} {!data && <Link href="/?catalog=1">返回登录</Link>}</div>}
     {notice && <div className="costingNotice" role="status">{notice}</div>}

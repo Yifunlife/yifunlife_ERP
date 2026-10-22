@@ -285,7 +285,7 @@ export default function CEODashboardPage() {
     <main className="ceoDashboard">
       <aside className="ceoDashboardRail">
         <a className="ceoDashboardBrand" href="/" aria-label="返回亦玩集团选品系统">
-          <img src="/brand/yifun-life-logo.png" alt="亦玩集团 Yifun Life" />
+          <img src="/brand/yifun-life-logo.png?v=bb45e13732b7" alt="亦玩集团 Yifun Life" />
         </a>
         <a className="ceoDashboardBack" href="/?catalog=1">进入主界面</a>
         {canViewCosts && <a className="ceoDashboardBack" href="/costing">核算管理</a>}
