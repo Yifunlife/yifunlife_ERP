@@ -64,7 +64,7 @@ test('real XLSX original import recognizes FB SKUs and applies backend rate inst
   const sheet=XLSX.utils.aoa_to_sheet([['款号','产品名称','单位','数量','人民币单价','合计金额（人民币）','规格尺寸 / Size','夹层面积','屋顶面积','玻璃面积'],['FB0001-B','非标房子','件',2,99,198,'12+8,高3','无','无','无'],['FB0001-X','未知难度','件',1,99,99,'12+8,高3','无','无','无']]);
   const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'报价');const bytes=XLSX.write(book,{type:'buffer',bookType:'xlsx'});
   let preview,error;
-  const scope={XLSX,quoteImportPriceMode:'vip',products:[],quoteImportTemplateRef:{current:null},extractWorkbookImages:()=>new Map(),costingInputFromRow:r.load('lib/costing-import.ts').costingInputFromRow,
+  const scope={XLSX,quoteImportPriceMode:'vip',products:[],quoteImportTemplateRef:{current:null},translateQuoteWorkbook:async source=>source,extractWorkbookImages:()=>new Map(),costingInputFromRow:r.load('lib/costing-import.ts').costingInputFromRow,
   setQuoteImporting(){},setQuoteImportError:v=>error=v,setQuoteImportPreview:v=>preview=v,
   fetch:async(url,options)=>url==='/api/quote-costing'?r.load('app/api/quote-costing/route.ts').POST(new Request('http://test'+url,{method:'POST',headers:{'x-test-email':'alice@test'},body:options.body})):Response.json({id:'template'})};
   const read=clientFunction('readQuoteImport',['uploadQuoteTemplate','importedSkuCodes','importCellText','importCellNumber','findImportColumn','findImportMeta','findImportMetaLocation','inferImportProjectName'],scope);
