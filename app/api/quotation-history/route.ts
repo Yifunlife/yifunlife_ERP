@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { appUsers, catalogProducts, costingRecords, productOverrides, quotationHistory } from "../../../db/schema";
+import { appUsers, costingRecords, productOverrides, quotationHistory } from "../../../db/schema";
 import { getLoginSession } from "../../../lib/auth";
 import { baseContractNo, quotationProjectKey } from "../../../lib/quotation";
 import { quoteAmount, readSnapshot } from "../../../lib/quote-amount";
@@ -135,10 +135,6 @@ export async function GET(request: Request) {
     .from(quotationHistory).where(and(ownershipFilter, isNull(quotationHistory.archivedAt), isNull(quotationHistory.voidedAt)))
     .orderBy(desc(quotationHistory.generatedAt), desc(quotationHistory.id));
   const canViewCost = ["admin", "ceo", "cost_accountant"].includes(session.role);
-  const catalogCosts = canViewCost ? await db.select({id: productOverrides.productId, cost: productOverrides.cost}).from(productOverrides) : [];
-  const costsById = new Map(catalogCosts.filter(product => product.cost !== null).map(product => [product.id, product.cost]));
-  const catalogSkus = canViewCost ? await db.select({id: catalogProducts.id, sku: catalogProducts.sku}).from(catalogProducts) : [];
-  const costsBySku = new Map(catalogSkus.filter(product => costsById.has(product.id)).map(product => [product.sku.trim().toUpperCase(), costsById.get(product.id)]));
   const creatorEmails = [...new Set(quotations.map(quotation => quotation.createdBy).filter(Boolean))];
   const creators = creatorEmails.length
     ? await db.select({email: appUsers.email, name: appUsers.name}).from(appUsers).where(inArray(appUsers.email, creatorEmails))
@@ -149,10 +145,7 @@ export async function GET(request: Request) {
   return Response.json({
     quotations: quotations.map(({ snapshotJson, ...quotation }) => {
       const snapshot = readSnapshot(snapshotJson);
-      const summary = quoteAmount(snapshot && canViewCost ? {...snapshot, products: snapshot.products?.map(product => ({
-        ...product,
-        cost: product.quoteCosting ? product.cost : costsById.get(product.catalogProductId || product.id || "") ?? costsBySku.get(product.sku?.trim().toUpperCase() || "") ?? product.cost,
-      }))} : snapshot);
+      const summary = quoteAmount(snapshot);
       return {
         ...quotation,
         createdByName: creatorNames.get(quotation.createdBy) || "",

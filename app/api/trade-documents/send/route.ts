@@ -1,8 +1,9 @@
+import { quotationSourceError } from "../../../../lib/quotation-source";
 import { env } from "cloudflare:workers";
 import { getLoginSession } from "../../../../lib/auth";
 import { base64, mailboxAccess, sameOrigin, sha256 } from "../../../../lib/hotmail";
 
-type StoredDocument = { id: string; owner: string; recipient: string; subject: string; message: string; pdf_key: string; pdf_hash: string; filename: string; status: string };
+type StoredDocument = { data_json: string; id: string; owner: string; recipient: string; subject: string; message: string; pdf_key: string; pdf_hash: string; filename: string; status: string };
 export async function POST(request: Request) {
   const session = await getLoginSession(request);
   if (!session) return Response.json({ error: "请先登录报价系统" }, { status: 401 });
@@ -13,6 +14,8 @@ export async function POST(request: Request) {
   if (!doc) return Response.json({ error: "单据不存在" }, { status: 404 });
   if (body.confirmed !== true || body.hash !== doc.pdf_hash) return Response.json({ error: "请重新预览 PDF 并确认收件人" }, { status: 409 });
   if (doc.status !== "ready") return Response.json({ error: "此单据已经提交过发送，请查看发送记录，勿重复发送" }, { status: 409 });
+  const sourceError = await quotationSourceError(JSON.parse(doc.data_json).sourceQuotationId, session);
+  if (sourceError) return Response.json({ error: sourceError }, { status: 409 });
   // Refresh and load the exact reviewed attachment before taking the send lock.
   let account: { address: string; accessToken: string };
   try { account = await mailboxAccess(session.email); }

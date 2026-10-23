@@ -20,6 +20,7 @@ export function paymentAmounts(total: number, stages: PaymentStage[]) {
 }
 export type TradeItem = { description: string; quantity: number; price: number; hsCode: string };
 export type TradeData = {
+  sourceQuotationId?: string;
   kind: TradeKind;
   number: string;
   date: string;

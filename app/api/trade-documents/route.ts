@@ -1,3 +1,4 @@
+import { quotationSourceError } from "../../../lib/quotation-source";
 import { env } from "cloudflare:workers";
 import { PDFDocument } from "pdf-lib";
 import { getLoginSession } from "../../../lib/auth";
@@ -12,7 +13,9 @@ export async function GET(request: Request) {
     if (new URL(request.url).searchParams.get("details") === "1") {
       const saved = await env.DB.prepare("SELECT id, data_json, recipient, subject, message, pdf_hash, filename, status FROM trade_documents WHERE id = ? AND owner = ?").bind(id, session.email).first<{ id: string; data_json: string; recipient: string; subject: string; message: string; pdf_hash: string; filename: string; status: string }>();
       if (!saved) return Response.json({ error: "单据不存在" }, { status: 404 });
-      return Response.json({ ...saved, data: JSON.parse(saved.data_json), data_json: undefined }, { headers: { "Cache-Control": "private, no-store" } });
+      const data = JSON.parse(saved.data_json);
+      const sourceWarning = await quotationSourceError(data.sourceQuotationId, session);
+      return Response.json({ ...saved, data, sourceWarning, data_json: undefined }, { headers: { "Cache-Control": "private, no-store" } });
     }
     const doc = await env.DB.prepare("SELECT pdf_key, filename FROM trade_documents WHERE id = ? AND owner = ?").bind(id, session.email).first<{ pdf_key: string; filename: string }>();
     if (!doc) return Response.json({ error: "单据不存在" }, { status: 404 });
@@ -20,7 +23,7 @@ export async function GET(request: Request) {
     if (!file) return Response.json({ error: "PDF 读取失败，请重试" }, { status: 404 });
     return new Response(file.body as unknown as ReadableStream<Uint8Array>, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(doc.filename)}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
   }
-  const docs = await env.DB.prepare("SELECT id, kind, number, recipient, subject, status, sender, filename, created_at, sent_at, error FROM trade_documents WHERE owner = ? ORDER BY created_at DESC LIMIT 50").bind(session.email).all();
+  const docs = await env.DB.prepare("SELECT d.id, d.kind, d.number, d.recipient, d.subject, d.status, d.sender, d.filename, d.created_at, d.sent_at, d.error, json_extract(d.data_json, '$.sourceQuotationId') AS source_quotation_id, q.contract_no AS source_contract_no FROM trade_documents d LEFT JOIN quotation_history q ON q.id = json_extract(d.data_json, '$.sourceQuotationId') WHERE d.owner = ? ORDER BY d.created_at DESC LIMIT 50").bind(session.email).all();
   return Response.json({ documents: docs.results }, { headers: { "Cache-Control": "private, no-store" } });
 }
 export async function POST(request: Request) {
@@ -39,6 +42,8 @@ export async function POST(request: Request) {
   if (error) return Response.json({ error }, { status: 400 });
   if (typeof body.recipient !== "string" || !validEmail(body.recipient) || typeof body.subject !== "string" || !body.subject.trim() || body.subject.length > 200 || /[\r\n]/.test(body.subject) || typeof body.message !== "string" || !body.message.trim() || body.message.length > 10000)
     return Response.json({ error: "请填写有效收件邮箱、邮件主题和正文" }, { status: 400 });
+  const sourceError = await quotationSourceError(body.data.sourceQuotationId, session);
+  if (sourceError) return Response.json({ error: sourceError }, { status: 409 });
   let bytes: Uint8Array;
   try {
     if (typeof body.pdf !== "string" || body.pdf.length > 3500000) throw new Error();

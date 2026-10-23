@@ -361,7 +361,7 @@ export default function QuotationHistoryPage() {
         <div className="quoteHistoryTableWrap">
           <table className="quoteHistoryTable">
             <thead>
-              <tr><th>项目合同号</th><th>项目名称</th><th>报价人</th><th>生成时间</th><th>商务</th><th>预计成本</th><th>状态</th><th>操作</th></tr>
+              <tr><th>项目合同号</th><th>项目名称</th><th>报价人</th><th>生成时间</th><th>商务</th><th>保存时成本</th><th>状态</th><th>操作</th></tr>
             </thead>
             <tbody>
               {records.map((record) => {
@@ -378,7 +378,7 @@ export default function QuotationHistoryPage() {
                   <td data-label="报价人">{record.createdByName || (record.createdBy ? "姓名未设置" : "历史未归属")}</td>
                   <td data-label="生成时间">{new Date(record.generatedAt).toLocaleString("zh-CN")}</td>
                   <td data-label="商务">{record.salesName || "待补充"}</td>
-                  <td data-label="预计成本">{!record.canViewCost ? "—" : record.estimatedCost === null ? "待核算" : <>{formatAmount(record.estimatedCost, "CNY")}{record.missingCostCount > 0 && <small className="quoteHistoryDetail">已知成本小计 · {record.missingCostCount}项待核算</small>}</>}</td>
+                  <td data-label="保存时成本">{!record.canViewCost ? "—" : record.estimatedCost === null ? "历史成本未记录" : <>{formatAmount(record.estimatedCost, "CNY")}{record.missingCostCount > 0 && <small className="quoteHistoryDetail">已知成本小计 · {record.missingCostCount}项成本未记录</small>}</>}</td>
                   <td data-label="状态">
                     <span className={record.voidedAt || record.projectStatus === "lost" ? "quoteHistoryLost" : ""}>{record.voidedAt ? "已作废" : projectStatusLabel[record.projectStatus] || (record.hasSnapshot ? "已报价" : "仅项目资料")}</span>
                     {record.voidedAt && <small className="quoteHistoryDetail">{record.voidReason || "未填写作废原因"}</small>}
@@ -388,6 +388,7 @@ export default function QuotationHistoryPage() {
                   </td>
                   <td data-label="操作">
                     <div className="quoteHistoryActions" data-history-actions>
+                      <a className="outline quoteHistoryOpen" href={`/quotation-handover?quotation=${encodeURIComponent(record.id)}`}>成交交接</a>
                       <a className="outline quoteHistoryOpen" href={`/?quotationHistory=${encodeURIComponent(record.id)}&mode=view`}>查看</a>
                       {!record.voidedAt && !record.archivedAt && <a className="outline quoteHistoryOpen" href={`/trade-documents?quotation=${encodeURIComponent(record.id)}`}>PI / CI / 合同</a>}
                       {!record.voidedAt && !record.archivedAt && record.projectStatus !== "lost" && <a className="primary quoteHistoryOpen" href={`/?quotationHistory=${encodeURIComponent(record.id)}&mode=edit`}>编辑</a>}

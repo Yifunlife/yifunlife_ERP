@@ -8,7 +8,7 @@ import { excludedFromQuote, type QuoteRevision } from "../../lib/quote-revisions
 
 type MailStatus = { configured: boolean; connection: { address: string } | null };
 type DeviceAuthorization = { state: string; userCode: string; verificationUri: string; expiresAt: number; interval: number };
-type RecordRow = { id: string; kind: TradeKind; number: string; recipient: string; subject: string; status: string; sender: string; created_at: string; error: string };
+type RecordRow = { source_quotation_id?: string; source_contract_no?: string; id: string; kind: TradeKind; number: string; recipient: string; subject: string; status: string; sender: string; created_at: string; error: string };
 type Preview = { id: string; hash: string; filename: string; url: string; recipient: string; subject: string; message: string; fingerprint: string };
 const dateToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const initialData = (): TradeData => ({ kind: "equipment-pi", number: "", date: dateToday(), validUntil: "", buyer: "", buyerAddress: "", buyerContact: "", buyerPhone: "", buyerEmail: "", sellerContact: "", sellerEmail: "", sellerPhone: "", origin: "", destination: "", projectName: "", projectAddress: "", description: "Indoor Playground Equipment", items: [{ description: "", quantity: 1, price: 0, hsCode: "" }], deliveryDays: "", appendix: "", installationOption: "", guidanceDays: "", guidanceFee: "", installationDays: "", installationFee: "", includedCosts: ["Equipment Cost"], payments: defaultPayments(), tradeTerm: "FOB", tradePlace: "", signatureRequired: true });
@@ -164,7 +164,7 @@ export default function TradeDocumentsPage() {
         if (Number(snapshot.fees?.[key]) > 0) items.push({ description: label, quantity: 1, price: Number(snapshot.fees[key]), hsCode: "" });
       if (snapshot.showDesignDeduction && Number(snapshot.fees?.designDeduction) > 0) throw new Error("此报价有设计费抵扣，请手动核对单据明细及总额后填写");
       if (!items.length) throw new Error("此报价没有产品明细");
-      setData(current => ({ ...current, number: quotation.contractNo || "", projectName: quotation.projectName || "", items }));
+      setData(current => ({ ...current, sourceQuotationId: quotation.id, number: quotation.contractNo || "", projectName: quotation.projectName || "", items }));
       setNotice("已带入报价产品和费用；请核对实际出货数量、成交金额、客户资料及海关编码。");
     } catch (error) { setError((error as Error).message); }
     finally { setBusy(""); }
@@ -202,10 +202,12 @@ export default function TradeDocumentsPage() {
     setBusy("读取单据"); setError(""); setConfirmed(false);
     try {
       const saved = await jsonRequest(`/api/trade-documents?id=${id}&details=1`);
+      setSourceId(saved.data.sourceQuotationId || "");
       setData({ ...initialData(), ...saved.data }); setRecipient(saved.recipient); setSubject(saved.subject); setMessage(saved.message);
       const fingerprint = JSON.stringify({ data: saved.data, recipient: saved.recipient, subject: saved.subject, message: saved.message });
       setPreview(saved.status === "ready" ? { id, hash: saved.pdf_hash, filename: saved.filename, url: `/api/trade-documents?id=${id}`, recipient: saved.recipient, subject: saved.subject, message: saved.message, fingerprint } : null);
       if (saved.status !== "ready") setNotice("已带入历史单据资料。此记录已有发送结果，原 PDF 不会再次发送；如需修改，请重新生成并核对。");
+      if (saved.sourceWarning) { setPreview(null); setNotice(saved.sourceWarning + "；原单据保留供查阅。"); }
     } catch (error) { setError((error as Error).message); }
     finally { setBusy(""); }
   };
@@ -213,6 +215,7 @@ export default function TradeDocumentsPage() {
   if (auth === "checking") return <main className={styles.page}><p role="status">正在读取账户和模板…</p>{error && <p role="alert">{error}</p>}</main>;
   if (auth === "out") return <main className={styles.page}><h1>请先登录报价系统</h1><a className="primary" href="/">返回登录</a></main>;
   return <main className={styles.page}>
+    <p className={styles.hint}>{data.sourceQuotationId ? `已绑定报价版本：${sourceOptions.find(option => option.id === data.sourceQuotationId)?.contractNo || data.sourceQuotationId}（切换下拉框后需点击带入，才会改变绑定）` : "未绑定报价版本：手工单据或旧记录，系统不会推测来源。"}</p>
     <header className={styles.header}><a className="outline" href="/">返回报价系统</a><div><h1>贸易单据与合同</h1><p>沿用公司模板生成 PDF，预览确认后通过本人的 Hotmail 发送。</p></div><a className="outline" href="/quotation-history">报价历史</a></header>
     <section className={styles.mailbox} aria-label="发件邮箱"><div><strong>{mail.connection ? `发件邮箱：${mail.connection.address}` : "尚未连接发件邮箱"}</strong><p>{mail.configured ? "各业务员独立授权，仅本人可以使用自己的邮箱发送。" : "微软应用授权尚未配置。可以先填写并预览 PDF，配置完成后连接 Hotmail 发送。"}</p></div>{mail.connection ? <button type="button" className="outline" disabled={Boolean(busy)} onClick={() => void disconnect()}>断开邮箱</button> : <button type="button" className="primary" disabled={!mail.configured || Boolean(busy)} onClick={() => void connect()}>连接我的 Hotmail</button>}</section>
     {device && <section className={styles.authorization} aria-label="微软邮箱授权"><h2>连接本人的 Hotmail</h2><p>在微软授权页面输入此代码，然后登录自己的 Hotmail。授权完成后本页会自动更新。</p><strong>{device.userCode}</strong><a className="primary" href={device.verificationUri} target="_blank" rel="noopener noreferrer">打开微软授权页面</a><button className="outline" type="button" onClick={() => void disconnect()}>取消授权</button><p>只输入本页刚生成的代码。系统使用 Yifun Sales Workbench Outlook 应用申请发送邮件权限，不读取收件箱。</p></section>}
@@ -238,6 +241,6 @@ export default function TradeDocumentsPage() {
     </form>
     <section className={styles.preview} ref={previewRef} aria-label="PDF 预览与发送"><h2>PDF 预览与发送</h2>{currentPreview ? <><div className={styles.review}><p><b>发件人：</b>{mail.connection?.address || "尚未连接 Hotmail"}</p><p><b>收件人：</b>{currentPreview.recipient}</p><p><b>主题：</b>{currentPreview.subject}</p><p className={styles.message}>{currentPreview.message}</p><a className="outline" href={currentPreview.url} target="_blank" rel="noopener">在新窗口查看 PDF</a></div><PdfPreview url={currentPreview.url} onReady={setRenderedUrl} onError={setError} /><div className={styles.send}><label><input type="checkbox" checked={confirmed} disabled={Boolean(busy) || renderedUrl !== currentPreview.url} onChange={event => setConfirmed(event.target.checked)} />我已查看 PDF 全部页面，确认发件人、收件人、金额和邮件内容正确。</label><button className="primary" type="button" disabled={!confirmed || !mail.connection || Boolean(busy) || renderedUrl !== currentPreview.url} onClick={() => void send()}>{busy || "确认并发送 PDF"}</button></div></> : <p className={styles.hint}>{preview ? "资料或邮件内容已修改，请重新生成 PDF 后确认发送。" : "填写完成后生成 PDF。生成文件不会自动向客户发送。"}</p>}</section>
     </>}
-    <section className={styles.history}><h2>我的单据与发送记录</h2><p className={styles.hint}>仅显示本人最近 50 份单据。“微软已接受发送”不等于客户已送达；结果待核实时请先检查 Hotmail 已发送文件夹。</p>{records.length ? <div className={styles.tableWrap}><table><thead><tr><th>单据</th><th>客户邮箱</th><th>状态</th><th>生成时间</th><th>PDF</th></tr></thead><tbody>{records.map(row => <tr key={row.id}><td><b>{row.number}</b><small>{tradeKinds[row.kind]}</small></td><td>{row.recipient}<small>{row.sender && `发件：${row.sender}`}</small></td><td>{statusText[row.status] || row.status}{row.error && <small>{row.error}</small>}</td><td>{new Date(row.created_at).toLocaleString("zh-CN")}</td><td><a href={`/api/trade-documents?id=${row.id}`} target="_blank" rel="noopener">查看 PDF</a>{tradeTemplatesAvailable && <button className="outline" type="button" disabled={Boolean(busy)} onClick={() => void reopen(row.id)}>{row.status === "ready" ? "继续确认发送" : "复制资料"}</button>}</td></tr>)}</tbody></table></div> : <p>尚未生成单据。</p>}</section>
+    <section className={styles.history}><h2>我的单据与发送记录</h2><p className={styles.hint}>仅显示本人最近 50 份单据。“微软已接受发送”不等于客户已送达；结果待核实时请先检查 Hotmail 已发送文件夹。</p>{records.length ? <div className={styles.tableWrap}><table><thead><tr><th>单据</th><th>客户邮箱</th><th>状态</th><th>生成时间</th><th>PDF</th></tr></thead><tbody>{records.map(row => <tr key={row.id}><td><b>{row.number}</b><small>{tradeKinds[row.kind]}</small><small>来源：{row.source_contract_no || (row.source_quotation_id ? "来源记录不可用" : "未绑定（手工／旧记录）")}</small></td><td>{row.recipient}<small>{row.sender && `发件：${row.sender}`}</small></td><td>{statusText[row.status] || row.status}{row.error && <small>{row.error}</small>}</td><td>{new Date(row.created_at).toLocaleString("zh-CN")}</td><td><a href={`/api/trade-documents?id=${row.id}`} target="_blank" rel="noopener">查看 PDF</a>{tradeTemplatesAvailable && <button className="outline" type="button" disabled={Boolean(busy)} onClick={() => void reopen(row.id)}>{row.status === "ready" ? "继续确认发送" : "复制资料"}</button>}</td></tr>)}</tbody></table></div> : <p>尚未生成单据。</p>}</section>
   </main>;
 }

@@ -247,7 +247,7 @@ test('history lists sales name and complete estimated costs without exposing cos
 });
 
 
-test('estimated costs resolve catalog IDs and SKUs for existing snapshots and show partial totals', async t => {
+test('historical missing costs stay unknown despite matching catalog IDs and SKUs', async t => {
   const r = runtime(t), route = r.load('app/api/quotation-history/route.ts');
   const first = (await call(route, 'POST', payload)).body.quotation;
   await r.db.insert(r.schema.catalogProducts).values({id:'catalog-test',sku:'MATCH-SKU',name:'Catalog product'});
@@ -255,10 +255,10 @@ test('estimated costs resolve catalog IDs and SKUs for existing snapshots and sh
   const source={...snapshot, products:[{id:'imported-test',sku:'MATCH-SKU',cost:null},{id:'missing',sku:'UNKNOWN',cost:null}],cart:{'imported-test':3,missing:1}};
   r.sqlite.prepare('UPDATE quotation_history SET snapshot_json=? WHERE id=?').run(JSON.stringify(source),first.id);
   let row=(await call(route,'GET',null,'alice@example.test','admin')).body.quotations[0];
-  assert.equal(row.estimatedCost,75);assert.equal(row.missingCostCount,1);
+  assert.equal(row.estimatedCost,null);assert.equal(row.missingCostCount,2);
   source.products[0]={id:'imported-test',sku:'old-sku',catalogProductId:'catalog-test',cost:null};
   r.sqlite.prepare('UPDATE quotation_history SET snapshot_json=? WHERE id=?').run(JSON.stringify(source),first.id);
-  row=(await call(route,'GET',null,'alice@example.test','admin')).body.quotations[0];assert.equal(row.estimatedCost,75);
+  row=(await call(route,'GET',null,'alice@example.test','admin')).body.quotations[0];assert.equal(row.estimatedCost,null);
   assert.equal(JSON.parse(r.sqlite.prepare('SELECT snapshot_json FROM quotation_history WHERE id=?').get(first.id).snapshot_json).products[0].cost,null);
 });
 

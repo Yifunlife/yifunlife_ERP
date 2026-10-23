@@ -140,3 +140,23 @@ test('device authorization keeps codes private, isolates employees, throttles po
   const status = await (await r.load('app/api/hotmail/route.ts').GET(req(null, undefined, 'GET'))).json();
   assert.deepEqual(Object.keys(status.connection).sort(), ['address', 'connected_at']);
 });
+
+test('imported document persists its exact quotation ID and cannot send after that source is voided', async t => {
+  const r = runtime(t);
+  const history = r.load('app/api/quotation-history/route.ts');
+  const quoteResponse = await history.POST(req({ contractNo:'BIND', projectName:'Binding test', snapshot:{ products:[{id:'p',sku:'P',usd:25}],cart:{p:2},priceMode:'usd',includeTax:false } }));
+  const quote = (await quoteResponse.json()).quotation;
+  const pdf = await PDFDocument.create();pdf.addPage();
+  const route = r.load('app/api/trade-documents/route.ts');
+  const payload = {data:{...data,sourceQuotationId:quote.id},recipient:data.buyerEmail,subject:'Bound version',message:'Review',pdf:Buffer.from(await pdf.save()).toString('base64')};
+  assert.equal((await route.POST(req(payload,'bob@example.test'))).status,409);
+  const savedResponse = await route.POST(req(payload));assert.equal(savedResponse.status,201);const saved = await savedResponse.json();
+  const original = r.sqlite.prepare('SELECT data_json FROM trade_documents WHERE id=?').get(saved.id).data_json;
+  assert.equal(JSON.parse(original).sourceQuotationId,quote.id);
+  const list = await (await route.GET(req(null,undefined,'GET'))).json(); assert.equal(list.documents[0].source_contract_no,quote.contractNo);
+  await history.PATCH(req({id:quote.id,action:'void'},undefined,'PATCH'));
+  const send = await r.load('app/api/trade-documents/send/route.ts').POST(req({id:saved.id,hash:saved.hash,confirmed:true}));
+  assert.equal(send.status,409);assert.match((await send.json()).error,/来源报价/);
+  assert.equal(r.sqlite.prepare('SELECT data_json FROM trade_documents WHERE id=?').get(saved.id).data_json,original);
+  const reopened = await (await route.GET(req(null,undefined,'GET','?id='+saved.id+'&details=1'))).json();assert.match(reopened.sourceWarning,/来源报价/);
+});
