@@ -4,6 +4,8 @@ import { parsePersonnelRows, type PersonnelInput } from "../../lib/personnel-imp
 import PasswordField from "../password-field";
 type ManagedUser = {
   username: string;
+  recoveryEmail: string | null;
+  recoveryEmailVerifiedAt: string | null;
   employeeNo: string;
   email: string;
   name: string;
@@ -91,7 +93,7 @@ export default function PersonnelPage() {
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
       ["填写说明"], ["在人员导入工作表中填写，每行一位人员，每次最多 100 位。"],
       ["用户名", "必填，不分大小写，不能有空格，不能重复，最多 80 位。"],
-      ["姓名", "必填，最多 80 位。"], ["密码", "必填，至少 8 位；请将单元格设为文本以保留开头的 0。"],
+      ["姓名", "必填，最多 80 位。"], ["密码", "必填，至少 6 位；请将单元格设为文本以保留开头的 0。"],
       ["角色", "员工、管理层、CEO、核算人员；留空默认员工。"], ["工号", "选填，最多 40 位，请使用文本格式保留开头的 0。"],
     ]), "填写说明");
     XLSX.writeFile(workbook, "人员导入模板.xlsx");
@@ -122,7 +124,7 @@ export default function PersonnelPage() {
   }, []);
   return <main className="personnelPage">
     <header className="personnelHeader"><div><a href="/">返回报价系统</a><h1>人员及权限</h1>
-      <p>{canManageAccounts ? "管理账号、角色与使用权限。密码至少 8 位，修改用户名或密码后需重新登录。" : "管理层可查看人员及权限；账号修改请联系管理员或 CEO。"}</p></div>
+      <p>{canManageAccounts ? "管理账号、角色与使用权限。密码至少 6 位，修改用户名或密码后需重新登录。" : "管理层可查看人员及权限；账号修改请联系管理员或 CEO。"}</p></div>
       {ready && ["admin", "ceo", "management"].includes(role) && <span>{staffUsers.length} 位人员{!canManageAccounts ? " · 只读" : ""}</span>}
     </header>
     {!ready ? <p role="status">正在加载人员及权限…</p> : !["admin", "ceo", "management"].includes(role) ? <p role="alert">{staffError || "无权查看人员及权限。"}</p> : <section aria-label="人员账号管理">
@@ -139,7 +141,7 @@ export default function PersonnelPage() {
                   <label>姓名<input required maxLength={80} value={newAccount.name} onChange={event => setNewAccount({ ...newAccount, name: event.target.value })} /></label>
                   <label>工号（选填）<input maxLength={40} value={newAccount.employeeNo} onChange={event => setNewAccount({ ...newAccount, employeeNo: event.target.value })} /></label>
                   <label>用户名<input required maxLength={80} autoComplete="off" value={newAccount.username} onChange={event => setNewAccount({ ...newAccount, username: event.target.value })} /></label>
-                  <PasswordField id="new-account-password" label="密码（至少 8 位）" required minLength={8} autoComplete="new-password" value={newAccount.password} onChange={password => setNewAccount({ ...newAccount, password })} />
+                  <PasswordField id="new-account-password" label="密码（至少 6 位）" required minLength={6} autoComplete="new-password" value={newAccount.password} onChange={password => setNewAccount({ ...newAccount, password })} />
                   <label>角色<select value={newAccount.role} onChange={event => setNewAccount({ ...newAccount, role: event.target.value })}><option value="employee">员工</option><option value="management">管理层</option><option value="ceo">CEO</option><option value="cost_accountant">核算人员</option></select></label>
                 </div>
                 <div className="personnelActions"><button className="primary" disabled={accountBusy}>{accountBusy ? "保存中…" : "添加人员"}</button><button type="button" className="outline" disabled={accountBusy} onClick={() => setAddMode("")}>取消</button></div>
@@ -159,15 +161,16 @@ export default function PersonnelPage() {
               <label>姓名<input value={accountEdit.name} maxLength={80} required onChange={event => setAccountEdit({ ...accountEdit, name: event.target.value })} /></label>
               <label>工号（选填）<input value={accountEdit.employeeNo} maxLength={40} onChange={event => setAccountEdit({ ...accountEdit, employeeNo: event.target.value })} /></label>
               <label>用户名<input value={accountEdit.username} maxLength={80} required autoComplete="off" onChange={event => setAccountEdit({ ...accountEdit, username: event.target.value })} /></label>
-              <PasswordField key={accountEdit.email} id="account-password" label="新密码（留空保留原密码）" minLength={8} autoComplete="new-password" value={accountEdit.password} onChange={password => setAccountEdit({ ...accountEdit, password })} />
+              <PasswordField key={accountEdit.email} id="account-password" label="新密码（留空保留原密码）" minLength={6} autoComplete="new-password" value={accountEdit.password} onChange={password => setAccountEdit({ ...accountEdit, password })} />
               <button className="primary" disabled={accountBusy}>{accountBusy ? "保存中…" : "保存人员信息"}</button>
               <button type="button" className="outline" disabled={accountBusy} onClick={() => setAccountEdit(null)}>取消</button>
             </form>}
             <div className="personnelTableWrap"><table className="personnelTable">
-              <thead><tr><th>姓名</th><th>用户名</th><th>角色与权限</th><th>状态</th><th>创建日期</th><th>操作</th></tr></thead>
+              <thead><tr><th>姓名</th><th>用户名</th><th>邮箱</th><th>角色与权限</th><th>状态</th><th>创建日期</th><th>操作</th></tr></thead>
               <tbody>{staffUsers.map(user => <tr key={user.email}>
                 <td><strong>{user.name}</strong><small className="personnelEmployeeNo">工号：{user.employeeNo || "未填写"}</small></td>
                 <td className="personnelUsername">{user.username}</td>
+                <td className="personnelUsername">{user.recoveryEmail || "未填写"}{user.recoveryEmail && <small className="personnelEmployeeNo">{user.recoveryEmailVerifiedAt ? "已验证" : "待验证"}</small>}</td>
                 <td>{canManageAccounts && user.role !== "admin" ? <select aria-label={`${user.name} 的账号权限`} value={user.role} onChange={event => void updateStaffRole(user.email, event.target.value as "employee" | "management" | "ceo" | "cost_accountant")}>
                   <option value="employee">员工</option><option value="cost_accountant">核算人员</option><option value="management">管理层</option><option value="ceo">CEO</option>
                 </select> : roleLabel[user.role] || user.role}</td>

@@ -12,7 +12,7 @@ export function parsePersonnelRows(rows: string[][], existing: string[]) {
     if (!user.username || user.username.length > 80 || /\s/.test(user.username)) errors.push(`第 ${index + 2} 行：用户名为 1–80 位，不能包含空格。`);
     if (user.employeeNo.length > 40) errors.push(`第 ${index + 2} 行：工号最多 40 位。`);
     if (!user.name || user.name.length > 80) errors.push(`第 ${index + 2} 行：姓名为 1–80 位。`);
-    if (user.password.length < 8) errors.push(`第 ${index + 2} 行：密码至少 8 位。`);
+    if (user.password.length < 6) errors.push(`第 ${index + 2} 行：密码至少 6 位。`);
     if (!user.role) errors.push(`第 ${index + 2} 行：角色无效，请填写员工、管理层、CEO 或核算人员。`);
     if (seen.has(user.username)) errors.push(`第 ${index + 2} 行：用户名重复或已存在。`);
     seen.add(user.username); users.push(user);

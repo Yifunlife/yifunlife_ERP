@@ -114,6 +114,9 @@ export const loginSessions = sqliteTable("login_sessions", {
 export const appUsers = sqliteTable("app_users", {
   username: text("username").notNull().unique(),
   employeeNo: text("employee_no").notNull().default(""),
+  recoveryEmail: text("recovery_email").unique(),
+  mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(false),
+  recoveryEmailVerifiedAt: text("recovery_email_verified_at"),
   email: text("email").primaryKey(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
@@ -194,4 +197,13 @@ export const costingRecords = sqliteTable("costing_records", {
   snapshotJson: text("snapshot_json").notNull(),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),
+});
+
+export const emailVerificationTokens = sqliteTable("email_verification_tokens", {
+  owner: text("owner").primaryKey(),
+  email: text("email").notNull(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
 });

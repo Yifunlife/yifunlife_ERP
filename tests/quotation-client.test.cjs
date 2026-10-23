@@ -39,13 +39,28 @@ async function exportFixture(options = {}) {
     currency: options.currency || 'CNY', fees: { packaging: 50, formaldehyde: 0, shipping: 0, installation: 0, designDeduction: 0, ...options.fees }, includeTax: options.includeTax || false, showDesignDeduction: Boolean(options.deduct),
     designerName: '', salesName: '', needsEnglishTranslation: () => false, englishProductName: p => p.en || '', englishRemark: s => s,
     window: { location: { origin: 'https://example.test' } }, fetch: async () => new Response(f.bytes),
-    translateQuoteWorkbook:async source=>source, downloadExcelFile: data => { output = data; },
+    translateQuoteWorkbook:options.translateQuoteWorkbook || (async source=>source), downloadExcelFile: data => { output = data; },
   };
   const fn = clientFunction('exportImportedQuoteTemplate', helpers, scope);
   assert.equal(await fn('review'), true);
   assert.deepEqual(zip.unzipSync(output)['xl/media/keep.png'], zip.unzipSync(f.bytes)['xl/media/keep.png']);
   return { sheet: XLSX.read(output, { type: 'array' }).Sheets.Review, output, ref };
 }
+
+test('imported template translates only the exported copy and preserves the original package', async () => {
+  const f=fixture();f.product.name='原中文设备';
+  const original=Buffer.from(f.bytes);let requests=0;
+  const translateQuoteWorkbook=clientFunction('translateQuoteWorkbook',['xmlText','normalizeTemplateCellOrder','updateTemplateCell'],{
+    XLSX,...zip,products:[],fetch:async(url,options)=>{
+      assert.equal(url,'/api/quote-translate');requests++;
+      return Response.json({translations:JSON.parse(options.body).texts.map(()=> 'Translated equipment')});
+    },
+  });
+  const {sheet}=await exportFixture({fixture:f,translateQuoteWorkbook});
+  assert.ok(requests>0);assert.equal(sheet.B2.v,'原中文设备\nTranslated equipment');
+  assert.equal(sheet.D2.v,100);assert.equal(sheet.E2.v,100);
+  assert.deepEqual(Buffer.from(f.bytes),original);
+});
 
 test('deleted and customer-supplied rows are excluded from cached Excel grand totals as well as formulas', async () => {
   for (const status of ['deleted','customer']) {

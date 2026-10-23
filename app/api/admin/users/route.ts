@@ -15,7 +15,7 @@ async function requireStaffViewer(request: Request) {
 
 export async function GET(request: Request) {
   if (!(await requireStaffViewer(request))) return Response.json({ error: "无权限" }, { status: 403 });
-  const users = await getDb().select({ email: appUsers.email, username: appUsers.username, employeeNo: appUsers.employeeNo, name: appUsers.name, role: appUsers.role, status: appUsers.status, createdAt: appUsers.createdAt }).from(appUsers).orderBy(desc(appUsers.createdAt));
+  const users = await getDb().select({ email: appUsers.email, username: appUsers.username, recoveryEmail: appUsers.recoveryEmail, recoveryEmailVerifiedAt: appUsers.recoveryEmailVerifiedAt, employeeNo: appUsers.employeeNo, name: appUsers.name, role: appUsers.role, status: appUsers.status, createdAt: appUsers.createdAt }).from(appUsers).orderBy(desc(appUsers.createdAt));
   return Response.json({ users });
 }
 
@@ -39,12 +39,12 @@ export async function PATCH(request: Request) {
   if (action === "credentials") {
     const login = typeof username === "string" ? normalizeEmail(username) : "";
     if (!login || login.length > 80 || /\s/.test(login)) return Response.json({ error: "用户名为 1–80 位，不能包含空格。" }, { status: 400 });
-    if (password !== undefined && (typeof password !== "string" || passwordError(password))) return Response.json({ error: "密码至少需要 8 位。" }, { status: 400 });
+    if (password !== undefined && (typeof password !== "string" || passwordError(password))) return Response.json({ error: "密码至少需要 6 位。" }, { status: 400 });
     const existing = await db.select().from(appUsers).where(eq(appUsers.username, login)).get();
     if (existing && existing.email !== email) return Response.json({ error: "用户名已存在。" }, { status: 409 });
     if (name !== undefined && (typeof name !== "string" || !name.trim() || name.trim().length > 80)) return Response.json({ error: "姓名为 1–80 位。" }, { status: 400 });
     if (employeeNo !== undefined && (typeof employeeNo !== "string" || employeeNo.trim().length > 40)) return Response.json({ error: "工号最多 40 位。" }, { status: 400 });
-    const profile = { ...(name !== undefined ? { name: name.trim() } : {}), ...(employeeNo !== undefined ? { employeeNo: employeeNo.trim() } : {}) };
+    const profile = { ...(password ? { mustChangePassword: true } : {}), ...(name !== undefined ? { name: name.trim() } : {}), ...(employeeNo !== undefined ? { employeeNo: employeeNo.trim() } : {}) };
     const record = password ? await createPasswordRecord(password) : {};
     const credentialsChanged = login !== target.username || password !== undefined;
     const update = db.update(appUsers).set({ username: login, ...profile, ...record, updatedAt: new Date().toISOString() }).where(eq(appUsers.email, email));
@@ -80,11 +80,11 @@ export async function POST(request: Request) {
     const role = row?.role || "employee";
     const employeeNo = row?.employeeNo === undefined ? "" : typeof row.employeeNo === "string" ? row.employeeNo.trim() : null;
     if (employeeNo === null || employeeNo.length > 40) return Response.json({ error: `第 ${i + 1} 行工号最多 40 位。` }, { status: 400 });
-    if (!username || username.length > 80 || /\s/.test(username) || !name || name.length > 80 || typeof row.password !== "string" || passwordError(row.password) || !["employee", "management", "ceo", "cost_accountant"].includes(role)) return Response.json({ error: `第 ${i + 1} 行无效：请检查用户名、姓名、至少 8 位密码及角色。` }, { status: 400 });
+    if (!username || username.length > 80 || /\s/.test(username) || !name || name.length > 80 || typeof row.password !== "string" || passwordError(row.password) || !["employee", "management", "ceo", "cost_accountant"].includes(role)) return Response.json({ error: `第 ${i + 1} 行无效：请检查用户名、姓名、至少 6 位密码及角色。` }, { status: 400 });
     if (seen.has(username) || await db.select().from(appUsers).where(eq(appUsers.username, username)).get()) return Response.json({ error: `第 ${i + 1} 行用户名重复，未添加任何账号。` }, { status: 409 });
     seen.add(username);
     const now = new Date().toISOString();
-    prepared.push({ email: `account:${crypto.randomUUID()}`, username, name, employeeNo, role, status: "active", ...(await createPasswordRecord(row.password)), createdAt: now, updatedAt: now });
+    prepared.push({ email: `account:${crypto.randomUUID()}`, username, name, employeeNo, role, mustChangePassword: true, status: "active", ...(await createPasswordRecord(row.password)), createdAt: now, updatedAt: now });
   }
   try {
     const [first, ...rest] = prepared.map(user => db.insert(appUsers).values(user));

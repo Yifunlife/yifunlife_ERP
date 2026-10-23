@@ -2166,6 +2166,23 @@ img {
   color: #1d2b36;
   font-size: 13px;
 }
+.pairingDialogNamePrice {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.pairingDialogNamePrice b {
+  min-width: 0;
+  max-width: 100%;
+}
+.pairingDialogPrice {
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .pairingDialogSelect {
   display: inline-flex;
   align-items: center;
@@ -6500,3 +6517,10 @@ img {
 .quoteRevisionStatus { max-width: 100%; margin-top: 6px; font: inherit; font-size: 11px; }
 .quoteRevisionLog { margin-top: 5px; font-size: 11px; line-height: 1.5; color: #111; }
 .quoteRevisionLog div { padding: 4px 0; border-top: 1px solid #8095a4; }
+
+.profilePage { max-width: 900px; }
+.profileDetails { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 12px 0; }
+.profileDetails dt { color: #53636d; font-size: 13px; }
+.profileDetails dd { margin: 6px 0 0; overflow-wrap: anywhere; }
+.profilePage h2 { font-size: 20px; color: var(--navy); }
+.profilePage .accountEdit p { font-size: 13px; }

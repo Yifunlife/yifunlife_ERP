@@ -1952,6 +1952,7 @@ export default function Home() {
   const [quoteImportPreview, setQuoteImportPreview] =
     useState<QuoteImportPreview | null>(null);
   const [quoteImportError, setQuoteImportError] = useState("");
+  const [quoteImportTranslationProgress, setQuoteImportTranslationProgress] = useState("");
   const [quoteImporting, setQuoteImporting] = useState(false);
   const [quoteImportDragging, setQuoteImportDragging] = useState(false);
   const [importedProducts, setImportedProducts] = useState<Product[]>([]);
@@ -2040,6 +2041,7 @@ export default function Home() {
       .then((r) => r.json())
       .then((d) => {
         if (d.authenticated) {
+          if (d.mustChangePassword) { window.location.replace("/profile"); return; }
           const query = new URLSearchParams(window.location.search);
           if (
             d.role === "ceo" &&
@@ -3279,7 +3281,7 @@ export default function Home() {
       throw error;
     }
   };
-  const translateQuoteWorkbook = async (source: ArrayBuffer, signal?: AbortSignal): Promise<ArrayBuffer> => {
+  const translateQuoteWorkbook = async (source: ArrayBuffer, signal?: AbortSignal, onProgress?: (completed: number, total: number, failed: number) => void): Promise<ArrayBuffer> => {
     const book = XLSX.read(source, {type: "array", cellStyles: true});
     const files = unzipSync(new Uint8Array(source));
     const changes: Array<{path: string; ref: string; text: string; english?: string}> = [];
@@ -3290,7 +3292,7 @@ export default function Home() {
       if (!files[path]) return;
       const headerRow = Object.entries(sheet).find(([ref, cell]) => !ref.startsWith("!") && /款号|item\s*number|^sku$/i.test(String(cell.v || "")))?.[0].match(/\d+$/)?.[0];
       Object.entries(sheet).forEach(([ref, cell]) => {
-        if (ref.startsWith("!") || cell.f || cell.t !== "s" || (ref.match(/\d+$/)?.[0] === headerRow && !/材质.*工艺/.test(String(cell.v || "")))) return;
+        if (ref.startsWith("!") || cell.f || cell.t !== "s" || (ref.match(/\d+$/)?.[0] === headerRow && !/材质.*工艺|^工艺做法$/.test(String(cell.v || "")))) return;
         const text = String(cell.v || "").trim();
         const hasEnglishLine = text.split(/\n+/).some(line => /[A-Za-z]{2,}/.test(line) && !/[\u4e00-\u9fff]/.test(line));
         const hasEnglishSuffix = /\/[ \t]*[A-Za-z][^\u4e00-\u9fff]*$/.test(text);
@@ -3305,18 +3307,43 @@ export default function Home() {
     if (!changes.length) return source;
     const texts = [...new Set(changes.filter(change => !change.english).map(change => change.text))];
     const translated = new Map<string, string>();
+    let completed = 0;
+    let failed = 0;
+    onProgress?.(0, texts.length, 0);
     for (let offset = 0; offset < texts.length; offset += 24) {
       const batch = texts.slice(offset, offset + 24);
-      const response = await fetch("/api/quote-translate", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts: batch}), signal});
-      const result = await response.json();
-      if (!response.ok || !Array.isArray(result.translations) || result.translations.length !== batch.length) throw new Error(result.error || "自动翻译未完成，请重新导入");
-      batch.forEach((text, index) => translated.set(text, result.translations[index]));
+      try {
+        const response = await fetch("/api/quote-translate", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts: batch}), signal});
+        const result = await response.json();
+        if (!Array.isArray(result.translations) || result.translations.length !== batch.length) throw new Error(result.error || "自动翻译未完成，请重新导入");
+        batch.forEach((text, index) => {
+          const english = result.translations[index];
+          if (typeof english === "string" && english.trim() && /[A-Za-z]/.test(english) && !/[\u4e00-\u9fff]/.test(english)) translated.set(text, english.trim());
+        });
+        const missing = batch.filter(text => !translated.has(text)).length;
+        if (missing && !onProgress) throw new Error(result.error || "自动翻译未完成，请重新导入");
+        failed += missing;
+      } catch (error) {
+        if (!onProgress) throw error;
+        failed += batch.filter(text => !translated.has(text)).length;
+      }
+      completed += batch.length;
+      if (signal?.aborted) {
+        failed += texts.length - completed;
+        completed = texts.length;
+        onProgress?.(completed, texts.length, failed);
+        break;
+      }
+      onProgress?.(completed, texts.length, failed);
     }
     const sheets = new Map<string, string>();
     const heights = new Map<string, Map<number, number>>();
     changes.forEach(change => {
       const english = change.english || translated.get(change.text);
-      if (!english) throw new Error("自动翻译未完成，请重新导入");
+      if (!english) {
+        if (onProgress) return;
+        throw new Error("自动翻译未完成，请重新导入");
+      }
       const xml = sheets.get(change.path) || strFromU8(files[change.path]);
       const bilingual = `${change.text}\n${english}`;
       sheets.set(change.path, updateTemplateCell(xml, change.ref, bilingual));
@@ -3337,6 +3364,7 @@ export default function Home() {
         heights.set(change.path, rows);
       }
     });
+    if (!sheets.size) return source;
     sheets.forEach((xml, path) => {
       heights.get(path)?.forEach((height, row) => {
         xml = xml.replace(new RegExp(`<row\\b(?=[^>]*\\br="${row}")[^>]*>`), tag => tag.replace(/\s(?:ht|customHeight)="[^"]*"/g, "").replace(/>$/, ` ht="${Math.ceil(height)}" customHeight="1">`));
@@ -3373,13 +3401,17 @@ export default function Home() {
         ? XLSX.write(workbook, { type: "array", bookType: "xlsx", cellStyles: true })
         : originalSource;
       const translationController = new AbortController();
-      const translationTimeout = setTimeout(() => translationController.abort(), 15000);
+      const translationTimeout = setTimeout(() => translationController.abort(), 120000);
       try {
-        source = await translateQuoteWorkbook(source, translationController.signal);
+        source = await translateQuoteWorkbook(source, translationController.signal, (completed, total, failed) => {
+          setQuoteImportTranslationProgress(total ? `正在翻译英文：${completed} / ${total} 段` : "正在补充产品英文名称…");
+          if (completed === total && failed) setQuoteImportError(`有 ${failed} 段英文翻译未完成；已保留这些原文和其余成功翻译，可继续导入。`);
+        });
       } catch {
         setQuoteImportError("英文翻译暂未完成，已保留原文，可继续导入；英文可稍后补充。");
       } finally {
         clearTimeout(translationTimeout);
+        setQuoteImportTranslationProgress("");
       }
       workbook = XLSX.read(source, {type: "array", cellStyles: true});
       const templateFile = new File([source], file.name.replace(/\.xls$/i, ".xlsx"), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -5341,6 +5373,7 @@ export default function Home() {
     if (r.ok) {
       const d = await r.json();
       setLoginPassword("");
+      if (d.mustChangePassword) { window.location.replace("/profile"); return; }
       if (d.role === "ceo") {
         window.location.replace("/ceo-dashboard");
         return;
@@ -5445,9 +5478,9 @@ export default function Home() {
     const description = isRegister
       ? "提交后由唯一管理员批准，批准前不能登录。"
       : isForgot
-        ? "输入已获批准的邮箱，我们会发送 30 分钟内有效的重设链接。"
+        ? "输入已绑定并验证的邮箱，我们会发送 30 分钟内有效的重设链接。"
         : isReset
-          ? "请设置至少 8 位的新密码。"
+          ? "请设置至少 6 位的新密码。"
           : "请输入用户名与密码后继续。";
     return (
       <main className="loginShell">
@@ -5467,7 +5500,7 @@ export default function Home() {
           <button className="primary" type="submit">{isRegister ? "提交注册 / Register" : isForgot ? "发送重设链接 / Send link" : isReset ? "更新密码 / Update password" : "登录 / Sign in"}</button>
           {!isReset && <div className="loginLinks">
             {authMode !== "login" && <button type="button" onClick={() => { setAuthMode("login"); setLoginError(""); }}>返回登录</button>}
-            {authMode === "login" && <small>账号开通或忘记密码，请联系管理员或 CEO。</small>}
+            {authMode === "login" && <><button type="button" onClick={() => { setAuthMode("forgot"); setLoginUsername(""); setLoginPassword(""); setLoginError(""); setLoginNotice(""); }}>忘记密码？</button><small>账号开通请联系管理员或 CEO。</small></>}
           </div>}
           <small className="loginHint">为保护报价信息，登录 30 分钟后将自动退出。</small>
         </form>
@@ -5492,7 +5525,10 @@ export default function Home() {
         <article className="pairingDialogItem" key={product.id}>
           <div className="pairingDialogImage"><Visual p={product} mini /></div>
           <div className="pairingDialogInfo">
-            <b>{product.name}</b>
+            <div className="pairingDialogNamePrice">
+              <b title={product.name}>{product.name}</b>
+              <span className="pairingDialogPrice">单价 {money(displayPrice(product), currency)}</span>
+            </div>
             <small className={needsEnglishTranslation(product) ? "missingEnglish" : ""}>{englishProductName(product)}</small>
             <small>SKU: {product.sku}</small>
           </div>
@@ -5650,6 +5686,7 @@ export default function Home() {
           aria-label="员工账户菜单"
           data-employee-menu-surface
         >
+          <button role="menuitem" onClick={() => { setEmployeeMenuOpen(false); window.location.assign("/profile"); }}>个人资料 / 修改密码</button>
           <div className="employeeMenuAccount">
             <span>当前账号 / ACCOUNT</span>
             <b>{authAccount?.name || "员工"}</b>
@@ -6802,7 +6839,7 @@ export default function Home() {
                     event.currentTarget.value = "";
                   }}
                 />
-                <b>{quoteImporting ? "正在读取表单…" : quoteImportDragging ? "松开以导入 Excel 表单" : "拖拽 Excel 表单到这里，或点击选择"}</b>
+                <b>{quoteImporting ? quoteImportTranslationProgress || "正在读取表单…" : quoteImportDragging ? "松开以导入 Excel 表单" : "拖拽 Excel 表单到这里，或点击选择"}</b>
                 <small>支持 .xls、.xlsx（最大 200MB）。XLS 会转换为 XLSX，旧格式中的图片和复杂排版可能无法保留，建议优先使用 XLSX。未匹配款号会保留在核对清单中。</small>
               </label>
               {quoteImportError && <p className="importError">{quoteImportError}</p>}

@@ -47,7 +47,7 @@ const randomToken = () =>
   crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
 
 export const passwordError = (password: string) =>
-  password.length < 8 ? "密码至少需要 8 位。" : "";
+  password.length < 6 ? "密码至少需要 6 位。" : "";
 
 async function derivePasswordHash(password: string, salt: Uint8Array) {
   return crypto.subtle.deriveBits(
@@ -79,6 +79,7 @@ export async function ensureAdminUser() {
   await db.insert(appUsers).values({
     email: ADMIN_EMAIL,
     username: ADMIN_EMAIL,
+    mustChangePassword: true,
     name: "Yifun Life Administrator",
     ...record,
     role: "admin",
@@ -104,7 +105,7 @@ export async function getLoginSession(request: Request) {
     await db.delete(loginSessions).where(eq(loginSessions.tokenHash, tokenHash));
     return null;
   }
-  return { ...session, email: user.email, name: user.name, role: user.role };
+  return { ...session, email: user.email, name: user.name, role: user.role, mustChangePassword: user.mustChangePassword };
 }
 
 export async function createLoginSession(email: string) {
@@ -132,23 +133,17 @@ export async function createPasswordReset(email: string) {
 }
 
 export async function sendPasswordResetEmail(email: string, token: string, origin: string) {
+  const link = `${origin.replace(/\/$/, "")}/?reset=${encodeURIComponent(token)}`;
+  await sendAccountEmail(email, "重设 Yifun Life 产品报价系统密码", `请在 30 分钟内打开此链接重设密码：${link}`);
+}
+
+export async function sendAccountEmail(email: string, subject: string, textContent: string) {
   const apiKey = (env as unknown as AuthBindings).BREVO_API_KEY;
   if (!apiKey) throw new Error("邮件发送服务尚未配置");
-  const link = `${origin.replace(/\/$/, "")}/?reset=${encodeURIComponent(token)}`;
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({
-      sender: { name: "Yifun Life", email: "yifunlife@hotmail.com" },
-      to: [{ email }],
-      subject: "重设 Yifun Life 产品报价系统密码",
-      textContent: `请在 30 分钟内打开此链接重设密码：${link}`,
-      htmlContent: `<p>请在 30 分钟内打开下面链接重设 Yifun Life 产品报价系统密码：</p><p><a href="${link}">重设密码 / Reset password</a></p>`,
-    }),
+    headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ sender: { name: "Yifun Life", email: "yifunlife@hotmail.com" }, to: [{ email }], subject, textContent }),
   });
-  if (!response.ok) throw new Error(`Brevo email request failed: ${response.status}`);
+  if (!response.ok) throw new Error(`Account email request failed: ${response.status}`);
 }

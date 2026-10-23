@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "账号已停用，请联系管理员。" }, { status: 403 });
   const { token, expiresAt } = await createLoginSession(user.email);
   return Response.json(
-    { ok: true, email: user.email, name: user.name, role: user.role, expiresAt },
+    { ok: true, email: user.email, name: user.name, role: user.role, mustChangePassword: user.mustChangePassword, expiresAt },
     { headers: { "Set-Cookie": `yifun_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}` } },
   );
 }

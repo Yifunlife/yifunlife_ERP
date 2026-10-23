@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { getLoginSession } from "../lib/auth";
 import { handleWorkplace } from "../lib/workplace";
 import { POST as uploadQuoteTemplate } from "../app/api/quote-template/route";
 
@@ -31,6 +32,15 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const passwordChangeAllowed = url.pathname === "/profile" || url.pathname === "/api/profile" || url.pathname.startsWith("/api/auth/");
+    const isAsset = !url.pathname.startsWith("/api/") && (/\.[a-z0-9]+$/i.test(url.pathname) || url.pathname.startsWith("/assets/") || url.pathname.startsWith("/_vinext/") || url.pathname.startsWith("/__"));
+    if (!passwordChangeAllowed && !isAsset && request.headers.get("cookie")?.includes("yifun_session=")) {
+      const session = await getLoginSession(request);
+      if (session?.mustChangePassword) {
+        if (url.pathname.startsWith("/api/")) return Response.json({ error: "请先修改初始密码后继续。", mustChangePassword: true }, { status: 403 });
+        return Response.redirect(new URL("/profile", request.url).toString(), 303);
+      }
+    }
     if (["/api/workplace-sync", "/api/workplace-project"].includes(url.pathname)) return handleWorkplace(request);
     // Multipart API uploads must not pass through the 1MB server-action parser.
     if (url.pathname === "/api/quote-template" && request.method === "POST") return uploadQuoteTemplate(request);

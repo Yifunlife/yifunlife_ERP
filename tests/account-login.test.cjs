@@ -15,7 +15,7 @@ test('admin and CEO manage credentials, ordinary users cannot; ownership and has
   const r = createRuntime({ realAuth: true });
   const auth = r.load('lib/auth.ts');
   assert.equal(auth.passwordError('12345678'), '');
-  assert.ok(auth.passwordError('1234567'));
+  assert.ok(auth.passwordError('12345'));
   const record = await auth.createPasswordRecord('original-pass-123');
   const add = (email, role) => r.sqlite.prepare('INSERT INTO app_users(email,username,name,password_hash,password_salt,role,status,created_at,updated_at) VALUES(?,?,?,?,?,?,\'active\',\'now\',\'now\')').run(email,email,email,record.passwordHash,record.passwordSalt,role);
   add(auth.ADMIN_EMAIL, 'admin'); add('ceo@test', 'ceo'); add('staff@test', 'employee');

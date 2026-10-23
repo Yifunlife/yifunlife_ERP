@@ -60,7 +60,7 @@ test('web units and remarks split existing English without adding a second trans
   assert.equal(remark('中文备注\nExisting English'),'Existing English');
 });
 
-for (const failure of ['unavailable','timeout']) test(`Excel import continues with untouched original workbook when translation is ${failure}`, async () => {
+for (const format of ['xlsx','xls']) test(`Excel ${format} import preserves source text without requesting translation`, async () => {
   const sheet=XLSX.utils.aoa_to_sheet([
     ['项目名称','原文项目'],
     ['序号','款号','产品名称','图片展示','玩具品牌','规格/尺寸','单位','数量','成本单价 RMB','成本价 RMB','单价 RMB','合计金额 RMB','美元单价','美元合计','区域小计','备注','材质/工艺做法','体积'],
@@ -68,16 +68,52 @@ for (const failure of ['unavailable','timeout']) test(`Excel import continues wi
   ]);
   const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'报价');
   const files=zip.unzipSync(XLSX.write(book,{type:'buffer',bookType:'xlsx'}));files['xl/media/original.png']=new Uint8Array([1,2,3,4]);
-  const bytes=zip.zipSync(files);let preview,error,uploaded,reading;
+  const bytes=format==='xlsx'?zip.zipSync(files):XLSX.write(book,{type:'buffer',bookType:'xls'});let preview,error,uploaded,reading,translationCalls=0;
   const scope={XLSX,products:[],quoteImportPriceMode:'usd',quoteImportTemplateRef:{current:null},
-    translateQuoteWorkbook:async(source,signal)=>{assert(signal instanceof AbortSignal);if(failure==='unavailable')throw Error('translation unavailable');return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError'))));},
-    ...(failure==='timeout'?{setTimeout:fn=>{queueMicrotask(fn);return 1;},clearTimeout(){}}:{}),
+    translateQuoteWorkbook:async()=>{translationCalls++;throw Error('Import must not translate');},
     extractWorkbookImages:()=>new Map(),costingInputFromRow:()=>null,
     setQuoteImporting:value=>reading=value,setQuoteImportError:value=>error=value,setQuoteImportPreview:value=>preview=value,
     fetch:async(url,options)=>{if(url==='/api/quote-costing')return Response.json({results:[]});uploaded=options.body.get('file');return Response.json({id:'original-template'});},
   };
-  await clientFunction('readQuoteImport',['uploadQuoteTemplate','importedSkuCodes','importCellText','importCellNumber','findImportColumn','findImportMeta','findImportMetaLocation','inferImportProjectName'],scope)(new File([bytes],'original.xlsx'));
-  assert.match(error,/可继续导入/);assert.equal(reading,false);assert.equal(preview.rows.length,1);
+  await clientFunction('readQuoteImport',['uploadQuoteTemplate','importedSkuCodes','importCellText','importCellNumber','findImportColumn','findImportMeta','findImportMetaLocation','inferImportProjectName'],scope)(new File([bytes],`original.${format}`));
+  assert.equal(error,'');assert.equal(translationCalls,0);assert.equal(reading,false);assert.equal(preview.rows.length,1);
   assert.equal(preview.rows[0].product.name,'原中文设备');assert.equal(preview.rows[0].quantity,2);assert.equal(preview.rows[0].product.note,'原中文备注');
-  assert.deepEqual(new Uint8Array(await uploaded.arrayBuffer()),bytes,'fallback uploads the original package with its images and formulas intact');
+  const uploadedBytes=new Uint8Array(await uploaded.arrayBuffer());
+  if(format==='xlsx')assert.deepEqual(uploadedBytes,bytes,'uploads the unchanged original package');
+  const saved=XLSX.read(uploadedBytes,{type:'array'}).Sheets['报价'];
+  assert.equal(saved.C3.v,'原中文设备');assert.equal(saved.L3.v,200);assert.equal(saved.Q3.v,'原工艺');
+});
+
+test('translation API keeps successful items when another phrase fails', async t => {
+ const r=createRuntime();t.after(r.close);
+ r.bindings.AI={run:async(_,input)=>{if(input.text==='故障文字')throw Error('AI unavailable');return {translated_text:'Custom product'};}};
+ const route=r.load('app/api/quote-translate/route.ts');
+ const response=await route.POST(request({texts:['墙面软包','非标产品甲','故障文字']}));
+ assert.equal(response.status,200);const result=await response.json();
+ assert.deepEqual(result.translations,['Wall Padding','Custom product',null]);assert.equal(result.failedCount,1);
+});
+
+test('partial workbook translation keeps successful English and original images, formulas and failed source text', async () => {
+ const sheet=XLSX.utils.aoa_to_sheet([['序号','款号','产品名称','备注'],[1,'A','产品甲','备注甲'],[2,'B','产品乙','备注乙']]);
+ sheet.E2={t:'n',v:2,f:'SUM(A2:A3)'};sheet['!ref']='A1:E3';
+ const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'Quote');
+ const files=zip.unzipSync(XLSX.write(book,{type:'buffer',bookType:'xlsx'}));files['xl/media/test.png']=new Uint8Array([1,9,3]);
+ const source=zip.zipSync(files);const progress=[];
+ const translate=clientFunction('translateQuoteWorkbook',['xmlText','normalizeTemplateCellOrder','updateTemplateCell'],{XLSX,...zip,products:[],fetch:async(_,options)=>{
+ const {texts}=JSON.parse(options.body);return Response.json({translations:texts.map(text=>text==='产品甲'?'Product A':null),failedCount:texts.length-1});
+ }});
+ const result=await translate(source.buffer,undefined,(completed,total,failed)=>progress.push({completed,total,failed}));
+ const after=XLSX.read(result,{type:'array'}).Sheets.Quote;
+ assert.equal(after.C2.v,'产品甲\nProduct A');assert.equal(after.C3.v,'产品乙');assert.equal(after.D2.v,'备注甲');assert.equal(after.E2.f,'SUM(A2:A3)');
+ assert.deepEqual(zip.unzipSync(new Uint8Array(result))['xl/media/test.png'],files['xl/media/test.png']);
+ assert.equal(progress.at(-1).failed,3);assert.equal(progress.at(-1).completed,4);
+ await assert.rejects(()=>translate(source.buffer),/翻译未完成/,'export still requires complete English');
+});
+
+test('real quotation fee and workmanship terminology includes the full source meaning', async t => {
+ const r=createRuntime();t.after(r.close);r.bindings.AI={run:async()=>{throw Error('Approved terms must not use AI');}};
+ const route=r.load('app/api/quote-translate/route.ts');
+ const response=await route.POST(request({texts:['除甲醛','运输费（含装货不含卸货）','安装费（含工人食宿）','小计（不含税）','待补齐成本','工艺做法']}));
+ assert.equal(response.status,200);
+ assert.deepEqual((await response.json()).translations,['Formaldehyde Removal','Transportation Fee (including loading; unloading excluded)',"Installation Fee (including workers' meals and accommodation)",'Subtotal (excluding tax)','Cost Information Pending','Workmanship']);
 });

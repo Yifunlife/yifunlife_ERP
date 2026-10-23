@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { appUsers } from "../../../../db/schema";
+import { appUsers, passwordResetTokens } from "../../../../db/schema";
 import { createPasswordReset, ensureAdminUser, normalizeEmail, sendPasswordResetEmail } from "../../../../lib/auth";
 
-const generic = { ok: true, message: "如该邮箱已获批准，重设密码链接将发送至邮箱。" };
+const generic = { ok: true, message: "如该邮箱已绑定并验证，重设密码链接将发送至邮箱。" };
 
 export async function POST(request: Request) {
   const { email } = await request.json() as { email?: string };
@@ -11,10 +11,12 @@ export async function POST(request: Request) {
   if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) return Response.json(generic);
   try {
     await ensureAdminUser();
-    const user = await getDb().select().from(appUsers).where(eq(appUsers.email, normalizedEmail)).get();
+    const user = await getDb().select().from(appUsers).where(and(eq(appUsers.recoveryEmail, normalizedEmail), isNotNull(appUsers.recoveryEmailVerifiedAt))).get();
     if (user?.status === "active") {
+      const previous = await getDb().select().from(passwordResetTokens).where(eq(passwordResetTokens.email, user.email)).get();
+      if (previous && Date.now() - Date.parse(previous.createdAt) < 60000) return Response.json(generic);
       const token = await createPasswordReset(user.email);
-      await sendPasswordResetEmail(user.email, token, new URL(request.url).origin);
+      await sendPasswordResetEmail(normalizedEmail, token, new URL(request.url).origin);
     }
   } catch (error) {
     console.error("Password reset email failed", error);
