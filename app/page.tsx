@@ -1952,7 +1952,6 @@ export default function Home() {
   const [quoteImportPreview, setQuoteImportPreview] =
     useState<QuoteImportPreview | null>(null);
   const [quoteImportError, setQuoteImportError] = useState("");
-  const [quoteImportTranslationProgress, setQuoteImportTranslationProgress] = useState("");
   const [quoteImporting, setQuoteImporting] = useState(false);
   const [quoteImportDragging, setQuoteImportDragging] = useState(false);
   const [importedProducts, setImportedProducts] = useState<Product[]>([]);
@@ -3395,25 +3394,11 @@ export default function Home() {
       if (!/\.xlsx?$/i.test(file.name)) throw new Error("请选择 .xls 或 .xlsx 格式的 Excel 文件");
       if (file.size > 200 * 1024 * 1024) throw new Error("导入文件不能超过 200MB");
       const originalSource = await file.arrayBuffer();
-      let workbook = XLSX.read(originalSource, { type: "array", cellStyles: true });
+      const workbook = XLSX.read(originalSource, { type: "array", cellStyles: true });
       const isLegacyExcel = /\.xls$/i.test(file.name);
-      let source: ArrayBuffer = isLegacyExcel
+      const source: ArrayBuffer = isLegacyExcel
         ? XLSX.write(workbook, { type: "array", bookType: "xlsx", cellStyles: true })
         : originalSource;
-      const translationController = new AbortController();
-      const translationTimeout = setTimeout(() => translationController.abort(), 120000);
-      try {
-        source = await translateQuoteWorkbook(source, translationController.signal, (completed, total, failed) => {
-          setQuoteImportTranslationProgress(total ? `正在翻译英文：${completed} / ${total} 段` : "正在补充产品英文名称…");
-          if (completed === total && failed) setQuoteImportError(`有 ${failed} 段英文翻译未完成；已保留这些原文和其余成功翻译，可继续导入。`);
-        });
-      } catch {
-        setQuoteImportError("英文翻译暂未完成，已保留原文，可继续导入；英文可稍后补充。");
-      } finally {
-        clearTimeout(translationTimeout);
-        setQuoteImportTranslationProgress("");
-      }
-      workbook = XLSX.read(source, {type: "array", cellStyles: true});
       const templateFile = new File([source], file.name.replace(/\.xls$/i, ".xlsx"), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const revisionRecords = workbook.Sheets["修改记录"] ? XLSX.utils.sheet_to_json(workbook.Sheets["修改记录"], {header: 1}) as unknown[][] : [];
       const importedRevisions = new Map<number, QuoteRevision>();
@@ -6839,7 +6824,7 @@ export default function Home() {
                     event.currentTarget.value = "";
                   }}
                 />
-                <b>{quoteImporting ? quoteImportTranslationProgress || "正在读取表单…" : quoteImportDragging ? "松开以导入 Excel 表单" : "拖拽 Excel 表单到这里，或点击选择"}</b>
+                <b>{quoteImporting ? "正在读取表单…" : quoteImportDragging ? "松开以导入 Excel 表单" : "拖拽 Excel 表单到这里，或点击选择"}</b>
                 <small>支持 .xls、.xlsx（最大 200MB）。XLS 会转换为 XLSX，旧格式中的图片和复杂排版可能无法保留，建议优先使用 XLSX。未匹配款号会保留在核对清单中。</small>
               </label>
               {quoteImportError && <p className="importError">{quoteImportError}</p>}
