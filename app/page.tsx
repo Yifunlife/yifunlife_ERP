@@ -3279,7 +3279,7 @@ export default function Home() {
       throw error;
     }
   };
-  const translateQuoteWorkbook = async (source: ArrayBuffer): Promise<ArrayBuffer> => {
+  const translateQuoteWorkbook = async (source: ArrayBuffer, signal?: AbortSignal): Promise<ArrayBuffer> => {
     const book = XLSX.read(source, {type: "array", cellStyles: true});
     const files = unzipSync(new Uint8Array(source));
     const changes: Array<{path: string; ref: string; text: string; english?: string}> = [];
@@ -3307,7 +3307,7 @@ export default function Home() {
     const translated = new Map<string, string>();
     for (let offset = 0; offset < texts.length; offset += 24) {
       const batch = texts.slice(offset, offset + 24);
-      const response = await fetch("/api/quote-translate", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts: batch})});
+      const response = await fetch("/api/quote-translate", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts: batch}), signal});
       const result = await response.json();
       if (!response.ok || !Array.isArray(result.translations) || result.translations.length !== batch.length) throw new Error(result.error || "自动翻译未完成，请重新导入");
       batch.forEach((text, index) => translated.set(text, result.translations[index]));
@@ -3372,7 +3372,15 @@ export default function Home() {
       let source: ArrayBuffer = isLegacyExcel
         ? XLSX.write(workbook, { type: "array", bookType: "xlsx", cellStyles: true })
         : originalSource;
-      source = await translateQuoteWorkbook(source);
+      const translationController = new AbortController();
+      const translationTimeout = setTimeout(() => translationController.abort(), 15000);
+      try {
+        source = await translateQuoteWorkbook(source, translationController.signal);
+      } catch {
+        setQuoteImportError("英文翻译暂未完成，已保留原文，可继续导入；英文可稍后补充。");
+      } finally {
+        clearTimeout(translationTimeout);
+      }
       workbook = XLSX.read(source, {type: "array", cellStyles: true});
       const templateFile = new File([source], file.name.replace(/\.xls$/i, ".xlsx"), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const revisionRecords = workbook.Sheets["修改记录"] ? XLSX.utils.sheet_to_json(workbook.Sheets["修改记录"], {header: 1}) as unknown[][] : [];

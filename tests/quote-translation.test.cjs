@@ -59,3 +59,25 @@ test('web units and remarks split existing English without adding a second trans
   assert.deepEqual(split('中文备注\nExisting English'),{zh:'中文备注',en:'Existing English'});
   assert.equal(remark('中文备注\nExisting English'),'Existing English');
 });
+
+for (const failure of ['unavailable','timeout']) test(`Excel import continues with untouched original workbook when translation is ${failure}`, async () => {
+  const sheet=XLSX.utils.aoa_to_sheet([
+    ['项目名称','原文项目'],
+    ['序号','款号','产品名称','图片展示','玩具品牌','规格/尺寸','单位','数量','成本单价 RMB','成本价 RMB','单价 RMB','合计金额 RMB','美元单价','美元合计','区域小计','备注','材质/工艺做法','体积'],
+    [1,'CUSTOM-FAIL','原中文设备','','','2*3*4','套',2,'','',100,200,20,40,'','原中文备注','原工艺',5],
+  ]);
+  const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'报价');
+  const files=zip.unzipSync(XLSX.write(book,{type:'buffer',bookType:'xlsx'}));files['xl/media/original.png']=new Uint8Array([1,2,3,4]);
+  const bytes=zip.zipSync(files);let preview,error,uploaded,reading;
+  const scope={XLSX,products:[],quoteImportPriceMode:'usd',quoteImportTemplateRef:{current:null},
+    translateQuoteWorkbook:async(source,signal)=>{assert(signal instanceof AbortSignal);if(failure==='unavailable')throw Error('translation unavailable');return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError'))));},
+    ...(failure==='timeout'?{setTimeout:fn=>{queueMicrotask(fn);return 1;},clearTimeout(){}}:{}),
+    extractWorkbookImages:()=>new Map(),costingInputFromRow:()=>null,
+    setQuoteImporting:value=>reading=value,setQuoteImportError:value=>error=value,setQuoteImportPreview:value=>preview=value,
+    fetch:async(url,options)=>{if(url==='/api/quote-costing')return Response.json({results:[]});uploaded=options.body.get('file');return Response.json({id:'original-template'});},
+  };
+  await clientFunction('readQuoteImport',['uploadQuoteTemplate','importedSkuCodes','importCellText','importCellNumber','findImportColumn','findImportMeta','findImportMetaLocation','inferImportProjectName'],scope)(new File([bytes],'original.xlsx'));
+  assert.match(error,/可继续导入/);assert.equal(reading,false);assert.equal(preview.rows.length,1);
+  assert.equal(preview.rows[0].product.name,'原中文设备');assert.equal(preview.rows[0].quantity,2);assert.equal(preview.rows[0].product.note,'原中文备注');
+  assert.deepEqual(new Uint8Array(await uploaded.arrayBuffer()),bytes,'fallback uploads the original package with its images and formulas intact');
+});
