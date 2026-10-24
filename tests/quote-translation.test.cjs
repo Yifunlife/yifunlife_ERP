@@ -60,6 +60,35 @@ test('web units and remarks split existing English without adding a second trans
   assert.equal(remark('中文备注\nExisting English'),'Existing English');
 });
 
+test('quotation personnel names remain verbatim and cannot block the exported workbook', async () => {
+  const sheet=XLSX.utils.aoa_to_sheet([
+    ['设计师：李爽欣 沈洪梅','商务：王小明'],
+    ['序号','款号','产品名称'],
+    [1,'A','墙面软包'],
+  ]);
+  sheet.D3={t:'n',v:20,f:'10*2'};sheet['!ref']='A1:D3';
+  const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'Quote');
+  const files=zip.unzipSync(XLSX.write(book,{type:'buffer',bookType:'xlsx'}));
+  files['xl/media/keep.png']=new Uint8Array([1,2,3]);
+  const source=zip.zipSync(files), original=Buffer.from(source), requested=[];
+  const translate=clientFunction('translateQuoteWorkbook',['xmlText','normalizeTemplateCellOrder','updateTemplateCell'],{
+    XLSX,...zip,products:[],fetch:async(_,options)=>{
+      const {texts}=JSON.parse(options.body);requested.push(...texts);
+      // The live model retained one Chinese surname, which the API rejected.
+      return Response.json({translations:texts.map(text=>text==='墙面软包'?'Wall Padding':null)});
+    },
+  });
+  const output=await translate(source.buffer);
+  const after=XLSX.read(output,{type:'array'}).Sheets.Quote;
+  assert.equal(after.A1.v,sheet.A1.v);assert.equal(after.B1.v,sheet.B1.v);
+  assert.deepEqual(requested,['墙面软包']);
+  assert.equal(after.C3.v,'墙面软包\nWall Padding');assert.equal(after.D3.f,'10*2');assert.equal(after.D3.v,20);
+  assert.deepEqual(Buffer.from(source),original);
+  const final=zip.unzipSync(new Uint8Array(output));
+  assert.deepEqual(final['xl/media/keep.png'],files['xl/media/keep.png']);
+  assert.deepEqual(final['xl/styles.xml'],files['xl/styles.xml']);
+});
+
 for (const format of ['xlsx','xls']) test(`Excel ${format} import preserves source text without requesting translation`, async () => {
   const sheet=XLSX.utils.aoa_to_sheet([
     ['项目名称','原文项目'],

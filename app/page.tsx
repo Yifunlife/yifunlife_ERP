@@ -3293,6 +3293,8 @@ export default function Home() {
       Object.entries(sheet).forEach(([ref, cell]) => {
         if (ref.startsWith("!") || cell.f || cell.t !== "s" || (ref.match(/\d+$/)?.[0] === headerRow && !/材质.*工艺|^工艺做法$/.test(String(cell.v || "")))) return;
         const text = String(cell.v || "").trim();
+        // Personnel names must remain verbatim, even when the model cannot transliterate them.
+        if (Number(ref.match(/\d+$/)?.[0]) < Number(headerRow) && /^(?:设计师|商务|业务员)\s*[:：]\s*\S/.test(text)) return;
         const hasEnglishLine = text.split(/\n+/).some(line => /[A-Za-z]{2,}/.test(line) && !/[\u4e00-\u9fff]/.test(line));
         const hasEnglishSuffix = /\/[ \t]*[A-Za-z][^\u4e00-\u9fff]*$/.test(text);
         if (!/[\u4e00-\u9fff]/.test(text) || hasEnglishLine || hasEnglishSuffix || /[A-Za-z]{2,}[ \t]+[A-Za-z]{2,}/.test(text)) return;
@@ -3314,14 +3316,17 @@ export default function Home() {
       try {
         const response = await fetch("/api/quote-translate", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts: batch}), signal});
         const result = await response.json();
-        if (!Array.isArray(result.translations) || result.translations.length !== batch.length) throw new Error(result.error || "自动翻译未完成，请重新导入");
+        if (!Array.isArray(result.translations) || result.translations.length !== batch.length) throw new Error(result.error || "自动翻译未完成，请稍后重试导出");
         batch.forEach((text, index) => {
           const english = result.translations[index];
           if (typeof english === "string" && english.trim() && /[A-Za-z]/.test(english) && !/[\u4e00-\u9fff]/.test(english)) translated.set(text, english.trim());
         });
-        const missing = batch.filter(text => !translated.has(text)).length;
-        if (missing && !onProgress) throw new Error(result.error || "自动翻译未完成，请重新导入");
-        failed += missing;
+        const missing = batch.filter(text => !translated.has(text));
+        if (missing.length && !onProgress) {
+          const cell = changes.find(change => change.text === missing[0])!;
+          throw new Error(`自动翻译未完成：${cell.ref}「${cell.text.slice(0, 60)}」，请稍后重试导出`);
+        }
+        failed += missing.length;
       } catch (error) {
         if (!onProgress) throw error;
         failed += batch.filter(text => !translated.has(text)).length;
@@ -3341,7 +3346,7 @@ export default function Home() {
       const english = change.english || translated.get(change.text);
       if (!english) {
         if (onProgress) return;
-        throw new Error("自动翻译未完成，请重新导入");
+        throw new Error(`自动翻译未完成：${change.ref}，请稍后重试导出`);
       }
       const xml = sheets.get(change.path) || strFromU8(files[change.path]);
       const bilingual = `${change.text}\n${english}`;
@@ -4103,11 +4108,11 @@ export default function Home() {
       setQuoteHistorySaving(false);
     }
   };
-  const exportImportedQuoteTemplate = async (fileName: string) => {
+  const exportImportedQuoteTemplate = async (fileName: string, onError?: (message: string) => void) => {
     const template = quoteImportTemplateRef.current;
     const sourceProducts = (importedProducts.length ? importedProducts : quoteImportPreview?.rows.map(({ product }) => product) || []).map(product => quoteProducts.find(item => item.id === product.id) || product);
-    if (!template || !sourceProducts.length) return false;
     try {
+      if (!template || !sourceProducts.length) throw new Error("缺少原始模板或导入产品记录");
       if (!template.source) {
         if (!template.id) throw new Error("历史记录没有原始模板，请重新导入原表");
         const response = await fetch(`/api/quote-template?id=${encodeURIComponent(template.id)}`);
@@ -4118,7 +4123,7 @@ export default function Home() {
       const worksheetPath = Object.keys(files).find((path) =>
         /^xl\/worksheets\/sheet\d+\.xml$/.test(path),
       );
-      if (!worksheetPath || !files[worksheetPath]) return false;
+      if (!worksheetPath || !files[worksheetPath]) throw new Error("原始模板缺少工作表");
       let xml = await prepareQuoteTemplateImages(files, worksheetPath);
       const originalXml = xml;
       const originalAmount = (row: number | undefined, column: number) => {
@@ -4181,7 +4186,7 @@ export default function Home() {
         const itemPrototype = itemPrototypeRow
           ? rowXmlByNumber.get(itemPrototypeRow)
           : undefined;
-        if (!itemPrototype || !itemPrototypeRow) return false;
+        if (!itemPrototype || !itemPrototypeRow) throw new Error("原始模板缺少用于新增产品的样式行");
         const areaPrototypeRow =
           firstSourceRow && firstSourceRow > template.headerRow + 1
             ? firstSourceRow - 1
@@ -4546,7 +4551,8 @@ export default function Home() {
       applyQuoteRevisions(files, worksheetPath, exportLineItems, {quantity: template.columns.quantity, specification: template.columns.specification, amounts: [template.columns.cnyAmount, template.columns.usdAmount, costAmount].filter(column => column >= 0)});
       downloadExcelFile(new Uint8Array(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer)), `${fileName}.xlsx`);
       return true;
-    } catch {
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : "导出处理异常");
       return false;
     }
   };
@@ -4554,7 +4560,9 @@ export default function Home() {
     if (!checkCostedQuote()) return;
     if (saveHistory && !(await recordQuoteHistory())) return;
     if (quoteImportTemplateRef.current) {
-      if (!(await exportImportedQuoteTemplate(quoteExportFileName()))) window.alert("原始模板导出失败，请重试；原始模板和报价内容仍已保留。");
+      let failure = "";
+      if (!(await exportImportedQuoteTemplate(quoteExportFileName(), message => { failure = message; })))
+        window.alert(`原始模板导出失败${failure ? `：${failure}` : "，请重试"}；原始模板和报价内容仍已保留。`);
       return;
     }
     try {

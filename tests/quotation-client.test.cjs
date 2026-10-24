@@ -42,10 +42,39 @@ async function exportFixture(options = {}) {
     translateQuoteWorkbook:options.translateQuoteWorkbook || (async source=>source), downloadExcelFile: data => { output = data; },
   };
   const fn = clientFunction('exportImportedQuoteTemplate', helpers, scope);
-  assert.equal(await fn('review'), true);
+  const originalBytes = Buffer.from(f.bytes);
+  const originalQuote = JSON.stringify({ products: scope.quoteProducts, cart: scope.cart, template: ref.current });
+  let failure;
+  const ok = await fn('review', message => { failure = message; });
+  if (options.expectedError) {
+    assert.equal(ok, false);assert.match(failure, options.expectedError);assert.equal(output, undefined);
+    assert.deepEqual(Buffer.from(f.bytes), originalBytes);
+    assert.equal(JSON.stringify({ products: scope.quoteProducts, cart: scope.cart, template: ref.current }), originalQuote);
+    return;
+  }
+  assert.equal(ok, true);
   assert.deepEqual(zip.unzipSync(output)['xl/media/keep.png'], zip.unzipSync(f.bytes)['xl/media/keep.png']);
   return { sheet: XLSX.read(output, { type: 'array' }).Sheets.Review, output, ref };
 }
+
+test('failed imported export reports the actual error and leaves template and quote intact', async () => {
+  await exportFixture({
+    translateQuoteWorkbook: async () => { throw new Error('自动翻译未完成：C2「产品名称」'); },
+    expectedError: /自动翻译未完成：C2/,
+  });
+});
+
+test('export button displays the template failure reason without recording another quote', async () => {
+  let alert;
+  const fn = clientFunction('exportQuoteExcel', [], {
+    checkCostedQuote: () => true, quoteImportTemplateRef: { current: {} }, quoteExportFileName: () => 'review',
+    recordQuoteHistory: () => { throw Error('History export must not create a record'); },
+    exportImportedQuoteTemplate: async (_, onError) => { onError('自动翻译未完成：C2「产品名称」'); return false; },
+    window: { alert: message => { alert = message; } },
+  });
+  await fn(false);
+  assert.match(alert, /C2「产品名称」/);assert.match(alert, /原始模板和报价内容仍已保留/);
+});
 
 test('imported template translates only the exported copy and preserves the original package', async () => {
   const f=fixture();f.product.name='原中文设备';
