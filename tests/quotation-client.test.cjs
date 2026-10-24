@@ -10,6 +10,7 @@ const helperRuntime = createRuntime();
 const { quotationTotals } = helperRuntime.load('lib/quotation.ts');
 const {applyQuoteRevisions, excludedFromQuote, revisionLabels} = helperRuntime.load('lib/quote-revisions.ts');
 const { embedQuoteImages, prepareQuoteTemplateImages } = helperRuntime.load('lib/quote-excel-images.ts');
+const { clearQuoteFeeSequenceErrors, repairQuoteSectionLayout, formatQuoteWorkbook } = helperRuntime.load("lib/quote-excel-layout.ts");
 helperRuntime.close();
 const helpers = ['formatQuoteCurrencyCells', 'xmlText', 'normalizeTemplateCellOrder', 'restoreTemplatePriceStyles', 'updateTemplateCell', 'updateTemplateFormula', 'templateRow', 'updateTemplateRowCell', 'updateTemplateRowFormula', 'updateTemplateRowTextFormula'];
 function fixture(quantity = 1) {
@@ -33,6 +34,7 @@ async function exportFixture(options = {}) {
   let output;
   const ref = { current: { ...f.template, ...(options.remote ? { source: undefined } : {}) } };
   const scope = {
+    clearQuoteFeeSequenceErrors, repairQuoteSectionLayout, formatQuoteWorkbook,
     quoteProducts: [f.product], applyQuoteRevisions, excludedFromQuote, billableQuantity:(p,q)=>excludedFromQuote(p)?0:q,
     authAccount: {role: options.role || "employee"}, XLSX, ...zip, quotationTotals, prepareQuoteTemplateImages, embedQuoteImages: options.embedQuoteImages || embedQuoteImages, quoteImportTemplateRef: ref, importedProducts: [f.product], quoteImportPreview: null,
     cart: { 'imported-1': 1 }, quoteItemsInOrder: [{ product: f.product, quantity: 1, area: 'Area' }, ...(options.items || [])],
@@ -451,4 +453,17 @@ test('merged source sections and footer instructions stay out of product rows', 
   assert.deepEqual(preview.rows.map(row=>row.product.importSection),[2,4,6]);
   assert.deepEqual(preview.rows.map(row=>row.product.importSequence),['1','2','3']);
   assert.deepEqual(scope.quoteImportTemplateRef.current.footerNotes,['此报价有效期为30天']);
+});
+
+test('added products shift fee serial repair together with fee and total rows', async () => {
+  const f=fixture(), files=zip.unzipSync(f.bytes);
+  let xml=zip.strFromU8(files['xl/worksheets/sheet1.xml']);
+  for(const row of [3,4,5]) xml=xml.replace(new RegExp(`(<row r="${row}">[\\s\\S]*?)(</row>)`), `$1<c r="H${row}" t="e"><f>${row===3?'#REF!+1':`H${row-1}+1`}</f><v>23</v></c>$2`);
+  files['xl/worksheets/sheet1.xml']=zip.strToU8(xml.replace('ref="A1:G5"','ref="A1:H5"'));
+  f.bytes=zip.zipSync(files);f.template.source=f.bytes.buffer;f.template.columns.sequence=7;
+  const original=Buffer.from(f.bytes);
+  const {sheet}=await exportFixture({fixture:f,items:[{product:{id:'new',sku:'NEW',name:'Added',price:10,usd:2},quantity:2,area:'New'}]});
+  for(const row of [4,5,6]) assert.ok(!sheet[`H${row}`]?.f && !sheet[`H${row}`]?.v);
+  assert.equal(sheet.H3.v,2);assert.equal(sheet.E6.v,170);assert.equal(sheet.G6.v,24);
+  assert.deepEqual(Buffer.from(f.bytes),original);
 });

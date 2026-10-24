@@ -13,6 +13,7 @@ import { usdFromCny } from "../lib/currency";
 import { applyQuoteRevisions, excludedFromQuote, revisionLabels, type QuoteRevision } from "../lib/quote-revisions";
 import { quotationTotals } from "../lib/quotation";
 import { embedQuoteImages, prepareQuoteTemplateImages } from "../lib/quote-excel-images";
+import { clearQuoteFeeSequenceErrors, repairQuoteSectionLayout, formatQuoteWorkbook } from "../lib/quote-excel-layout";
 import type { CatalogProduct } from "./catalog-types";
 import { pairedArea, pairedAreasForMajor } from "../lib/area-pairing";
 type MajorCategory =
@@ -4547,9 +4548,14 @@ export default function Home() {
         [template.columns.usdUnit, template.columns.usdAmount],
       ]);
       xml = formatQuoteCurrencyCells(files, xml, template.headerRow, [template.columns.cnyUnit, template.columns.cnyAmount, costUnit, costAmount]);
+      xml = clearQuoteFeeSequenceErrors(xml, template.columns.sequence, [
+        ...Object.values(template.feeRows || {}).map(row => row + (row >= (template.insertBeforeRow || template.totalRow || Infinity) ? insertedRows : 0)),
+        ...(totalRow ? [totalRow] : []),
+      ]);
+      xml = repairQuoteSectionLayout(files, xml, sourceSheet, new Set(sourceLines.map(product => product.importSourceRow!)), template.headerRow, template.columns.name, Math.max(...Object.values(template.columns)));
       files[worksheetPath] = strToU8(normalizeTemplateCellOrder(xml));
       applyQuoteRevisions(files, worksheetPath, exportLineItems, {quantity: template.columns.quantity, specification: template.columns.specification, amounts: [template.columns.cnyAmount, template.columns.usdAmount, costAmount].filter(column => column >= 0)});
-      downloadExcelFile(new Uint8Array(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer)), `${fileName}.xlsx`);
+      downloadExcelFile(new Uint8Array(formatQuoteWorkbook(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer))), `${fileName}.xlsx`);
       return true;
     } catch (error) {
       onError?.(error instanceof Error ? error.message : "导出处理异常");
@@ -4842,7 +4848,7 @@ export default function Home() {
       xml = formatQuoteCurrencyCells(files, xml, 3, [8, 9, 10, 11]);
       files[worksheetPath] = strToU8(normalizeTemplateCellOrder(xml));
       applyQuoteRevisions(files, worksheetPath, revisionRows);
-      downloadExcelFile(new Uint8Array(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer)), `${quoteExportFileName()}.xlsx`);
+      downloadExcelFile(new Uint8Array(formatQuoteWorkbook(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer))), `${quoteExportFileName()}.xlsx`);
     } catch (error) {
       window.alert(
         error instanceof Error ? error.message : "导出 Excel 失败，请重新打开报价单后再试。",

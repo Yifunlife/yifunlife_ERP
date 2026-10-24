@@ -65,8 +65,9 @@ for(const mode of ['vip','factory','usd']) test(`ordinary ${mode} quotations exp
     let output,error;
     const headers=clientFunction('importedQuoteHeaders',[],{});
     const currency=mode==='usd'?'USD':'CNY', subtotal=mode==='usd'?8:mode==='factory'?20:40;
+    const {formatQuoteWorkbook}=runtime.load('lib/quote-excel-layout.ts');
     const fn=clientFunction('exportQuoteExcel',['formatQuoteCurrencyCells','xmlText','normalizeTemplateCellOrder','restoreTemplatePriceStyles','updateTemplateCell','updateTemplateFormula','templateRow','setTemplateHiddenColumns','updateTemplateRowCell','updateTemplateRowFormula','updateTemplateRowTextFormula'],{
-      XLSX,...zip,...runtime.load('lib/quote-revisions.ts'),quotationTotals:runtime.load('lib/quotation.ts').quotationTotals,
+      XLSX,...zip,formatQuoteWorkbook,...runtime.load('lib/quote-revisions.ts'),quotationTotals:runtime.load('lib/quotation.ts').quotationTotals,
       quoteImportTemplateRef:{current:null},checkCostedQuote:()=>true,recordQuoteHistory:async()=>true,authAccount:{role:'admin'},
       quoteItemsInOrder:items,quoteGroups:[['区域 / Area',items]],currency,priceMode:mode,displayPrice:p=>mode==='usd'?p.usd:mode==='factory'?p.factory:p.price,
       billableQuantity:(p,q)=>['deleted','customer'].includes(p.revision?.status)?0:q,
