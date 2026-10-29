@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { zipSync, strToU8 } from "fflate";
 import { getLoginSession } from "../../../lib/auth";
 import { sameOrigin, sha256 } from "../../../lib/hotmail";
-import { accessibleQuotation } from "../../../lib/quotation-source";
+import { accessibleQuotation, readableQuotation } from "../../../lib/quotation-source";
 import { quoteAmount, readSnapshot } from "../../../lib/quote-amount";
 import { handoverHtml, handoverItems, safeHandoverFilename, type HandoverData } from "../../../lib/quotation-handover";
 
@@ -15,7 +15,8 @@ export async function GET(request: Request) {
   const session = await getLoginSession(request);
   if (!session) return Response.json({ error: "请先登录" }, { status: 401 });
   const params = new URL(request.url).searchParams;
-  const quote = await accessibleQuotation(params.get("quotation") || "", session);
+  const owned = await accessibleQuotation(params.get("quotation") || "", session);
+  const quote = owned || await readableQuotation(params.get("quotation") || "", session);
   if (!quote) return Response.json({ error: "报价不存在或无权查看" }, { status: 404 });
   const fileId = params.get("file");
   if (fileId) {
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
     return new Response(new Uint8Array(zipSync(files, { level: 0 })).buffer, { headers: { ...headers, "Content-Type": "application/zip", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeHandoverFilename(data.contractNo) + '-成交交接.zip')}` } });
   }
   const records = await env.DB.prepare("SELECT id, data_json, created_by, created_at FROM quotation_handovers WHERE quotation_id = ? ORDER BY rowid DESC").bind(quote.id).all<Saved>();
-  return Response.json({ quotation: { id: quote.id, contractNo: quote.contractNo, projectName: quote.projectName, customerName: quote.customerName, finalAmount: quote.finalAmount, currency: quote.finalCurrency, canCreate: active(quote), items: quote.snapshotJson ? handoverItems(quote.snapshotJson) : [] }, records: records.results.map(({ data_json, ...record }) => ({ ...record, data: JSON.parse(data_json) })) }, { headers });
+  return Response.json({ quotation: { id: quote.id, contractNo: quote.contractNo, projectName: quote.projectName, customerName: quote.customerName, finalAmount: quote.finalAmount, currency: quote.finalCurrency, canCreate: Boolean(owned) && active(quote), items: quote.snapshotJson ? handoverItems(quote.snapshotJson) : [] }, records: records.results.map(({ data_json, ...record }) => ({ ...record, data: JSON.parse(data_json) })) }, { headers });
 }
 
 export async function POST(request: Request) {

@@ -2,7 +2,7 @@
 
 面向亦玩产品选型、套餐配置和报价输出的内部系统。
 
-线上入口：[打开报价系统](https://yifun-life-quote.enquiry150941.chatgpt.site)
+线上入口：[打开报价系统](https://yifunlife-erp.yifunlife.workers.dev)
 
 ## 当前实现范围
 

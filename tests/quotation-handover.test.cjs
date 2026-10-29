@@ -18,6 +18,23 @@ async function setup(t) {
 const details = { previousId:'', responsiblePerson:'交接负责人', paymentTerms:'50% 定金，50% 发货前付清', customerConfirmation:'客户邮件确认，附件待补充', deliveryNotes:'按约定安装', fileIds:[] };
 function req(id, body, owner='alice@example.test', method='POST', suffix='') { const q = request(body, owner, 'employee', method, '?quotation='+id+suffix); q.headers.set('origin','http://review.test'); return q; }
 
+test('verified CRM salesperson reads saved handover and uses quote as document source without editing it', async t => {
+  const {r,route,quote} = await setup(t);
+  const saved = await (await route.POST(req(quote.id,details))).json();
+  r.sqlite.prepare('INSERT INTO quotation_crm_links VALUES(?,?,?,?,?,?,?,?,?)').run(quote.id,'project','Example project','HANDOVER','sales','销售','bob@example.test',1,'now');
+  const response = await route.GET(req(quote.id,null,'bob@example.test','GET'));
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).quotation.canCreate,false);
+  const html = await route.GET(req(quote.id,null,'bob@example.test','GET','&id='+saved.id));
+  assert.equal(html.status,200);assert.ok(!(await html.text()).includes('999999'));
+  assert.equal((await route.POST(req(quote.id,details,'bob@example.test'))).status,404);
+  const validate = r.load('lib/quotation-source.ts').quotationSourceError;
+  assert.equal(await validate(quote.id,{email:'bob@example.test',role:'employee'}),'');
+  r.sqlite.exec('UPDATE quotation_crm_links SET active=0');
+  assert.equal((await route.GET(req(quote.id,null,'bob@example.test','GET'))).status,404);
+  assert.ok(await validate(quote.id,{email:'bob@example.test',role:'employee'}));
+});
+
 test('saved costs survive catalog changes and new revisions capture new costs', async t => {
   const {r,history,quote} = await setup(t);
   const original = r.sqlite.prepare('SELECT snapshot_json FROM quotation_history WHERE id=?').get(quote.id).snapshot_json;

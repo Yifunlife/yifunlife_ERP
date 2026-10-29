@@ -67,7 +67,7 @@ export default function QuotationHandoverPage() {
     {state && <>
       <nav className={mobile.navigation} aria-label="交接页导航"><a href="#handover-items">产品清单</a>{state.quotation.canCreate && <a href="#handover-form">填写交接</a>}<a href="#handover-records">已存资料</a></nav>
       <section id="handover-items" className={styles.history}><h2>{state.quotation.projectName} · {state.quotation.contractNo}</h2><p>客户：{state.quotation.customerName || "报价未填写"}　成交金额：{state.quotation.finalAmount === null ? "未确认" : `${state.quotation.currency} ${state.quotation.finalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`}</p>
-        {!state.quotation.canCreate && <p role="status">当前版本未确认成交价，或已失效。不能创建新交接；已有资料包仍保留供查阅。</p>}
+        {!state.quotation.canCreate && <p role="status">当前为只读共享、未确认成交价或已失效的版本，已有资料包仍可查阅。</p>}
         <div className={styles.tableWrap}><table className={mobile.items}><thead><tr><th>SKU</th><th>产品名称</th><th>规格</th><th>数量</th><th>单位</th><th>区域／分类</th><th>备注</th></tr></thead><tbody>{state.quotation.items.map((item, index) => <tr key={index}><td data-label="SKU">{item.sku}</td><td data-label="产品名称">{item.name}</td><td data-label="规格">{item.specification || "—"}</td><td data-label="数量">{item.quantity}</td><td data-label="单位">{item.unit}</td><td data-label="区域／分类">{item.area || "—"}</td><td data-label="备注">{item.note || "—"}</td></tr>)}</tbody></table></div>
       </section>
       {state.quotation.canCreate && <form id="handover-form" onSubmit={save}><fieldset className={styles.form} disabled={busy}><legend>本次交接内容</legend>
