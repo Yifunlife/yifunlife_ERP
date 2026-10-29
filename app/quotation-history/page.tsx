@@ -388,6 +388,7 @@ export default function QuotationHistoryPage() {
                   </td>
                   <td data-label="操作">
                     <div className="quoteHistoryActions" data-history-actions>
+                      <a className="outline quoteHistoryOpen" href={`/crm-collaboration?quotation=${encodeURIComponent(record.id)}`}>通知销售／客户反馈</a>
                       <a className="outline quoteHistoryOpen" href={`/quotation-handover?quotation=${encodeURIComponent(record.id)}`}>成交交接</a>
                       <a className="outline quoteHistoryOpen" href={`/?quotationHistory=${encodeURIComponent(record.id)}&mode=view`}>查看</a>
                       {!record.voidedAt && !record.archivedAt && <a className="outline quoteHistoryOpen" href={`/trade-documents?quotation=${encodeURIComponent(record.id)}`}>PI / CI / 合同</a>}

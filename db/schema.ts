@@ -207,3 +207,26 @@ export const emailVerificationTokens = sqliteTable("email_verification_tokens", 
   createdAt: text("created_at").notNull(),
   attempts: integer("attempts").notNull().default(0),
 });
+
+// Shared commercial correspondence; prices, costs and customer records stay in their owning tables.
+export const quotationCrmLinks = sqliteTable('quotation_crm_links', {
+  quotationId: text('quotation_id').primaryKey().references(() => quotationHistory.id),
+  projectId: text('project_id').notNull(),
+  projectName: text('project_name').notNull(),
+  contractNo: text('contract_no').notNull(),
+  salesId: text('sales_id').notNull(),
+  salesName: text('sales_name').notNull(),
+  salesEmail: text('sales_email').notNull().default(''),
+  active: integer('active').notNull().default(1),
+  updatedAt: text('updated_at').notNull(),
+});
+export const quotationCrmMessages = sqliteTable('quotation_crm_messages', {
+  id: text('id').primaryKey(),
+  quotationId: text('quotation_id').notNull().references(() => quotationHistory.id),
+  projectId: text('project_id').notNull().default(''),
+  direction: text('direction').notNull(),
+  kind: text('kind').notNull(),
+  bodyJson: text('body_json').notNull(),
+  author: text('author').notNull(),
+  createdAt: text('created_at').notNull(),
+});

@@ -1,3 +1,5 @@
+import {env} from 'cloudflare:workers';
+import {sharedQuotation} from '../../../lib/crm-collaboration';
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { appUsers, costingRecords, productOverrides, quotationHistory } from "../../../db/schema";
@@ -80,10 +82,11 @@ export async function GET(request: Request) {
   }
 
   if (id) {
+    const shared=await sharedQuotation(env.DB,id,session.email);
     const quotation = await getDb()
       .select()
       .from(quotationHistory)
-      .where(and(eq(quotationHistory.id, id), ownershipFilter))
+      .where(and(eq(quotationHistory.id, id), shared?undefined:ownershipFilter))
       .get();
     if (!quotation)
       return Response.json({ error: "报价单不存在或无权查看" }, { status: 404 });

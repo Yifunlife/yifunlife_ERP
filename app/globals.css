@@ -6524,3 +6524,49 @@ img {
 .profileDetails dd { margin: 6px 0 0; overflow-wrap: anywhere; }
 .profilePage h2 { font-size: 20px; color: var(--navy); }
 .profilePage .accountEdit p { font-size: 13px; }
+
+/* Phone-only quotation history layout; desktop/tablet retain their existing view. */
+@media (max-width: 760px) {
+  .quoteHistoryPage .outline,
+  .quoteHistoryPage .primary { min-height: 44px; height: auto; }
+  .quoteHistorySearch input,
+  .quoteHistorySearch select { min-height: 44px; font-size: 16px; }
+  .quoteHistorySummary { align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+  .quoteHistoryBatch { gap: 8px 12px; }
+  .quoteHistoryBatch > b { flex-basis: 100%; }
+  .quoteHistoryBatch label { min-height: 44px; }
+  .quoteHistoryRecordSelect input { width: 24px; height: 24px; margin: 10px 0; }
+  .quoteHistoryTable tbody tr { gap: 0 16px; padding: 12px 14px; }
+  .quoteHistoryTable td { font-size: 14px; }
+  .quoteHistoryTable td::before { font-size: 12px; }
+  .quoteHistoryTable td:nth-child(1),
+  .quoteHistoryTable td:nth-child(2),
+  .quoteHistoryTable td:nth-child(7) { grid-column: 1 / -1; }
+  .quoteHistoryTable td:nth-child(1) { grid-row: 1; display: flex; align-items: center; gap: 8px; padding: 0; }
+  .quoteHistoryTable td:nth-child(1)::before,
+  .quoteHistoryTable td:nth-child(2)::before,
+  .quoteHistoryTable td:last-child::before { display: none; }
+  .quoteHistoryRecordSelect { min-width: 0; }
+  .quoteHistoryTable td:nth-child(1) b { overflow-wrap: anywhere; }
+  .quoteHistoryRevision { flex-shrink: 0; margin: 0; }
+  .quoteHistoryTable td:nth-child(2) { grid-row: 2; font-size: 16px; }
+  .quoteHistoryTable td:nth-child(7) { grid-row: 3; color: #51636e; }
+  .quoteHistoryTable td:nth-child(7)::before { display: none; }
+  .quoteHistoryTable td:nth-child(7) span { display: inline; margin-right: 8px; }
+  .quoteHistoryLatest, .quoteHistoryFinal { margin: 0 4px 0 0; font-size: 11px; }
+  .quoteHistoryDealAmount { white-space: normal; font-size: 14px; }
+  .quoteHistoryTable td:last-child { grid-row: 4; padding: 8px 0 12px; }
+  .quoteHistoryActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .quoteHistoryActions .quoteHistoryOpen { min-width: 0; padding: 8px 4px; min-height: 44px; height: auto; font-size: 13px; white-space: normal; text-align: center; }
+  .quoteHistoryTable td:nth-child(3) { grid-row: 5; }
+  .quoteHistoryTable td:nth-child(5) { grid-row: 5; }
+  .quoteHistoryTable td:nth-child(4) { grid-row: 6; color: #51636e; }
+  .quoteHistoryTable td:nth-child(6) { grid-row: 6; }
+  .quoteHistoryDetail { font-size: 12px; }
+  .quoteHistoryMoreMenu :is(a, button) { min-height: 44px; }
+  .quoteHistoryActionDialog :is(button, input, select),
+  .quoteHistoryLossDialog :is(button, input, select) { min-height: 44px; }
+  .quoteHistoryActionDialog textarea,
+  .quoteHistoryLossDialog :is(input, select, textarea) { font-size: 16px; }
+  .quoteHistoryTable .quoteHistoryEmpty { grid-column: 1 / -1; grid-row: auto; }
+}

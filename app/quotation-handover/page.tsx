@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { HandoverData, HandoverFile } from "../../lib/quotation-handover";
 import styles from "../trade-documents/trade-documents.module.css";
+import mobile from "./quotation-handover.module.css";
 
 type RecordRow = { id: string; created_at: string; created_by: string; data: HandoverData };
 type State = { quotation: { id: string; contractNo: string; projectName: string; customerName: string; finalAmount: number | null; currency: string; canCreate: boolean; items: HandoverData["items"] }; records: RecordRow[] };
@@ -58,17 +59,18 @@ export default function QuotationHandoverPage() {
     } catch (error) { setError((error as Error).message); }
     finally { setBusy(false); }
   };
-  return <main className={styles.page}>
+  return <main className={`${styles.page} ${mobile.page}`}>
     <header className={styles.header}><div><h1>成交交接资料包</h1><p>按确认报价留存，每次保存保留独立记录。</p></div><a className="outline" href="/quotation-history">返回报价历史</a></header>
     {error && <p role="alert">{error} {quoteId && <button className="outline" disabled={busy} onClick={() => { setError(""); load(quoteId).catch(error => setError(error.message)); }}>重新读取已保存资料</button>}</p>}
     {notice && <p role="status">{notice}</p>}
     {!state && !error && <p role="status">正在读取报价与交接记录…</p>}
     {state && <>
-      <section className={styles.history}><h2>{state.quotation.projectName} · {state.quotation.contractNo}</h2><p>客户：{state.quotation.customerName || "报价未填写"}　成交金额：{state.quotation.finalAmount === null ? "未确认" : `${state.quotation.currency} ${state.quotation.finalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`}</p>
+      <nav className={mobile.navigation} aria-label="交接页导航"><a href="#handover-items">产品清单</a>{state.quotation.canCreate && <a href="#handover-form">填写交接</a>}<a href="#handover-records">已存资料</a></nav>
+      <section id="handover-items" className={styles.history}><h2>{state.quotation.projectName} · {state.quotation.contractNo}</h2><p>客户：{state.quotation.customerName || "报价未填写"}　成交金额：{state.quotation.finalAmount === null ? "未确认" : `${state.quotation.currency} ${state.quotation.finalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`}</p>
         {!state.quotation.canCreate && <p role="status">当前版本未确认成交价，或已失效。不能创建新交接；已有资料包仍保留供查阅。</p>}
-        <div className={styles.tableWrap}><table><thead><tr><th>SKU</th><th>产品名称</th><th>规格</th><th>数量</th><th>单位</th><th>区域／分类</th><th>备注</th></tr></thead><tbody>{state.quotation.items.map((item, index) => <tr key={index}><td>{item.sku}</td><td>{item.name}</td><td>{item.specification || "—"}</td><td>{item.quantity}</td><td>{item.unit}</td><td>{item.area || "—"}</td><td>{item.note || "—"}</td></tr>)}</tbody></table></div>
+        <div className={styles.tableWrap}><table className={mobile.items}><thead><tr><th>SKU</th><th>产品名称</th><th>规格</th><th>数量</th><th>单位</th><th>区域／分类</th><th>备注</th></tr></thead><tbody>{state.quotation.items.map((item, index) => <tr key={index}><td data-label="SKU">{item.sku}</td><td data-label="产品名称">{item.name}</td><td data-label="规格">{item.specification || "—"}</td><td data-label="数量">{item.quantity}</td><td data-label="单位">{item.unit}</td><td data-label="区域／分类">{item.area || "—"}</td><td data-label="备注">{item.note || "—"}</td></tr>)}</tbody></table></div>
       </section>
-      {state.quotation.canCreate && <form onSubmit={save}><fieldset className={styles.form} disabled={busy}><legend>本次交接内容</legend>
+      {state.quotation.canCreate && <form id="handover-form" onSubmit={save}><fieldset className={styles.form} disabled={busy}><legend>本次交接内容</legend>
         <label>交接负责人<input required maxLength={120} value={responsiblePerson} onChange={event => setResponsiblePerson(event.target.value)} /></label>
         <label className={styles.address}>付款条件<textarea required maxLength={5000} rows={3} value={paymentTerms} onChange={event => setPaymentTerms(event.target.value)} /></label>
         <p className={styles.hint}>填写约定的付款节点与金额；实际到账以收款系统记录为准。</p>
@@ -79,7 +81,7 @@ export default function QuotationHandoverPage() {
         <label>交付要求及范围<textarea maxLength={5000} rows={4} value={deliveryNotes} onChange={event => setDeliveryNotes(event.target.value)} /></label>
         <div className={styles.actions}><span>以本页报价版本固定清单和成交金额，保存后不覆盖旧资料包。</span><button className="primary" type="submit">{busy ? "处理中…" : "保存交接资料包"}</button></div>
       </fieldset></form>}
-      <section className={styles.history}><h2>已保存的交接资料</h2>{!state.records.length ? <p>暂无交接资料包。确认成交价格后可填写并保存。</p> : <div className={styles.tableWrap}><table><thead><tr><th>保存时间</th><th>负责人</th><th>客户附件</th><th>资料包</th></tr></thead><tbody>{state.records.map((record, index) => <tr key={record.id}><td>{new Date(record.created_at).toLocaleString("zh-CN")}<br />{index === 0 && state.quotation.canCreate ? "最新交接" : "历史留存"}</td><td>{record.data.responsiblePerson}</td><td>{record.data.files.length ? `${record.data.files.length} 个` : "待补充"}</td><td><a className="outline" target="_blank" rel="noreferrer" href={`${endpoint}&id=${record.id}`}>预览交接单</a> <a className="outline" href={`${endpoint}&id=${record.id}&download=1`}>下载资料包</a></td></tr>)}</tbody></table></div>}</section>
+      <section id="handover-records" className={styles.history}><h2>已保存的交接资料</h2>{!state.records.length ? <p>暂无交接资料包。确认成交价格后可填写并保存。</p> : <div className={styles.tableWrap}><table className={mobile.records}><thead><tr><th>保存时间</th><th>负责人</th><th>客户附件</th><th>资料包</th></tr></thead><tbody>{state.records.map((record, index) => <tr key={record.id}><td data-label="保存时间">{new Date(record.created_at).toLocaleString("zh-CN")}<br />{index === 0 && state.quotation.canCreate ? "最新交接" : "历史留存"}</td><td data-label="负责人">{record.data.responsiblePerson}</td><td data-label="客户附件">{record.data.files.length ? `${record.data.files.length} 个` : "待补充"}</td><td data-label="资料包"><a className="outline" target="_blank" rel="noreferrer" href={`${endpoint}&id=${record.id}`}>预览交接单</a> <a className="outline" href={`${endpoint}&id=${record.id}&download=1`}>下载资料包</a></td></tr>)}</tbody></table></div>}</section>
     </>}
   </main>;
 }

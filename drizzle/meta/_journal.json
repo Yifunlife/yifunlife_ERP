@@ -50,6 +50,13 @@
       "when": 1786449343701,
       "tag": "0006_burly_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1793258791111,
+      "tag": "0032_quotation_crm_collaboration",
+      "breakpoints": true
     }
   ]
 }
