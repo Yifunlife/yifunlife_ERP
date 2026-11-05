@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { appUsers, loginSessions, passwordResetTokens } from "../db/schema";
+import { canManageProductPairing } from "./product-pairing-access";
 
 export const AUTHENTICATION_ENABLED = true;
 export const ADMIN_EMAIL = "yifunlife@hotmail.com";
@@ -105,7 +106,7 @@ export async function getLoginSession(request: Request) {
     await db.delete(loginSessions).where(eq(loginSessions.tokenHash, tokenHash));
     return null;
   }
-  return { ...session, email: user.email, name: user.name, role: user.role, mustChangePassword: user.mustChangePassword };
+  return { ...session, email: user.email, name: user.name, role: user.role, mustChangePassword: user.mustChangePassword, canManageProductPairing: canManageProductPairing(user) };
 }
 
 export async function createLoginSession(email: string) {

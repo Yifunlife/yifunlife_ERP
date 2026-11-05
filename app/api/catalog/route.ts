@@ -254,9 +254,9 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await requireAdmin(request)))
+  const session = await getLoginSession(request);
+  if (!session || (session.role !== "admin" && !session.canManageProductPairing))
     return Response.json({ error: "仅管理员可修改系统设置" }, { status: 403 });
-  await ensureRecommendationQuantityColumn();
   const payload = (await request.json()) as {
     action:
       | "category"
@@ -289,6 +289,9 @@ export async function POST(request: Request) {
       replaceExisting?: boolean;
     }>;
   };
+  if (session.role !== "admin" && payload.action !== "recommendations")
+    return Response.json({ error: "仅管理员可修改系统设置" }, { status: 403 });
+  await ensureRecommendationQuantityColumn();
   const db = getDb();
   await ensureAreaPairingRuleTable();
   if (payload.action === "classifications" && payload.productId) {

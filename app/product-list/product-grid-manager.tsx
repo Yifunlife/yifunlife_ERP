@@ -275,6 +275,7 @@ export function ProductGridManager({
   pairingStandalone?: boolean;
 }) {
   const [rows, setRows] = useState<GridRow[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [adminAccess, setAdminAccess] = useState<
     "checking" | "granted" | "denied"
   >("checking");
@@ -313,11 +314,12 @@ export function ProductGridManager({
   const load = async () => {
     const sessionResponse = await fetch("/api/auth/session");
     const session = await sessionResponse.json().catch(() => ({}));
-    if (!session.authenticated || session.role !== "admin") {
+    if (!session.authenticated || (session.role !== "admin" && !(pairingStandalone && session.canManageProductPairing))) {
       setAdminAccess("denied");
       setStatus("产品清单与玩具配对仅限管理员使用。");
       return;
     }
+    setIsAdmin(session.role === "admin");
     setAdminAccess("granted");
     const response = await fetch("/api/catalog");
     if (!response.ok) {
@@ -1047,11 +1049,11 @@ export function ProductGridManager({
       <main className="skuGridPage skuGridAccess">
         <section className="skuGridAccessCard">
           <span>ADMIN ACCESS</span>
-          <h1>{adminAccess === "checking" ? "正在验证权限…" : "仅管理员可访问"}</h1>
+          <h1>{adminAccess === "checking" ? "正在验证权限…" : "无权访问此页面"}</h1>
           <p>
             {adminAccess === "checking"
               ? "正在确认当前账号权限。"
-              : "员工账号只能浏览产品、制作报价单、导入清单和导出文件。"}
+              : "当前账号未获此页面的管理权限。"}
           </p>
           {adminAccess === "denied" && (
             <a className="outline" href="/">
@@ -1237,9 +1239,9 @@ export function ProductGridManager({
                 </div>
               </div>
               <div className="pairingHeadActions">
-                <a className="outline" href="/product-list" target="_blank" rel="noreferrer">
+                {isAdmin && <a className="outline" href="/product-list" target="_blank" rel="noreferrer">
                   产品清单管理
-                </a>
+                </a>}
                 <button onClick={closePairingManager} aria-label="返回报价系统">
                   ×
                 </button>

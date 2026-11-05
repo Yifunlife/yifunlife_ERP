@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { appUsers } from "../../../../db/schema";
+import { canManageProductPairing } from "../../../../lib/product-pairing-access";
 import {
   SESSION_SECONDS,
   createLoginSession,
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "账号已停用，请联系管理员。" }, { status: 403 });
   const { token, expiresAt } = await createLoginSession(user.email);
   return Response.json(
-    { ok: true, email: user.email, name: user.name, role: user.role, mustChangePassword: user.mustChangePassword, expiresAt },
+    { ok: true, email: user.email, name: user.name, role: user.role, mustChangePassword: user.mustChangePassword, expiresAt, canManageProductPairing: canManageProductPairing(user) },
     { headers: { "Set-Cookie": `yifun_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}` } },
   );
 }

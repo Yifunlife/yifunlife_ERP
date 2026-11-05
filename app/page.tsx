@@ -228,6 +228,7 @@ type QuoteImportTemplate = {
 };
 type AuthMode = "login" | "register" | "forgot" | "reset";
 type AuthAccount = {
+  canManageProductPairing?: boolean;
   email: string;
   name: string;
   role: string;
@@ -2051,7 +2052,7 @@ export default function Home() {
             window.location.replace("/ceo-dashboard");
             return;
           }
-          setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt });
+          setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt, canManageProductPairing: d.canManageProductPairing });
           setAuth("signedIn");
         } else {
           setAuthMode(new URLSearchParams(window.location.search).get("reset") ? "reset" : "login");
@@ -5377,7 +5378,7 @@ export default function Home() {
         window.location.replace("/ceo-dashboard");
         return;
       }
-      setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt });
+      setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt, canManageProductPairing: d.canManageProductPairing });
       setAuth("signedIn");
     } else {
       const d = await r.json().catch(() => ({}));
@@ -5615,7 +5616,7 @@ export default function Home() {
             <option value="vip">连锁品牌价（CNY）</option>
             <option value="usd">美金价格（USD）</option>
           </select>
-          {isAdmin && (
+          {(isAdmin || authAccount?.canManageProductPairing) && (
             <button
               className="outline"
               onClick={() => window.open("/product-pairing", "_blank", "noopener")}
@@ -5693,7 +5694,7 @@ export default function Home() {
             <small>{authAccount?.role === "admin" ? "管理员 / Administrator" : authAccount?.role === "ceo" ? "CEO（可查看全部信息并导出成本）" : authAccount?.role === "management" ? "管理层 / Management（可查看全部信息并使用系统）" : authAccount?.role === "cost_accountant" ? "核算人员 / Cost accountant" : "员工 / Employee"}</small>
           </div>
           <button className="mobileMenuAction" role="menuitem" onClick={() => { setEmployeeMenuOpen(false); openToyMatchingWorkspace(); }}>玩具匹配</button>
-          {isAdmin && <button className="mobileMenuAction" role="menuitem" onClick={() => { setEmployeeMenuOpen(false); window.open("/product-pairing", "_blank", "noopener"); }}>玩具配对管理</button>}
+          {(isAdmin || authAccount?.canManageProductPairing) && <button className="mobileMenuAction" role="menuitem" onClick={() => { setEmployeeMenuOpen(false); window.open("/product-pairing", "_blank", "noopener"); }}>玩具配对管理</button>}
           <button
             role="menuitem"
             onClick={() => {
