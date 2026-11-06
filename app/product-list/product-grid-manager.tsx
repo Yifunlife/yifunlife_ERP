@@ -176,7 +176,9 @@ const pairingAreaForRow = (row: GridRow) =>
   pairedArea(row.category2, row.productName) || row.category2;
 
 const isPairingItem = (row: GridRow) =>
-  row.productType === "配套产品" || row.productType === "配套玩具";
+  row.productType === "配套玩具";
+const isPairingSource = (row: GridRow) =>
+  row.productType === "主设备" || row.productType === "配套产品";
 const isAccessoryProductName = (name: string) =>
   /凳|椅|衣架|挂钩|购物车|购物篮/.test(name);
 
@@ -380,36 +382,23 @@ export function ProductGridManager({
     [directoryFilter, rows],
   );
 
-  const pairingToyAreas = useMemo(
-    () => new Set(
-      rows
-        .filter(isPairingItem)
-        .map(pairingAreaForRow),
-    ),
-    [rows],
-  );
   const simulationCategories = useMemo(
     () =>
       [...new Set(
         rows
-          .filter(
-            (row) =>
-              row.productType === "主设备" &&
-              pairingToyAreas.has(pairingAreaForRow(row)),
-          )
+          .filter(isPairingSource)
           .map(pairingAreaForRow),
       )].sort(),
-    [pairingToyAreas, rows],
+    [rows],
   );
   const pairingAreaSimulationRows = useMemo(
     () =>
       rows.filter(
         (row) =>
-          row.productType === "主设备" &&
-          pairingToyAreas.has(pairingAreaForRow(row)) &&
+          isPairingSource(row) &&
           pairingAreaForRow(row) === pairingCategory,
-      ),
-    [pairingCategory, pairingToyAreas, rows],
+      ).filter((row, index, all) => all.findIndex((item) => item.id === row.id) === index),
+    [pairingCategory, rows],
   );
   const pairingSimulationRows = useMemo(() => {
     const query = pairingSearch.trim().toLowerCase();
@@ -427,7 +416,7 @@ export function ProductGridManager({
         (row) =>
           isPairingItem(row) &&
           pairingAreaForRow(row) === pairingCategory,
-      ),
+      ).filter((row, index, all) => all.findIndex((item) => item.id === row.id) === index),
     [pairingCategory, rows],
   );
   const pairingCountsBySourceId = useMemo(() => {
@@ -544,6 +533,7 @@ export function ProductGridManager({
     setPairingSaving(true);
     setPairingSavedMessage("");
     const sources = pairingAreaSimulationRows;
+    const toyIds = new Set(pairingToyRows.map((toy) => toy.id));
     const payloads = sources.map((source) => {
       const relatedProducts = pairingToyRows
         .map((toy) => ({
@@ -551,7 +541,14 @@ export function ProductGridManager({
           quantity: pairingMatrix[source.id]?.[toy.id] || 0,
         }))
         .filter((item) => item.quantity > 0);
-      return { productId: source.id, relatedProducts };
+      const preservedRelations = relations
+        .filter((relation) =>
+          relation.productId === source.id && !toyIds.has(relation.relatedProductId))
+        .map((relation) => ({
+          relatedProductId: relation.relatedProductId,
+          quantity: Math.max(1, Math.floor(Number(relation.quantity) || 1)),
+        }));
+      return { productId: source.id, relatedProducts: [...preservedRelations, ...relatedProducts] };
     });
     const responses: Response[] = [];
     for (let index = 0; index < payloads.length; index += 5) {
@@ -588,7 +585,7 @@ export function ProductGridManager({
       0,
     );
     setPairingSavedMessage(
-      `已保存 ${sources.length} 台模拟设备的配对表，共 ${total} 件配套项目。`,
+      `已保存 ${sources.length} 项设备与配套产品的配对表，共 ${total} 件配套玩具。`,
     );
   };
 
@@ -1280,12 +1277,12 @@ export function ProductGridManager({
                   type="search"
                 />
               </label>
-              <p>竖排为模拟区主设备，横排为同区域配套产品与玩具；交叉格填写绑定数量。</p>
+              <p>竖排为主设备与配套产品，横排仅为同区域配套玩具；交叉格填写绑定数量。</p>
             </div>
             <div className="pairingMatrixLayout">
-              <aside className="pairingPinnedColumn" aria-label="模拟区主设备">
+              <aside className="pairingPinnedColumn" aria-label="主设备与配套产品">
                 <div className="pairingPinnedHeader">
-                  模拟区主设备
+                  主设备与配套产品
                   <small>{pairingSimulationRows.length} 项</small>
                 </div>
                 <div
@@ -1334,6 +1331,7 @@ export function ProductGridManager({
                 <table className="pairingMatrix">
                   <thead>
                     <tr>
+                      {!pairingToyRows.length && <th scope="col"><div className="pairingToyHeader">配套玩具待补齐</div></th>}
                       {pairingToyRows.map((toy) => (
                         <th key={toy.id} scope="col" title={`${toy.sku} · ${toy.productName}`}>
                           <div className="pairingToyHeader">
@@ -1349,6 +1347,7 @@ export function ProductGridManager({
                   <tbody>
                     {pairingSimulationRows.map((source) => (
                       <tr key={source.id}>
+                        {!pairingToyRows.length && <td>—</td>}
                         {pairingToyRows.map((toy) => (
                           <td key={toy.id}>
                             <input
@@ -1376,20 +1375,22 @@ export function ProductGridManager({
             <footer className="pairingFoot">
               <span>
                 {pairingSavedMessage ||
-                  `竖排为 ${pairingAreaSimulationRows.length} 个模拟区主设备，横排为 ${pairingToyRows.length} 个配套产品与玩具；填写数量后保存。`}
+                  (pairingToyRows.length
+                    ? `竖排为 ${pairingAreaSimulationRows.length} 项设备与配套产品，横排为 ${pairingToyRows.length} 个配套玩具；填写数量后保存。`
+                    : "当前模拟区的配套玩具待补齐，设备与配套产品仍可查看。")}
               </span>
               <div className="pairingFootActions">
                 {loginRequired && <a className="outline" href="/" target="_blank" rel="noopener noreferrer">在新标签页重新登录</a>}
                 <button
                   className="outline"
-                  disabled={!pairingAreaSimulationRows.length || pairingSaving}
+                  disabled={!pairingAreaSimulationRows.length || !pairingToyRows.length || pairingSaving}
                   onClick={clearPairingMatrix}
                 >
                   清空当前表格
                 </button>
                 <button
                   className="primary"
-                  disabled={!pairingAreaSimulationRows.length || pairingSaving}
+                  disabled={!pairingAreaSimulationRows.length || !pairingToyRows.length || pairingSaving}
                   onClick={() => void savePairingMatrix()}
                 >
                   {pairingSaving ? "保存中…" : "保存配对表"}

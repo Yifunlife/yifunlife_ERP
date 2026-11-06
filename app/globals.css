@@ -1610,7 +1610,7 @@ img {
   .pairingSimulationGrid { grid-auto-rows: 82px; }
   .pairingToyGrid { grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); }
   .pairingQuantity { grid-template-columns: 24px minmax(0, 1fr) 24px; }
-  .pairingFoot { padding: 12px 16px; }
+  .pairingFoot { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 16px; }
   .pairingFootActions { gap: 7px; }
 }
 .sideFoot {

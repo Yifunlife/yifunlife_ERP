@@ -1,0 +1,154 @@
+{
+  "areas": [
+    {
+      "sku": "Y10555",
+      "productId": "junior-Y10555",
+      "name": "空乘柜子",
+      "from": "工地区",
+      "majorCategory": "职业体验 / Career Experience",
+      "area": "航空区"
+    },
+    {
+      "sku": "Y10753",
+      "productId": "junior-Y10753",
+      "name": "CT机",
+      "from": "牧场区",
+      "majorCategory": "动物世界 / Animal World",
+      "area": "宠物医院区"
+    },
+    {
+      "sku": "Y10754",
+      "productId": "junior-Y10754",
+      "name": "手术台（2个为一对）",
+      "from": "牧场区",
+      "majorCategory": "动物世界 / Animal World",
+      "area": "宠物医院区"
+    },
+    {
+      "sku": "Y10755",
+      "productId": "junior-Y10755",
+      "name": "置物架",
+      "from": "牧场区",
+      "majorCategory": "动物世界 / Animal World",
+      "area": "宠物医院区"
+    },
+    {
+      "sku": "Y10341",
+      "productId": "junior-Y10341",
+      "name": "花车",
+      "from": "超市区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "花店区"
+    },
+    {
+      "sku": "Y10343",
+      "productId": "junior-Y10343",
+      "name": "花车装饰花朵柜",
+      "from": "超市区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "花店区"
+    },
+    {
+      "sku": "Y10344",
+      "productId": "junior-Y10344",
+      "name": "花车架子",
+      "from": "超市区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "花店区"
+    },
+    {
+      "sku": "Y10345",
+      "productId": "junior-Y10345",
+      "name": "花车牌子",
+      "from": "超市区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "花店区"
+    },
+    {
+      "sku": "Y10918",
+      "productId": "junior-Y10918",
+      "name": "奶茶配料台",
+      "from": "甜品区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "奶茶区"
+    },
+    {
+      "sku": "Y10919",
+      "productId": "junior-Y10919",
+      "name": "奶茶装饰台",
+      "from": "甜品区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "奶茶区"
+    },
+    {
+      "sku": "Y10920",
+      "productId": "junior-Y10920",
+      "name": "奶茶打卡台",
+      "from": "甜品区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "奶茶区"
+    },
+    {
+      "sku": "Y10921",
+      "productId": "junior-Y10921",
+      "name": "奶茶前台",
+      "from": "甜品区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "奶茶区"
+    },
+    {
+      "sku": "Y10923",
+      "productId": "junior-Y10923",
+      "name": "奶茶长椅",
+      "from": "甜品区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "奶茶区"
+    },
+    {
+      "sku": "Y10924",
+      "productId": "junior-Y10924",
+      "name": "泡泡奶茶组合",
+      "from": "甜品区",
+      "majorCategory": "生活场景 / Lifestyle Scene",
+      "area": "奶茶区"
+    }
+  ],
+  "images": [
+    {
+      "sku": "Y10440",
+      "productId": "junior-Y10440",
+      "sourceWorkbook": "01 模拟类 27102026.xlsx",
+      "sha256": "d716d73223949a27a53d5f364820172c098812a00afe202d93b32a8f836a2a0e",
+      "bytes": 834467,
+      "oldKey": "products/latest-equipment-20260824/junior-Y10440.png",
+      "key": "catalog/corrections-20261106/Y10440-d716d73223949a27.png"
+    },
+    {
+      "sku": "Y10447",
+      "productId": "junior-Y10447",
+      "sourceWorkbook": "01 模拟类 27102026.xlsx",
+      "sha256": "50c6469ab955bfd55d7402702b1d33bb206216d7d42755b89dabbfc3a201dbee",
+      "bytes": 1467664,
+      "oldKey": "products/latest-equipment-20260824/junior-Y10447.png",
+      "key": "catalog/corrections-20261106/Y10447-50c6469ab955bfd5.png"
+    },
+    {
+      "sku": "Y10448",
+      "productId": "junior-Y10448",
+      "sourceWorkbook": "01 模拟类 27102026.xlsx",
+      "sha256": "61cde47b65f30abcbb1f747af1494666b107e431ddd78530a17e08ed1e0e443c",
+      "bytes": 856052,
+      "oldKey": "products/latest-equipment-20260824/junior-Y10448.png",
+      "key": "catalog/corrections-20261106/Y10448-61cde47b65f30abc.png"
+    },
+    {
+      "sku": "Y10637",
+      "productId": "junior-Y10637",
+      "sourceWorkbook": "01 模拟类 27102026.xlsx",
+      "sha256": "2ad23ed604e90a5e35abe7d2cf190b18d1315afb8e6093f86192ea4d14dc3ff5",
+      "bytes": 2537814,
+      "oldKey": "products/latest-equipment-20260824/junior-Y10637.png",
+      "key": "catalog/corrections-20261106/Y10637-2ad23ed604e90a5e.png"
+    }
+  ]
+}
