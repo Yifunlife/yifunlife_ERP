@@ -255,7 +255,9 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   const session = await getLoginSession(request);
-  if (!session || (session.role !== "admin" && !session.canManageProductPairing))
+  if (!session)
+    return Response.json({ error: "登录已过期，请重新登录后继续保存。" }, { status: 401 });
+  if (session.role !== "admin" && !session.canManageProductPairing)
     return Response.json({ error: "仅管理员可修改系统设置" }, { status: 403 });
   const payload = (await request.json()) as {
     action:

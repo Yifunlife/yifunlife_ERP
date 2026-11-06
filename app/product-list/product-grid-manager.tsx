@@ -276,6 +276,7 @@ export function ProductGridManager({
 }) {
   const [rows, setRows] = useState<GridRow[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [loginRequired, setLoginRequired] = useState(false);
   const [adminAccess, setAdminAccess] = useState<
     "checking" | "granted" | "denied"
   >("checking");
@@ -314,6 +315,7 @@ export function ProductGridManager({
   const load = async () => {
     const sessionResponse = await fetch("/api/auth/session");
     const session = await sessionResponse.json().catch(() => ({}));
+    setLoginRequired(!session.authenticated);
     if (!session.authenticated || (session.role !== "admin" && !(pairingStandalone && session.canManageProductPairing))) {
       setAdminAccess("denied");
       setStatus("产品清单与玩具配对仅限管理员使用。");
@@ -567,7 +569,11 @@ export function ProductGridManager({
     }
     setPairingSaving(false);
     if (responses.some((response) => !response.ok) || responses.length !== sources.length) {
-      setPairingSavedMessage("配对表保存失败，请重试。");
+      const expired = responses.some((response) => response.status === 401);
+      setLoginRequired(expired);
+      setPairingSavedMessage(expired
+        ? "登录已过期。请在新标签页重新登录，再回到本页保存；当前填写内容仍保留，请勿刷新。"
+        : "配对表保存失败，请重试。");
       return;
     }
     await load();
@@ -1049,11 +1055,11 @@ export function ProductGridManager({
       <main className="skuGridPage skuGridAccess">
         <section className="skuGridAccessCard">
           <span>ADMIN ACCESS</span>
-          <h1>{adminAccess === "checking" ? "正在验证权限…" : "无权访问此页面"}</h1>
+          <h1>{adminAccess === "checking" ? "正在验证权限…" : loginRequired ? "请重新登录" : "无权访问此页面"}</h1>
           <p>
             {adminAccess === "checking"
               ? "正在确认当前账号权限。"
-              : "当前账号未获此页面的管理权限。"}
+              : loginRequired ? "登录已过期或尚未登录，请返回报价系统登录后再打开此页面。" : "当前账号未获此页面的管理权限。"}
           </p>
           {adminAccess === "denied" && (
             <a className="outline" href="/">
@@ -1373,6 +1379,7 @@ export function ProductGridManager({
                   `竖排为 ${pairingAreaSimulationRows.length} 个模拟区主设备，横排为 ${pairingToyRows.length} 个配套产品与玩具；填写数量后保存。`}
               </span>
               <div className="pairingFootActions">
+                {loginRequired && <a className="outline" href="/" target="_blank" rel="noopener noreferrer">在新标签页重新登录</a>}
                 <button
                   className="outline"
                   disabled={!pairingAreaSimulationRows.length || pairingSaving}

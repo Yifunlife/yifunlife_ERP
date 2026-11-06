@@ -44,6 +44,6 @@ test('only Ge Jingyu gains pairing writes while other administrator actions stay
         assert.equal((await r.load('app/api/admin/users/route.ts').GET(sessionRequest)).status, 403);
       }
     }
-    assert.equal((await route.POST(new Request('https://test/api/catalog', { method: 'POST' }))).status, 403);
+    assert.equal((await route.POST(new Request('https://test/api/catalog', { method: 'POST' }))).status, 401);
   } finally { r.close(); }
 });
