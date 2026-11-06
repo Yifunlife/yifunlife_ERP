@@ -59,11 +59,11 @@ async function exportFixture(options = {}) {
   return { sheet: XLSX.read(output, { type: 'array' }).Sheets.Review, output, ref };
 }
 
-test('failed imported export reports the actual error and leaves template and quote intact', async () => {
-  await exportFixture({
-    translateQuoteWorkbook: async () => { throw new Error('自动翻译未完成：C2「产品名称」'); },
-    expectedError: /自动翻译未完成：C2/,
+test('imported export succeeds even when translation is unavailable', async () => {
+  const result = await exportFixture({
+    translateQuoteWorkbook: async () => { throw new Error('Export must not request translation'); },
   });
+  assert.equal(result.sheet.B2.v, 'Test product');
 });
 
 test('export button displays the template failure reason without recording another quote', async () => {
@@ -71,14 +71,14 @@ test('export button displays the template failure reason without recording anoth
   const fn = clientFunction('exportQuoteExcel', [], {
     checkCostedQuote: () => true, quoteImportTemplateRef: { current: {} }, quoteExportFileName: () => 'review',
     recordQuoteHistory: () => { throw Error('History export must not create a record'); },
-    exportImportedQuoteTemplate: async (_, onError) => { onError('自动翻译未完成：C2「产品名称」'); return false; },
+    exportImportedQuoteTemplate: async (_, onError) => { onError('原始模板缺少工作表'); return false; },
     window: { alert: message => { alert = message; } },
   });
   await fn(false);
-  assert.match(alert, /C2「产品名称」/);assert.match(alert, /原始模板和报价内容仍已保留/);
+  assert.match(alert, /原始模板缺少工作表/);assert.match(alert, /原始模板和报价内容仍已保留/);
 });
 
-test('imported template translates only the exported copy and preserves the original package', async () => {
+test('imported template exports original text without translation and preserves the original package', async () => {
   const f=fixture();f.product.name='原中文设备';
   const original=Buffer.from(f.bytes);let requests=0;
   const translateQuoteWorkbook=clientFunction('translateQuoteWorkbook',['xmlText','normalizeTemplateCellOrder','updateTemplateCell'],{
@@ -88,7 +88,7 @@ test('imported template translates only the exported copy and preserves the orig
     },
   });
   const {sheet}=await exportFixture({fixture:f,translateQuoteWorkbook});
-  assert.ok(requests>0);assert.equal(sheet.B2.v,'原中文设备\nTranslated equipment');
+  assert.equal(requests,0);assert.equal(sheet.B2.v,'原中文设备');
   assert.equal(sheet.D2.v,100);assert.equal(sheet.E2.v,100);
   assert.deepEqual(Buffer.from(f.bytes),original);
 });
@@ -466,4 +466,21 @@ test('added products shift fee serial repair together with fee and total rows', 
   for(const row of [4,5,6]) assert.ok(!sheet[`H${row}`]?.f && !sheet[`H${row}`]?.v);
   assert.equal(sheet.H3.v,2);assert.equal(sheet.E6.v,170);assert.equal(sheet.G6.v,24);
   assert.deepEqual(Buffer.from(f.bytes),original);
+});
+
+test('opening history for export preserves original Chinese text without requesting translation', async () => {
+  const products = [{ id: 'original', sku: 'ORIGINAL', name: '中文设备', unit: '件', spec: '原规格', note: '原备注', material: '原工艺' }];
+  const values = {};
+  const setters = ['QuoteHistoryNotice', 'WorkspaceProjectId', 'QuoteHistorySaving', 'QuoteQuantityDrafts', 'QuoteImportPreview', 'RecordedQuoteHistoryId', 'QuoteHistoryLineageId', 'QuoteHistoryMode', 'QuoteActiveTab', 'QuoteExpandedAreas', 'ImportedQuotePairingOpen', 'ToyMatchingDraftId', 'CartOpen', 'QuoteOpen', 'Cart', 'CartPairings', 'ImportedProducts', 'ImportedAreaOrder', 'RestoredQuoteProducts', 'PriceMode', 'QuoteProject', 'QuoteContractNo', 'DesignerName', 'SalesName', 'CompanyAddress', 'InstallationIncludesTravel', 'IncludeTax', 'ShowDesignDeduction', 'Fees', 'PendingHistoryExport'];
+  const scope = Object.fromEntries(setters.map(name => ['set' + name, value => { values[name] = value; }]));
+  Object.assign(scope, {
+    quoteImportTemplateRef: { current: null },
+    bilingualQuoteProducts: () => { throw Error('Opening an export must not translate'); },
+    fetch: () => { throw Error('Opening an export must not request translation'); },
+    window: { history: { replaceState() {} }, alert: message => { throw Error(message); } },
+  });
+  await clientFunction('restoreQuotation', [], scope)({ id: 'history', contractNo: 'RAW-R01', projectName: '原项目', snapshot: { version: 1, products, cart: { original: 7 }, priceMode: 'vip' } }, 'export', 'excel');
+  assert.deepEqual(values.RestoredQuoteProducts, products);
+  assert.deepEqual(values.Cart, { original: 7 });
+  assert.equal(values.PendingHistoryExport, 'excel');
 });

@@ -1888,6 +1888,9 @@ export default function Home() {
   const [loginPasswordConfirm, setLoginPasswordConfirm] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
   const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
+  const [reauthenticationRequired, setReauthenticationRequired] = useState(false);
+  const reauthenticationDialog = useRef<HTMLDialogElement>(null);
+  const requireQuoteLoginRef = useRef<() => void>(() => {});
   const isAdmin = authAccount?.role === "admin";
   const canViewQuoteCost = ["admin", "ceo", "cost_accountant"].includes(authAccount?.role || "");
   const [workplaceEntryId] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("workplaceProject") || "");
@@ -1979,7 +1982,6 @@ export default function Home() {
   const [relatedSearch, setRelatedSearch] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
-  const [quotePreparing, setQuotePreparing] = useState(false);
   const [quoteActiveTab, setQuoteActiveTab] = useState("summary");
   const [quoteExpandedAreas, setQuoteExpandedAreas] = useState<Set<string>>(
     () => new Set(),
@@ -2008,6 +2010,24 @@ export default function Home() {
     designDeduction: 0,
   });
   const [activeQuotationRestored, setActiveQuotationRestored] = useState(false);
+  useEffect(() => {
+    if (reauthenticationRequired) reauthenticationDialog.current?.showModal();
+    else reauthenticationDialog.current?.close();
+  }, [reauthenticationRequired]);
+  useEffect(() => {
+    if (auth !== "signedIn" || !authAccount || reauthenticationRequired) return;
+    const expiresAt = new Date(authAccount.expiresAt).getTime();
+    if (!Number.isFinite(expiresAt)) return;
+    const checkExpiry = () => {
+      if (Date.now() >= expiresAt) requireQuoteLoginRef.current();
+    };
+    const timer = window.setTimeout(checkExpiry, Math.max(0, expiresAt - Date.now()));
+    window.addEventListener("focus", checkExpiry);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", checkExpiry);
+    };
+  }, [auth, authAccount, reauthenticationRequired]);
   useEffect(() => {
     if (auth !== "signedIn" || !activeQuotationRestored) return;
     if (!workspaceProjectId) { setWorkplaceReady(true); setWorkplaceNotice(""); return; }
@@ -2081,8 +2101,12 @@ export default function Home() {
   useEffect(() => {
     if (auth !== "signedIn" || !activeQuotationStorageKey || activeQuotationRestored) return;
     try {
+      const recoveryJson = window.sessionStorage.getItem(activeQuotationStorageKey + ":reauth");
+      const recovery = recoveryJson ? JSON.parse(recoveryJson) as {
+        snapshot: QuoteHistorySnapshot; recordedQuoteHistoryId: string; quoteHistoryLineageId: string; quoteHistoryMode: QuoteHistoryMode;
+      } : null;
       const saved = window.localStorage.getItem(activeQuotationStorageKey);
-      const snapshot = saved ? JSON.parse(saved) as Partial<QuoteHistorySnapshot> : null;
+      const snapshot = recovery?.snapshot || (saved ? JSON.parse(saved) as Partial<QuoteHistorySnapshot> : null);
       if (snapshot?.version === 1) {
         setWorkspaceProjectId(snapshot.workspaceProjectId || workplaceEntryId);
         quoteImportTemplateRef.current = snapshot.importTemplate || null;
@@ -2107,6 +2131,13 @@ export default function Home() {
           installation: Number(snapshot.fees?.installation) || 0,
           designDeduction: Number(snapshot.fees?.designDeduction) || 0,
         });
+        if (recovery) {
+          setRecordedQuoteHistoryId(recovery.recordedQuoteHistoryId);
+          setQuoteHistoryLineageId(recovery.quoteHistoryLineageId);
+          setQuoteHistoryMode(recovery.quoteHistoryMode);
+          setQuoteOpen(true);
+          window.sessionStorage.removeItem(activeQuotationStorageKey + ":reauth");
+        }
       }
     } catch {
       window.localStorage.removeItem(activeQuotationStorageKey);
@@ -2805,6 +2836,7 @@ export default function Home() {
     openPairingSelection(source, "catalog");
   };
   const clearQuotation = () => {
+    window.sessionStorage.removeItem(activeQuotationStorageKey + ":reauth");
     setCart({});
     setQuoteQuantityDrafts({});
     setCartPairings({});
@@ -3255,6 +3287,7 @@ export default function Home() {
   const uploadQuoteTemplate = async (file: File): Promise<{ id: string }> => {
     if (file.size > 200 * 1024 * 1024) throw new Error("转换后的报价模板不能超过 200MB");
     const readResult = async (response: Response) => {
+      if (response.status === 401) { requireQuoteLogin(); throw new Error("登录已过期，请重新登录后继续，当前报价内容仍保留在本页。"); }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "模板上传失败，请重新导入");
       return result;
@@ -3317,6 +3350,7 @@ export default function Home() {
       const batch = texts.slice(offset, offset + 24);
       try {
         const response = await fetch("/api/quote-translate", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts: batch}), signal});
+        if (response.status === 401) { requireQuoteLogin(); throw new Error("登录已过期，请重新登录后继续导出，当前报价内容仍保留在本页。"); }
         const result = await response.json();
         if (!Array.isArray(result.translations) || result.translations.length !== batch.length) throw new Error(result.error || "自动翻译未完成，请稍后重试导出");
         batch.forEach((text, index) => {
@@ -3991,6 +4025,19 @@ export default function Home() {
     showDesignDeduction,
     fees,
   });
+  const requireQuoteLogin = () => {
+    try {
+      window.sessionStorage.setItem(activeQuotationStorageKey + ":reauth", JSON.stringify({
+        snapshot: quotationHistorySnapshot(), recordedQuoteHistoryId, quoteHistoryLineageId, quoteHistoryMode,
+      }));
+    } catch {
+      // The current quote and original template remain in memory even if browser storage is full.
+    }
+    setLoginPassword("");
+    setLoginError("");
+    setReauthenticationRequired(true);
+  };
+  requireQuoteLoginRef.current = requireQuoteLogin;
   const restoreQuotation = async (
     quotation: QuotationHistoryRecord,
     mode: QuoteHistoryMode = "view",
@@ -4024,8 +4071,7 @@ export default function Home() {
       setCartPairings(snapshot.cartPairings || {});
       setImportedProducts(snapshot.importedProducts || []);
       setImportedAreaOrder(snapshot.importedAreaOrder || []);
-      try {setRestoredQuoteProducts(await bilingualQuoteProducts(snapshot.products || []));}
-      catch (error) {setRestoredQuoteProducts(snapshot.products || []); window.alert(error instanceof Error ? error.message : "历史报价翻译未完成，请重试");}
+      setRestoredQuoteProducts(snapshot.products || []);
       setPriceMode(["factory", "vip", "usd"].includes(snapshot.priceMode) ? snapshot.priceMode : "vip");
       setQuoteProject(quotation.projectName);
       setQuoteContractNo(quotation.contractNo);
@@ -4047,6 +4093,7 @@ export default function Home() {
       const response = await fetch(
         `/api/quotation-history?nextRevisionOf=${encodeURIComponent(quotation.id)}`,
       );
+      if (response.status === 401) { requireQuoteLogin(); return; }
       const data = (await response.json()) as { contractNo?: string };
       if (!response.ok || !data.contractNo) {
         window.alert("无法生成新项目编号，请返回历史报价单后重试。");
@@ -4083,6 +4130,7 @@ export default function Home() {
           snapshot: quotationHistorySnapshot(),
         }),
       });
+      if (response.status === 401) { requireQuoteLogin(); return false; }
       const data = (await response.json()) as {
         quotation?: QuotationHistoryRecord;
         error?: string;
@@ -4094,6 +4142,7 @@ export default function Home() {
       setRecordedQuoteHistoryId(data.quotation.id);
       setQuoteHistoryLineageId(data.quotation.lineageId || "");
       window.localStorage.removeItem(activeQuotationStorageKey);
+      window.sessionStorage.removeItem(activeQuotationStorageKey + ":reauth");
       if (data.quotation.contractNo && data.quotation.contractNo !== contractNo) {
         setQuoteContractNo(data.quotation.contractNo);
         await new Promise<void>((resolve) =>
@@ -4118,6 +4167,7 @@ export default function Home() {
       if (!template.source) {
         if (!template.id) throw new Error("历史记录没有原始模板，请重新导入原表");
         const response = await fetch(`/api/quote-template?id=${encodeURIComponent(template.id)}`);
+        if (response.status === 401) { requireQuoteLogin(); throw new Error("登录已过期，请重新登录后继续导出，当前报价内容仍保留在本页。"); }
         if (!response.ok) throw new Error("原始模板读取失败，请重新登录或重试");
         template.source = await response.arrayBuffer();
       }
@@ -4556,7 +4606,7 @@ export default function Home() {
       xml = repairQuoteSectionLayout(files, xml, sourceSheet, new Set(sourceLines.map(product => product.importSourceRow!)), template.headerRow, template.columns.name, Math.max(...Object.values(template.columns)));
       files[worksheetPath] = strToU8(normalizeTemplateCellOrder(xml));
       applyQuoteRevisions(files, worksheetPath, exportLineItems, {quantity: template.columns.quantity, specification: template.columns.specification, amounts: [template.columns.cnyAmount, template.columns.usdAmount, costAmount].filter(column => column >= 0)});
-      downloadExcelFile(new Uint8Array(formatQuoteWorkbook(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer))), `${fileName}.xlsx`);
+      downloadExcelFile(new Uint8Array(formatQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer)), `${fileName}.xlsx`);
       return true;
     } catch (error) {
       onError?.(error instanceof Error ? error.message : "导出处理异常");
@@ -4849,7 +4899,7 @@ export default function Home() {
       xml = formatQuoteCurrencyCells(files, xml, 3, [8, 9, 10, 11]);
       files[worksheetPath] = strToU8(normalizeTemplateCellOrder(xml));
       applyQuoteRevisions(files, worksheetPath, revisionRows);
-      downloadExcelFile(new Uint8Array(formatQuoteWorkbook(await translateQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer))), `${quoteExportFileName()}.xlsx`);
+      downloadExcelFile(new Uint8Array(formatQuoteWorkbook(zipSync(files, { level: 6 }).buffer as ArrayBuffer)), `${quoteExportFileName()}.xlsx`);
     } catch (error) {
       window.alert(
         error instanceof Error ? error.message : "导出 Excel 失败，请重新打开报价单后再试。",
@@ -5373,13 +5423,19 @@ export default function Home() {
     if (r.ok) {
       const d = await r.json();
       setLoginPassword("");
+      if (reauthenticationRequired && d.email !== authAccount?.email) {
+        setLoginError("请使用原账号重新登录，以继续当前报价。");
+        return;
+      }
       if (d.mustChangePassword) { window.location.replace("/profile"); return; }
-      if (d.role === "ceo") {
+      if (d.role === "ceo" && !reauthenticationRequired) {
         window.location.replace("/ceo-dashboard");
         return;
       }
       setAuthAccount({ email: d.email, name: d.name, role: d.role, expiresAt: d.expiresAt, canManageProductPairing: d.canManageProductPairing });
       setAuth("signedIn");
+      setReauthenticationRequired(false);
+      window.sessionStorage.removeItem(activeQuotationStorageKey + ":reauth");
     } else {
       const d = await r.json().catch(() => ({}));
       setLoginError(d.error || "登录失败，请重试");
@@ -5502,7 +5558,7 @@ export default function Home() {
             {authMode !== "login" && <button type="button" onClick={() => { setAuthMode("login"); setLoginError(""); }}>返回登录</button>}
             {authMode === "login" && <><button type="button" onClick={() => { setAuthMode("forgot"); setLoginUsername(""); setLoginPassword(""); setLoginError(""); setLoginNotice(""); }}>忘记密码？</button><small>账号开通请联系管理员或 CEO。</small></>}
           </div>}
-          <small className="loginHint">为保护报价信息，登录 30 分钟后将自动退出。</small>
+          <small className="loginHint">登录有效期为 7 天；过期后可重新登录，继续当前报价。</small>
         </form>
       </main>
     );
@@ -5593,6 +5649,18 @@ export default function Home() {
     });
   return (
     <main>
+      {reauthenticationRequired && (
+        <dialog ref={reauthenticationDialog} className="quoteReauthenticationDialog" aria-labelledby="quote-reauth-title" aria-describedby="quote-reauth-description" onCancel={(event) => event.preventDefault()}>
+          <form className="loginCard" onSubmit={(event) => { void login(event).catch(() => setLoginError("登录失败，请检查网络后重试。当前报价仍保留在本页。")); }}>
+            <h1 id="quote-reauth-title">登录已过期，请重新登录</h1>
+            <p id="quote-reauth-description">当前报价内容仍保留在本页。请使用原账号（{authAccount?.name}）重新登录，成功后可继续编辑和导出。</p>
+            <label>用户名 / Username<input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="username" autoFocus required /></label>
+            <PasswordField id="quote-reauth-password" label="密码 / Password" value={loginPassword} onChange={setLoginPassword} autoComplete="current-password" required />
+            {loginError && <div className="loginError" role="alert">{loginError}</div>}
+            <button className="primary" type="submit">重新登录，继续报价</button>
+          </form>
+        </dialog>
+      )}
       <header className="topbar">
         <a className="brand" href="/" aria-label="返回主页">
           <CompanyLogo className="headerLogo" />
@@ -8012,26 +8080,19 @@ export default function Home() {
                 </button>
                 <button
                   className="primary"
-                  disabled={quotePreparing}
-                  onClick={async () => {
-                    setQuotePreparing(true);
-                    try {
-                      const translated = await bilingualQuoteProducts(quoteCartItems);
-                      setRestoredQuoteProducts(current => [...current.filter(product => !translated.some(item => item.id === product.id)), ...translated]);
-                      setCartOpen(false);
-                      setQuoteActiveTab("all");
-                      setRecordedQuoteHistoryId("");
-                      setQuoteHistoryLineageId("");
-                      setQuoteHistoryNotice("");
-                      setQuoteHistoryMode("new");
-                      setPendingHistoryExport(null);
-                      setQuoteOpen(true);
-                    } catch (error) {
-                      window.alert(error instanceof Error ? error.message : "报价翻译未完成，请重试");
-                    } finally {setQuotePreparing(false);}
+                  onClick={() => {
+                    setRestoredQuoteProducts(current => [...current.filter(product => !quoteCartItems.some(item => item.id === product.id)), ...quoteCartItems]);
+                    setCartOpen(false);
+                    setQuoteActiveTab("all");
+                    setRecordedQuoteHistoryId("");
+                    setQuoteHistoryLineageId("");
+                    setQuoteHistoryNotice("");
+                    setQuoteHistoryMode("new");
+                    setPendingHistoryExport(null);
+                    setQuoteOpen(true);
                   }}
                 >
-                  {quotePreparing ? "正在准备中英文报价…" : "生成报价单"}
+                  生成报价单
                 </button>
               </div>
             </div>

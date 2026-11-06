@@ -6,7 +6,7 @@ import { canManageProductPairing } from "./product-pairing-access";
 
 export const AUTHENTICATION_ENABLED = true;
 export const ADMIN_EMAIL = "yifunlife@hotmail.com";
-export const SESSION_SECONDS = 30 * 60;
+export const SESSION_SECONDS = 7 * 24 * 60 * 60;
 export const RESET_SECONDS = 30 * 60;
 const PASSWORD_ITERATIONS = 100000;
 

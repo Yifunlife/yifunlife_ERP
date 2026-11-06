@@ -61,6 +61,18 @@ img {
   color: var(--navy);
   margin: 11px 0 9px;
 }
+.quoteReauthenticationDialog {
+  margin: auto;
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+}
+.quoteReauthenticationDialog::backdrop {
+  background: rgba(4, 28, 48, 0.48);
+}
 .loginCard p {
   font-size: 13px;
   color: #77838a;

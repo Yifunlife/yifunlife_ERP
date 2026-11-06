@@ -15,7 +15,7 @@ test('imported zero-quantity rows remain visible without becoming effective data
   }finally{runtime.close();}
 });
 
-test('ordinary quote preparation translates missing text once without changing identifiers, values or revision history',async()=>{
+test('explicit field translation translates missing text once without changing identifiers, values or revision history',async()=>{
   let calls=0;
   const translate=clientFunction('translateQuoteWorkbook',['xmlText','normalizeTemplateCellOrder','updateTemplateCell'],{
     XLSX,...zip,products:[],fetch:async(url,options)=>{calls++;const {texts}=JSON.parse(options.body);return Response.json({translations:texts.map((_,i)=>'Translation '+i)});},
@@ -76,7 +76,7 @@ for(const mode of ['vip','factory','usd']) test(`ordinary ${mode} quotations exp
       preTax:subtotal,tax:0,totalWithTax:subtotal,quoteProject:'Generic',designerName:'Designer',salesName:'Sales',quoteExportFileName:()=>mode,
       skuImageKey:s=>s,window:{location:{origin:'https://example.test'},alert:value=>error=value},
       fetch:async()=>new Response(fs.readFileSync('public/quotation-templates/YIFUNLIFE_MINIMDO_AUS_PRODUCTS_QUOTATION.xlsx')),
-      translateQuoteWorkbook:async source=>source,downloadExcelFile:data=>output=data,
+      translateQuoteWorkbook:async()=>{throw Error('Export must not translate');},downloadExcelFile:data=>output=data,
     });
     await fn(false);assert.equal(error,undefined);assert.ok(output);
     const book=XLSX.read(output,{type:'array',cellStyles:true}),sheet=book.Sheets[book.SheetNames[0]];
